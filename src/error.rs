@@ -11,6 +11,9 @@ pub enum Error {
     #[error("XML parse error: {0}")]
     XmlParse(#[from] quick_xml::Error),
 
+    #[error("CSV parse error: {0}")]
+    CsvParse(#[from] csv::Error),
+
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -19,4 +22,7 @@ pub enum Error {
 
     #[error("invalid resource: {0}")]
     InvalidResource(String),
+
+    #[error("unsupported format: {0}")]
+    UnsupportedFormat(String),
 }

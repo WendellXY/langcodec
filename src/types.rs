@@ -7,7 +7,9 @@ use std::{
     str::FromStr,
 };
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use unic_langid::LanguageIdentifier;
 
 use crate::{error::Error, traits::Parser};
 
@@ -38,6 +40,10 @@ impl Resource {
     pub(crate) fn add_entry(&mut self, entry: Entry) {
         self.entries.push(entry);
     }
+
+    pub fn parse_language_identifier(&self) -> Option<LanguageIdentifier> {
+        self.metadata.language.parse().ok()
+    }
 }
 
 /// Free-form metadata for the resource as a whole.
@@ -53,16 +59,6 @@ pub struct Metadata {
 
     /// Any other metadata fields not covered by the above.
     pub custom: HashMap<String, String>,
-}
-
-impl Metadata {
-    pub(crate) fn new(language: &str, domain: &str, custom: &HashMap<String, String>) -> Self {
-        Self {
-            language: language.to_string(),
-            domain: domain.to_string(),
-            custom: custom.clone(),
-        }
-    }
 }
 
 impl Display for Metadata {
@@ -123,6 +119,64 @@ pub enum Translation {
 
     /// A translation with plural forms.
     Plural(Plural),
+}
+
+fn make_plain_translation_string(translation: String) -> String {
+    let mut translation = translation;
+    translation = translation.trim().to_string();
+
+    // Remove all HTML tags (non-greedy)
+    let re_html = Regex::new(r"<[^>]+>").unwrap();
+    translation = re_html.replace_all(&translation, "").to_string();
+
+    // Remove all closing tags like </font>
+    let re_html_close = Regex::new(r"</[^>]+>").unwrap();
+    translation = re_html_close.replace_all(&translation, "").to_string();
+
+    // Replace any newline characters with explicit "\n" for better formatting,
+    translation = translation
+        .lines()
+        .map(str::trim_start)
+        .collect::<Vec<_>>()
+        .join(r"\n"); // Use r"\n" for a literal \n
+
+    translation
+}
+
+impl Translation {
+    pub fn plain_translation(translation: Translation) -> Translation {
+        match translation {
+            Translation::Singular(value) => {
+                Translation::Singular(make_plain_translation_string(value))
+            }
+            Translation::Plural(plural) => {
+                // Return the first plural form as a singular translation
+                let id = plural.id;
+                let forms = plural.forms.into_iter().next().map_or_else(
+                    || BTreeMap::new(),
+                    |(category, value)| {
+                        let mut map = BTreeMap::new();
+                        map.insert(category, make_plain_translation_string(value));
+                        map
+                    },
+                );
+                Translation::Plural(Plural { id, forms })
+            }
+        }
+    }
+
+    pub fn plain_translation_string(&self) -> String {
+        match self {
+            Translation::Singular(value) => make_plain_translation_string(value.clone()),
+            Translation::Plural(plural) => {
+                // Return the first plural form as a singular translation
+                plural.forms.values().next().map_or_else(
+                    || String::new(),
+                    |value| make_plain_translation_string(value.clone()),
+                )
+            }
+        }
+    }
 }
 
 impl Display for Translation {

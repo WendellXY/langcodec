@@ -1,33 +1,25 @@
-use crate::{error::Error, types::Resource};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader, BufWriter},
+    path::Path,
+};
 
-pub trait ResourceConvertible {
-    fn to_resource(&self) -> Result<Resource, Error>;
+use crate::error::Error;
 
-    fn from_resource(resource: &Resource) -> Result<Self, Error>
-    where
-        Self: Sized;
-}
-
-pub trait MultiResourceConvertible {
-    fn to_resources(&self) -> Result<Vec<Resource>, Error>;
-    fn from_resources(resources: &[Resource]) -> Result<Self, Error>
-    where
-        Self: Sized;
-}
-
+/// A trait for parsing and writing localization resources from/to one file.
 pub trait Parser {
     /// Parse from any reader.
-    fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, Error>
+    fn from_reader<R: BufRead>(reader: R) -> Result<Self, Error>
     where
         Self: Sized;
 
     /// Parse from file path.
-    fn read_from<P: AsRef<std::path::Path>>(path: P) -> Result<Self, Error>
+    fn read_from<P: AsRef<Path>>(path: P) -> Result<Self, Error>
     where
         Self: Sized,
     {
-        let file = std::fs::File::open(path).map_err(Error::Io)?;
-        let reader = std::io::BufReader::new(file);
+        let file = File::open(path).map_err(Error::Io)?;
+        let reader = BufReader::new(file);
         Self::from_reader(reader)
     }
 
@@ -35,9 +27,9 @@ pub trait Parser {
     fn to_writer<W: std::io::Write>(&self, writer: W) -> Result<(), Error>;
 
     /// Write to file path.
-    fn write_to<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), Error> {
-        let file = std::fs::File::create(path)?;
-        let writer = std::io::BufWriter::new(file);
+    fn write_to<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        let file = File::create(path)?;
+        let writer = BufWriter::new(file);
         self.to_writer(writer)
     }
 }

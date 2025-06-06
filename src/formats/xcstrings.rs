@@ -1,9 +1,13 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::HashMap,
+    io::{BufRead, Write},
+    str::FromStr,
+};
 
 use crate::{
     error::Error,
-    traits::{MultiResourceConvertible, Parser},
+    traits::Parser,
     types::{Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource, Translation},
 };
 
@@ -17,62 +21,20 @@ pub struct Format {
 
 impl Parser for Format {
     /// Parses the xcstrings format from a reader.
-    fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, Error> {
+    fn from_reader<R: BufRead>(reader: R) -> Result<Self, Error> {
         serde_json::from_reader(reader).map_err(Error::Parse)
     }
 
     /// Serializes the xcstrings format to a writer.
-    fn to_writer<W: std::io::Write>(&self, writer: W) -> Result<(), Error> {
+    fn to_writer<W: Write>(&self, writer: W) -> Result<(), Error> {
         serde_json::to_writer_pretty(writer, &self).map_err(Error::Parse)
     }
 }
 
-impl MultiResourceConvertible for Format {
-    fn to_resources(&self) -> Result<Vec<Resource>, Error> {
-        // Key: Language code, e.g. "en", "fr", etc.
-        // Value: Resource containing all items for that language
-        let mut resource_map = HashMap::<String, Resource>::new();
+impl TryFrom<Vec<Resource>> for Format {
+    type Error = Error;
 
-        let mut custom_meta = HashMap::<String, String>::new();
-        custom_meta.insert(
-            String::from("source_language"),
-            self.source_language.clone(),
-        );
-        custom_meta.insert(String::from("version"), self.version.clone());
-
-        for (id, item) in &self.strings {
-            let mut custom = HashMap::new();
-            if let Some(extraction_state) = &item.extraction_state {
-                custom.insert("extraction_state".to_string(), extraction_state.to_string());
-            }
-
-            for (lang_code, localization) in &item.localizations {
-                if let Some(translation) = localization.to_translation() {
-                    let lang_code = lang_code.to_string();
-                    resource_map
-                        .entry(lang_code.clone())
-                        .or_insert(Resource {
-                            metadata: Metadata::new(&lang_code, "", &custom_meta),
-                            entries: Vec::new(),
-                        })
-                        .add_entry(Entry {
-                            id: id.clone(),
-                            value: translation,
-                            comment: item.comment.clone(),
-                            status: localization.state(),
-                            custom: custom.clone(), // No custom data in xcstrings
-                        });
-                }
-            }
-        }
-
-        Ok(resource_map.into_values().collect())
-    }
-
-    fn from_resources(resources: &[Resource]) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
+    fn try_from(resources: Vec<Resource>) -> Result<Self, Self::Error> {
         // Key: String ID of the item (e.g. "hello world")
         // Value: Item containing localizations and metadata
         let mut strings = HashMap::<String, Item>::new();
@@ -114,10 +76,11 @@ impl MultiResourceConvertible for Format {
                 ));
             }
 
-            for entry in &resource.entries {
-                if let Some(item) = Item::from_entry(entry) {
+            for entry in resource.entries {
+                let id = entry.id.clone();
+                if let Some(item) = Item::new(entry, resource.metadata.language.clone()) {
                     strings
-                        .entry(entry.id.clone())
+                        .entry(id)
                         .or_insert(Item {
                             localizations: HashMap::new(),
                             comment: item.comment,
@@ -138,6 +101,52 @@ impl MultiResourceConvertible for Format {
     }
 }
 
+impl TryFrom<Format> for Vec<Resource> {
+    type Error = Error;
+
+    fn try_from(format: Format) -> Result<Self, Self::Error> {
+        // Key: Language code, e.g. "en", "fr", etc.
+        // Value: Resource containing all items for that language
+        let mut resource_map = HashMap::<String, Resource>::new();
+
+        let mut custom_meta = HashMap::<String, String>::new();
+        custom_meta.insert(String::from("source_language"), format.source_language);
+        custom_meta.insert(String::from("version"), format.version);
+
+        for (id, item) in format.strings {
+            let mut custom = HashMap::new();
+            if let Some(extraction_state) = &item.extraction_state {
+                custom.insert("extraction_state".to_string(), extraction_state.to_string());
+            }
+
+            for (lang_code, localization) in item.localizations {
+                if let Some(translation) = localization.to_translation() {
+                    let lang_code = lang_code.to_string();
+                    resource_map
+                        .entry(lang_code.clone())
+                        .or_insert(Resource {
+                            metadata: Metadata {
+                                language: lang_code.clone(),
+                                domain: String::default(),
+                                custom: custom_meta.clone(),
+                            },
+                            entries: Vec::new(),
+                        })
+                        .add_entry(Entry {
+                            id: id.clone(),
+                            value: translation,
+                            comment: item.comment.clone(),
+                            status: localization.state(),
+                            custom: custom.clone(), // No custom data in xcstrings
+                        });
+                }
+            }
+        }
+
+        Ok(resource_map.into_values().collect())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
@@ -148,17 +157,19 @@ pub struct Item {
 }
 
 impl Item {
-    fn from_entry(entry: &Entry) -> Option<Self> {
+    fn new(entry: Entry, language: String) -> Option<Self> {
         let mut localizations = HashMap::new();
 
-        match &entry.value {
+        let should_translate = Some(entry.status == EntryStatus::Translated);
+
+        match entry.value {
             Translation::Singular(value) => {
                 localizations.insert(
-                    entry.id.clone(),
+                    language,
                     Localization {
                         string_unit: Some(StringUnit {
-                            state: entry.status.clone(),
-                            value: value.clone(),
+                            state: entry.status,
+                            value: value,
                         }),
                         variations: None,
                     },
@@ -166,19 +177,19 @@ impl Item {
             }
             Translation::Plural(plural) => {
                 let mut plural_map = HashMap::new();
-                for (category, value) in &plural.forms {
+                for (category, value) in plural.forms {
                     plural_map.insert(
-                        category.clone(),
+                        category,
                         PluralVariation {
                             string_unit: Some(StringUnit {
                                 state: entry.status.clone(),
-                                value: value.clone(),
+                                value: value,
                             }),
                         },
                     );
                 }
                 localizations.insert(
-                    entry.id.clone(),
+                    language,
                     Localization {
                         string_unit: None,
                         variations: Some(Variations {
@@ -197,9 +208,9 @@ impl Item {
 
         Some(Item {
             localizations,
-            comment: entry.comment.clone(),
-            extraction_state: extraction_state,
-            should_translate: Some(entry.status == EntryStatus::Translated),
+            comment: entry.comment,
+            extraction_state,
+            should_translate,
         })
     }
 }
@@ -212,7 +223,7 @@ pub enum ExtractionState {
     ExtractedWithValue,
 }
 
-impl ExtractionState {
+impl ToString for ExtractionState {
     fn to_string(&self) -> String {
         match self {
             ExtractionState::Manual => "manual".to_string(),

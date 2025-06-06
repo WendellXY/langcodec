@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     error::Error,
-    traits::{Parser, ResourceConvertible},
+    traits::Parser,
     types::{Entry, EntryStatus, Metadata, Resource, Translation},
 };
 
@@ -78,30 +78,29 @@ impl Parser for Format {
     }
 }
 
-impl ResourceConvertible for Format {
-    fn to_resource(&self) -> Result<Resource, Error> {
-        Ok(Resource {
-            metadata: Metadata {
-                language: self.language.clone(),
-                domain: String::new(), // strings.xml does not have a domain
-                custom: HashMap::new(),
-            },
-            entries: self.strings.iter().map(StringResource::to_entry).collect(),
-        })
-    }
-
-    fn from_resource(resource: &Resource) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        Ok(Self {
-            language: resource.metadata.language.clone(),
-            strings: resource
+impl From<Resource> for Format {
+    fn from(value: Resource) -> Self {
+        Self {
+            language: value.metadata.language.clone(),
+            strings: value
                 .entries
                 .iter()
                 .map(StringResource::from_entry)
                 .collect(),
-        })
+        }
+    }
+}
+
+impl From<Format> for Resource {
+    fn from(value: Format) -> Self {
+        Resource {
+            metadata: Metadata {
+                language: value.language.clone(),
+                domain: String::new(), // strings.xml does not have a domain
+                custom: HashMap::new(),
+            },
+            entries: value.strings.iter().map(StringResource::to_entry).collect(),
+        }
     }
 }
 

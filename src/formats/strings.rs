@@ -4,7 +4,7 @@ use indoc::indoc;
 
 use crate::{
     error::Error,
-    traits::{Parser, ResourceConvertible},
+    traits::Parser,
     types::{Entry, EntryStatus, Metadata, Resource, Translation},
 };
 
@@ -17,13 +17,73 @@ pub struct Format {
     pub pairs: Vec<Pair>,
 }
 
+impl Format {
+    pub fn multiline_values_to_one_line(content: &mut String) {
+        // Copy of content to operate on
+        let orig = content.clone();
+        let mut result = String::with_capacity(orig.len());
+
+        // State for parsing
+        let mut chars = orig.chars().peekable();
+        let mut inside_value = false;
+        let mut value_buf = String::new();
+
+        while let Some(c) = chars.next() {
+            if !inside_value {
+                // Look for start of a value: " = "
+                result.push(c);
+                if c == '=' {
+                    // Seek first quote after '='
+                    while let Some(&d) = chars.peek() {
+                        result.push(d);
+                        chars.next();
+                        if d == '"' {
+                            inside_value = true;
+                            value_buf.clear();
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Inside value (quoted string)
+                if c == '"' {
+                    // Check if this quote is escaped
+                    let prev_backslashes =
+                        value_buf.chars().rev().take_while(|&x| x == '\\').count();
+                    if prev_backslashes % 2 == 0 {
+                        // Closing quote (not escaped)
+                        inside_value = false;
+                        // Replace newlines with \n, remove leading spaces after each
+                        let value_one_line = value_buf
+                            .lines()
+                            .map(str::trim_start)
+                            .collect::<Vec<_>>()
+                            .join(r"\n");
+                        result.push_str(&value_one_line);
+                        result.push('"');
+                        value_buf.clear();
+                    } else {
+                        value_buf.push('"');
+                    }
+                } else {
+                    value_buf.push(c);
+                }
+            }
+        }
+
+        *content = result;
+    }
+}
+
 impl Parser for Format {
     /// Creates a new `Format` instance with the specified language and pairs.
     ///
     /// The `language` parameter would be empty, since the .strings format does
     /// not contain any metadata about the language.
     fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, Error> {
-        let file_content = reader.lines().collect::<Result<Vec<_>, _>>()?.join("\n");
+        let mut file_content = reader.lines().collect::<Result<Vec<_>, _>>()?.join("\n");
+
+        Format::multiline_values_to_one_line(&mut file_content);
 
         // For simplicity, we assume there are no multi-line comments and in-line comments in the file.
         let lines = file_content.lines().collect::<Vec<_>>();
@@ -63,7 +123,12 @@ impl Parser for Format {
 
                 let key = parts[0].trim().trim_matches('"').to_string();
                 let mut value = parts[1].trim().trim_matches(';').trim().to_string();
-                value = value[1..value.len() - 1].to_string(); // Remove surrounding quotes
+
+                if value.len() < 2 {
+                    value = String::new(); // If value is too short, treat it as empty
+                } else {
+                    value = value[1..value.len() - 1].to_string(); // Remove surrounding quotes
+                }
 
                 Some(Pair {
                     key,
@@ -119,28 +184,32 @@ impl Parser for Format {
     }
 }
 
-impl ResourceConvertible for Format {
-    fn to_resource(&self) -> Result<Resource, Error> {
-        Ok(Resource {
-            metadata: Metadata::new(&self.language, "", &HashMap::new()),
-            entries: self.pairs.iter().map(Pair::to_entry).collect(),
-        })
+impl From<Format> for Resource {
+    fn from(value: Format) -> Self {
+        Resource {
+            metadata: Metadata {
+                language: value.language,
+                domain: String::from(""),
+                custom: HashMap::new(),
+            },
+            entries: value.pairs.iter().map(Pair::to_entry).collect(),
+        }
     }
+}
 
-    fn from_resource(resource: &Resource) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        let pairs = resource
+impl TryFrom<Resource> for Format {
+    type Error = Error;
+
+    fn try_from(value: Resource) -> Result<Self, Self::Error> {
+        let language = value.metadata.language.clone();
+
+        let pairs = value
             .entries
             .iter()
-            .map(Pair::from_entry)
+            .map(|entry| Pair::try_from(entry.clone()))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Format {
-            language: resource.metadata.language.clone(),
-            pairs,
-        })
+        Ok(Format { language, pairs })
     }
 }
 
@@ -169,17 +238,40 @@ impl Pair {
             custom: HashMap::new(),
         }
     }
+}
 
-    fn from_entry(entry: &Entry) -> Result<Self, Error> {
-        match &entry.value {
+impl TryFrom<Entry> for Pair {
+    type Error = Error;
+
+    fn try_from(entry: Entry) -> Result<Self, Self::Error> {
+        // Strings format only supports singular translations
+        // with plain text values.
+        match Translation::plain_translation(entry.value) {
             Translation::Singular(value) => Ok(Pair {
-                key: entry.id.clone(),
-                value: value.clone(),
-                comment: entry.comment.clone(),
+                key: entry.id,
+                value: value,
+                comment: entry.comment,
             }),
             Translation::Plural(_) => Err(Error::DataMismatch(
                 "Plural translations are not supported in .strings format".to_string(),
             )),
+        }
+    }
+}
+
+impl From<Pair> for Entry {
+    fn from(pair: Pair) -> Self {
+        let is_pair_value_empty = pair.value.is_empty();
+        Entry {
+            id: pair.key,
+            value: Translation::Singular(pair.value),
+            comment: pair.comment,
+            status: if is_pair_value_empty {
+                EntryStatus::New
+            } else {
+                EntryStatus::Translated
+            },
+            custom: HashMap::new(),
         }
     }
 }
