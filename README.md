@@ -6,6 +6,12 @@
 
 ---
 
+## Status
+
+This is an early `0.1.0` release. The API may evolve as development continues. Contributions and feedback are very welcome to help shape the future of this project!
+
+---
+
 ## Features
 
 - ✨ Parse, write, and convert between multiple localization file formats
@@ -13,6 +19,7 @@
 - 📦 Designed for CLI tools, CI/CD pipelines, and library integration
 - 🔄 Unified internal model (`Resource`) for lossless format-agnostic processing
 - 📖 Well-documented, robust error handling and extensible codebase
+- 🚀 More formats and CLI support are planned for upcoming releases
 
 ---
 
@@ -21,10 +28,11 @@
 | Format                | Parse | Write | Plural Support   | Comments |
 |-----------------------|:-----:|:-----:|:----------------:|----------|
 | Apple `.strings`      |  ✔️   |  ✔️   |   No             |  ✔️      |
-| Apple `.xcstrings`    |  ✔️   |  ✔️   |   Yes            |  ✔️      |
+| Apple `.xcstrings`    |  ✔️   |  ✔️   |   Yes<sup>*</sup>|  ✔️      |
 | Android `strings.xml` |  ✔️   |  ✔️   |   No<sup>*</sup> |  ✔️      |
 | CSV                   |  ✔️   |  ✔️   |   No             |  –       |
 
+<sup>* Plural support for `.xcstrings` is not under beta testing, and may not be fully implemented yet.</sup>
 <sup>* Plural support for Android may be added in the future.</sup>
 
 ---
@@ -49,12 +57,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut codec = Codec::new();
 
     // Read Apple .strings file
-    codec.read_file_by_type("Localizable.strings", FormatType::Strings(None))?;
+    codec.read_file_by_extension("en.lproj/Localizable.strings", None)?;
 
     // Manipulate resources if needed (see types.rs for Resource/Entry APIs)
 
-    // Write as Android strings.xml
+    // Write changes back to the original file
     codec.write_to_file()?;
+
+    // Convert Apple's strings localization to Android's strings
+    convert_auto("Localizable.strings", "strings.xml")?;
 
     Ok(())
 }
@@ -70,7 +81,8 @@ A CLI tool will be provided for easy conversion and batch processing:
 langcodec convert --from Localizable.strings --to strings.xml
 ```
 
-*Stay tuned for CLI usage and installation instructions!*
+*Stay tuned for CLI usage and installation instructions!*  
+*User feedback is encouraged to help prioritize CLI features and improvements.*
 
 ---
 
@@ -122,3 +134,9 @@ This project is licensed under the MIT License.
 
 - Inspired by the need for universal localization tooling in cross-platform apps
 - Built with love in Rust
+
+---
+
+## Status and Roadmap
+
+`langcodec` aims to be a universal, format-agnostic localization toolkit that simplifies working with diverse localization file formats. The current focus is on stabilizing core features, expanding format support, and developing a user-friendly CLI. We welcome your issues, feature requests, and discussions at the project’s issue tracker.
