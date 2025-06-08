@@ -1,61 +1,51 @@
+/// This module provides the `Codec` struct and associated functionality for reading,
+/// writing, caching, and loading localized resource files in various formats.
+/// The `Codec` struct manages a collection of `Resource` instances and supports
+/// format inference, language detection from file paths, and serialization.
+///
+/// The module handles different localization file formats such as Apple `.strings`,
+/// Android XML strings, and `.xcstrings`, providing methods to read from files by type
+/// or extension, write resources back to files, and cache resources to JSON.
+///
 use std::path::Path;
 
 use crate::{error::Error, formats::*, traits::Parser, types::Resource};
 
+/// Represents a collection of localized resources and provides methods to read,
+/// write, cache, and load these resources.
 pub struct Codec {
+    /// The collection of resources managed by this codec.
     pub resources: Box<Vec<Resource>>,
 }
 
 impl Codec {
+    /// Creates a new, empty `Codec`.
+    ///
+    /// # Returns
+    ///
+    /// A new `Codec` instance with no resources.
     pub fn new() -> Self {
         Codec {
             resources: Box::new(Vec::new()),
         }
     }
-}
 
-// MARK: Data I/O
-
-impl Codec {
+    /// Reads a resource file given its path and explicit format type.
+    ///
+    /// # Parameters
+    /// - `path`: Path to the resource file.
+    /// - `format_type`: The format type of the resource file.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the file was successfully read and resources loaded,
+    /// or an `Error` otherwise.
     pub fn read_file_by_type<P: AsRef<Path>>(
         &mut self,
         path: P,
         format_type: FormatType,
     ) -> Result<(), Error> {
-        // If lang is None, we will try to infer the language from the path.
-        // The finding logic is as follows:
-        // Split the path by the component separator (usually '/'),
-        // and look for the language identifier from last to first.
-        // For Apple platforms, we will look pattern like "en.lproj" or "fr.lproj".
-        // For Android, we will look for "values-en" or "values-fr".
-        let language = match &format_type {
-            FormatType::AndroidStrings(lang) | FormatType::Strings(lang) => {
-                let processed_lang = if let Some(lang) = lang {
-                    lang.clone()
-                } else {
-                    path.as_ref()
-                        .components()
-                        .rev()
-                        .find_map(|c| {
-                            let component = c.as_os_str().to_str()?;
-                            if component.ends_with(".lproj") {
-                                Some(component.trim_end_matches(".lproj").to_string())
-                            } else if component.starts_with("values-") {
-                                Some(component.trim_start_matches("values-").to_string())
-                            } else {
-                                None
-                            }
-                        })
-                        .ok_or(Error::UnknownFormat(
-                            "Failed to infer language from path, please provide a language code manually."
-                                .to_string(),
-                        ))?
-                };
-
-                Some(processed_lang)
-            }
-            _ => None,
-        };
+        let language = infer_language_from_path(&path, &format_type)?;
 
         let domain = path
             .as_ref()
@@ -90,8 +80,17 @@ impl Codec {
         Ok(())
     }
 
-    /// Read a file by its path and infer the format based on the file extension.
-    /// If the language is not provided, it will try to infer it from the path.
+    /// Reads a resource file by inferring its format from the file extension.
+    /// Optionally infers language from the path if not provided.
+    ///
+    /// # Parameters
+    /// - `path`: Path to the resource file.
+    /// - `lang`: Optional language code to use.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the file was successfully read,
+    /// or an `Error` if the format is unsupported or reading fails.
     pub fn read_file_by_extension<P: AsRef<Path>>(
         &mut self,
         path: P,
@@ -113,30 +112,13 @@ impl Codec {
 
         Ok(())
     }
-}
 
-// For format which only has one resource per file, we would consider the vector only has one element.
-// and for format which has multiple resources per file, we would consider the vector has multiple elements.
-fn write_resources_to_file(resources: &[Resource], file_path: &String) -> Result<(), Error> {
-    let path = Path::new(&file_path);
-
-    if let Some(first) = resources.first() {
-        match first.metadata.custom.get("format").map(String::as_str) {
-            Some("AndroidStrings") => AndroidStringsFormat::from(first.clone()).write_to(path)?,
-            Some("Strings") => StringsFormat::try_from(first.clone())?.write_to(path)?,
-            Some("Xcstrings") => XcstringsFormat::try_from(resources.to_vec())?.write_to(path)?,
-            _ => Err(Error::UnsupportedFormat(format!(
-                "Unsupported format: {:?}",
-                first.metadata.custom.get("format")
-            )))?,
-        }
-    }
-
-    Ok(())
-}
-
-impl Codec {
-    /// Write the resources back to the original file
+    /// Writes all managed resources back to their respective files,
+    /// grouped by domain.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if all writes succeed, or an `Error` otherwise.
     pub fn write_to_file(&self) -> Result<(), Error> {
         // Group resources by the domain in a HashMap
         let mut grouped_resources: std::collections::HashMap<String, Vec<Resource>> =
@@ -156,22 +138,107 @@ impl Codec {
 
         Ok(())
     }
-}
-// MARK: Data Caching and Loading
 
-impl Codec {
-    /// Cache the current resources to a file in JSON format.
+    /// Caches the current resources to a JSON file.
+    ///
+    /// # Parameters
+    /// - `path`: Destination file path for the cache.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if caching succeeds, or an `Error` if file I/O or serialization fails.
     pub fn cache_to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
         let mut writer = std::fs::File::create(path).map_err(Error::Io)?;
         serde_json::to_writer(&mut writer, &*self.resources).map_err(Error::Parse)?;
         Ok(())
     }
 
-    /// Load resources from a JSON file.
+    /// Loads resources from a JSON cache file.
+    ///
+    /// # Parameters
+    /// - `path`: Path to the JSON file containing cached resources.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Codec)` with loaded resources, or an `Error` if loading or deserialization fails.
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         let mut reader = std::fs::File::open(path).map_err(Error::Io)?;
         let resources: Box<Vec<Resource>> =
             serde_json::from_reader(&mut reader).map_err(Error::Parse)?;
         Ok(Codec { resources })
     }
+}
+
+/// Attempts to infer the language from the file path based on format conventions.
+/// For Apple: looks for "{lang}.lproj"; for Android: "values-{lang}".
+///
+/// # Parameters
+/// - `path`: The file path to analyze.
+/// - `format_type`: The format type to consider for language inference.
+///
+/// # Returns
+///
+/// `Ok(Some(language_code))` if a language could be inferred,
+/// `Ok(None)` if no language is applicable for the format,
+/// or an `Error` if inference fails.
+fn infer_language_from_path<P: AsRef<Path>>(
+    path: &P,
+    format_type: &FormatType,
+) -> Result<Option<String>, Error> {
+    match &format_type {
+        FormatType::AndroidStrings(lang) | FormatType::Strings(lang) => {
+            let processed_lang = if let Some(lang) = lang {
+                lang.clone()
+            } else {
+                path.as_ref()
+                    .components()
+                    .rev()
+                    .find_map(|c| {
+                        let component = c.as_os_str().to_str()?;
+                        if component.ends_with(".lproj") {
+                            Some(component.trim_end_matches(".lproj").to_string())
+                        } else if component.starts_with("values-") {
+                            Some(component.trim_start_matches("values-").to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or(Error::UnknownFormat(
+                        "Failed to infer language from path, please provide a language code manually."
+                            .to_string(),
+                    ))?
+            };
+
+            Ok(Some(processed_lang))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Writes one or more resources to a file based on their format metadata.
+/// Supports formats with single or multiple resources per file.
+///
+/// # Parameters
+/// - `resources`: Slice of resources to write.
+/// - `file_path`: Destination file path.
+///
+/// # Returns
+///
+/// `Ok(())` if writing succeeds, or an `Error` if the format is unsupported or writing fails.
+fn write_resources_to_file(resources: &[Resource], file_path: &String) -> Result<(), Error> {
+    let path = Path::new(&file_path);
+
+    if let Some(first) = resources.first() {
+        match first.metadata.custom.get("format").map(String::as_str) {
+            Some("AndroidStrings") => AndroidStringsFormat::from(first.clone()).write_to(path)?,
+            Some("Strings") => StringsFormat::try_from(first.clone())?.write_to(path)?,
+            Some("Xcstrings") => XcstringsFormat::try_from(resources.to_vec())?.write_to(path)?,
+            _ => Err(Error::UnsupportedFormat(format!(
+                "Unsupported format: {:?}",
+                first.metadata.custom.get("format")
+            )))?,
+        }
+    }
+
+    Ok(())
 }

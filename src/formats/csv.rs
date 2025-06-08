@@ -1,3 +1,4 @@
+// Note: CSV format only supports singular translations; plurals will be dropped.
 use std::{collections::HashMap, io::BufRead};
 
 use serde::{Deserialize, Serialize};

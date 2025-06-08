@@ -25,7 +25,8 @@ impl Parser for Vec<Resource> {
     }
 }
 
-/// A complete localization resource (e.g. one `.strings`, `.xliff` file, etc.).
+/// A complete localization resource (corresponds to a `.strings`, `.xml`, `.xcstrings`, etc. file).
+/// Contains metadata and all entries for a single language and domain.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Resource {
     /// Optional header-level metadata (language code, domain/project, etc.).
@@ -47,6 +48,8 @@ impl Resource {
 }
 
 /// Free-form metadata for the resource as a whole.
+///
+/// `language` and `domain` are standard; any extra fields can be placed in `custom`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Metadata {
     /// The language code (e.g. "en", "fr", "es", etc.).
@@ -119,28 +122,6 @@ pub enum Translation {
 
     /// A translation with plural forms.
     Plural(Plural),
-}
-
-fn make_plain_translation_string(translation: String) -> String {
-    let mut translation = translation;
-    translation = translation.trim().to_string();
-
-    // Remove all HTML tags (non-greedy)
-    let re_html = Regex::new(r"<[^>]+>").unwrap();
-    translation = re_html.replace_all(&translation, "").to_string();
-
-    // Remove all closing tags like </font>
-    let re_html_close = Regex::new(r"</[^>]+>").unwrap();
-    translation = re_html_close.replace_all(&translation, "").to_string();
-
-    // Replace any newline characters with explicit "\n" for better formatting,
-    translation = translation
-        .lines()
-        .map(str::trim_start)
-        .collect::<Vec<_>>()
-        .join(r"\n"); // Use r"\n" for a literal \n
-
-    translation
 }
 
 impl Translation {
@@ -281,4 +262,27 @@ impl FromStr for EntryStatus {
             _ => Err(format!("Unknown entry status: {}", s)),
         }
     }
+}
+
+// Remove HTML tags from translation string.
+fn make_plain_translation_string(translation: String) -> String {
+    let mut translation = translation;
+    translation = translation.trim().to_string();
+
+    // Remove all HTML tags (non-greedy)
+    let re_html = Regex::new(r"<[^>]+>").unwrap();
+    translation = re_html.replace_all(&translation, "").to_string();
+
+    // Remove all closing tags like </font>
+    let re_html_close = Regex::new(r"</[^>]+>").unwrap();
+    translation = re_html_close.replace_all(&translation, "").to_string();
+
+    // Replace any newline characters with explicit "\n" for better formatting,
+    translation = translation
+        .lines()
+        .map(str::trim_start)
+        .collect::<Vec<_>>()
+        .join(r"\n"); // Use r"\n" for a literal \n
+
+    translation
 }
