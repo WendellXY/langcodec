@@ -242,3 +242,70 @@ fn write_resources_to_file(resources: &[Resource], file_path: &String) -> Result
 
     Ok(())
 }
+
+/// Convert a localization file from one format to another.
+///
+/// # Arguments
+///
+/// * `input` - The input file path.
+/// * `input_format` - The format of the input file.
+/// * `output` - The output file path.
+/// * `output_format` - The format of the output file.
+///
+/// # Errors
+///
+/// Returns an `Error` if reading, parsing, converting, or writing fails.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use langcodec::{convert, formats::FormatType};
+/// convert(
+///     "Localizable.strings",
+///     FormatType::Strings(None),
+///     "strings.xml",
+///     FormatType::AndroidStrings(None),
+/// )?;
+/// # Ok::<(), langcodec::Error>(())
+/// ```
+pub fn convert<P: AsRef<Path>>(
+    input: P,
+    input_format: FormatType,
+    output: P,
+    output_format: FormatType,
+) -> Result<(), Error> {
+    use crate::formats::{AndroidStringsFormat, StringsFormat, XcstringsFormat};
+    use crate::traits::Parser;
+
+    // Read input file as internal Resource(s)
+    let resources = match input_format {
+        FormatType::AndroidStrings(_) => {
+            let format = AndroidStringsFormat::read_from(&input)?;
+            vec![format.into()]
+        }
+        FormatType::Strings(_) => {
+            let format = StringsFormat::read_from(&input)?;
+            vec![format.into()]
+        }
+        FormatType::Xcstrings => {
+            let format = XcstringsFormat::read_from(&input)?;
+            Vec::<crate::types::Resource>::try_from(format)?
+        }
+    };
+
+    // Convert to target format and write output
+    match output_format {
+        FormatType::AndroidStrings(_) => {
+            let format = AndroidStringsFormat::from(resources.into_iter().next().unwrap());
+            format.write_to(&output)
+        }
+        FormatType::Strings(_) => {
+            let format = StringsFormat::try_from(resources.into_iter().next().unwrap())?;
+            format.write_to(&output)
+        }
+        FormatType::Xcstrings => {
+            let format = XcstringsFormat::try_from(resources)?;
+            format.write_to(&output)
+        }
+    }
+}

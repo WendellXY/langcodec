@@ -11,7 +11,7 @@ pub mod types;
 
 // Re-export most used types for easy consumption
 pub use crate::{
-    codec::Codec,
+    codec::{Codec, convert},
     error::Error,
     formats::FormatType,
     types::{Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource, Translation},
