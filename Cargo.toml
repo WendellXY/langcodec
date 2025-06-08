@@ -8,7 +8,7 @@ repository = "https://github.com/WendellXY/langcodec"
 homepage = "https://github.com/WendellXY/langcodec"
 documentation = "https://docs.rs/langcodec"
 readme = "README.md"
-keywords = ["localization", "i18n", "l10n", "strings", "android", "apple"]
+keywords = ["localization", "i18n", "l10n", "android", "apple"]
 categories = ["internationalization", "localization", "encoding"]
 
 [dependencies]
