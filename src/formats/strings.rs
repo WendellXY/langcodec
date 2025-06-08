@@ -1,3 +1,7 @@
+//! Support for Apple `.strings` localization format.
+//!
+//! Provides parsing, serialization, and conversion to/from the internal `Resource` model.
+
 use std::collections::HashMap;
 
 use indoc::indoc;
@@ -8,12 +12,14 @@ use crate::{
     types::{Entry, EntryStatus, Metadata, Resource, Translation},
 };
 
-/// A parser for the Apple's .strings format.
+/// Represents an Apple `.strings` localization file.
 ///
-/// The .strings format is a simple key-value pair format used for localization.
+/// The format consists of a set of key-value pairs, with optional comments.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Format {
+    /// Language code for this resource, if known (typically empty for `.strings`).
     pub language: String,
+    /// All key-value pairs (and optional comments) in the file.
     pub pairs: Vec<Pair>,
 }
 
@@ -213,14 +219,21 @@ impl TryFrom<Resource> for Format {
     }
 }
 
+/// A single key-value pair in a `.strings` file, possibly with an associated comment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pair {
+    /// The key for this localization entry.
     pub key: String,
+    /// The value for this localization entry.
     pub value: String,
     /// Optional comment associated with the key-value pair.
     ///
+    /// Only comments that immediately precede a key-value pair are attached to it.
+    /// Trailing comments on the same line as a key-value pair (e.g., `"key" = "value"; // comment`)
+    /// are ignored and not attached.
+    ///
     /// To keep it simple, we only support single-line comments in the form of `// comment` or `/* comment */`.
-    /// And the comment marker is included in the comment field.
+    /// The comment marker is included in the comment field.
     pub comment: Option<String>,
 }
 
@@ -298,5 +311,123 @@ impl Pair {
             result.insert_str(0, &format!("{}\n", comment));
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::Parser;
+
+    #[test]
+    fn test_parse_basic_strings_with_comment() {
+        let content = r#"
+        /* Greeting for the user */
+        "hello" = "Hello, world!";
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 1);
+        let pair = &parsed.pairs[0];
+        assert_eq!(pair.key, "hello");
+        assert_eq!(pair.value, "Hello, world!");
+        assert!(
+            pair.comment
+                .as_ref()
+                .unwrap()
+                .contains("Greeting for the user")
+        );
+    }
+
+    #[test]
+    fn test_round_trip_serialization() {
+        let content = r#"
+        /* Farewell */
+        "bye" = "Goodbye!";
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        let mut output = Vec::new();
+        parsed.to_writer(&mut output).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        // Parse again and compare key-value pairs
+        let reparsed = Format::from_str(&output_str).unwrap();
+        assert_eq!(parsed.pairs.len(), reparsed.pairs.len());
+        for (orig, new) in parsed.pairs.iter().zip(reparsed.pairs.iter()) {
+            assert_eq!(orig.key, new.key);
+            assert_eq!(orig.value, new.value);
+        }
+    }
+
+    #[test]
+    fn test_multiline_value_with_embedded_newlines_and_whitespace() {
+        let content = r#"
+        /* Multiline value */
+        "multiline" = "This is line 1.
+            This is line 2.
+            This is line 3.";
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 1);
+        let pair = &parsed.pairs[0];
+        assert_eq!(pair.key, "multiline");
+        // Should be joined with \n and trimmed of leading spaces on each line
+        assert_eq!(
+            pair.value,
+            "This is line 1.\\nThis is line 2.\\nThis is line 3."
+        );
+    }
+
+    #[test]
+    fn test_blank_lines_and_ignored_malformed_lines() {
+        let content = r#"
+
+        // Comment
+
+        "good" = "yes";
+        bad line without equals
+        "another" = "ok";
+
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 2);
+        assert_eq!(parsed.pairs[0].key, "good");
+        assert_eq!(parsed.pairs[0].value, "yes");
+        assert_eq!(parsed.pairs[1].key, "another");
+        assert_eq!(parsed.pairs[1].value, "ok");
+    }
+
+    #[test]
+    fn test_entry_with_empty_value() {
+        let content = r#"
+        /* Empty value */
+        "empty" = "";
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 1);
+        let pair = &parsed.pairs[0];
+        assert_eq!(pair.key, "empty");
+        assert_eq!(pair.value, "");
+        // Should be marked as New status in Entry
+        let entry = pair.to_entry();
+        assert_eq!(entry.status, EntryStatus::New);
+    }
+
+    #[test]
+    fn test_comments_attached_to_correct_key_value_pairs() {
+        let content = r#"
+        // Comment for A
+        "A" = "a";
+        // Comment for B
+        "B" = "b";
+        /* Block comment for C */
+        "C" = "c";
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 3);
+        let a = &parsed.pairs[0];
+        let b = &parsed.pairs[1];
+        let c = &parsed.pairs[2];
+        assert!(a.comment.as_ref().unwrap().contains("Comment for A"));
+        assert!(b.comment.as_ref().unwrap().contains("Comment for B"));
+        assert!(c.comment.as_ref().unwrap().contains("Block comment for C"));
     }
 }

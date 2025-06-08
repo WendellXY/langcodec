@@ -1,4 +1,8 @@
-// Note: CSV format only supports singular translations; plurals will be dropped.
+//! Support for CSV localization format.
+//!
+//! Only singular key-value pairs are supported; plurals will be dropped during conversion.
+//! Provides parsing, serialization, and conversion to/from the internal `Resource` model.
+//! Note: CSV format only supports singular translations; plurals will be dropped.
 use std::{collections::HashMap, io::BufRead};
 
 use serde::{Deserialize, Serialize};
@@ -9,7 +13,7 @@ use crate::{
     types::{Entry, EntryStatus, Metadata, Resource, Translation},
 };
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct CSVRecord {
     pub key: String,
     pub value: String,
@@ -78,5 +82,55 @@ impl TryFrom<Resource> for Vec<CSVRecord> {
                 },
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::Parser;
+    use crate::types::{Resource, Translation};
+    use std::io::Cursor;
+
+    #[test]
+    fn test_parse_simple_csv() {
+        let csv_content = "hello,Hello\nbye,Goodbye\n";
+        let records = Vec::<CSVRecord>::from_reader(Cursor::new(csv_content)).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].key, "hello");
+        assert_eq!(records[0].value, "Hello");
+        assert_eq!(records[1].key, "bye");
+        assert_eq!(records[1].value, "Goodbye");
+    }
+
+    #[test]
+    fn test_round_trip_csv_resource_csv() {
+        let csv_content = "hello,Hello\nbye,Goodbye\n";
+        let records = Vec::<CSVRecord>::from_reader(Cursor::new(csv_content)).unwrap();
+        let resource = Resource::from(records.clone());
+        let serialized: Vec<CSVRecord> = TryFrom::try_from(resource).unwrap();
+        // Should be the same key-value pairs (order may not be guaranteed, but for this test, it is)
+        assert_eq!(records, serialized);
+    }
+
+    #[test]
+    fn test_csv_row_with_empty_value() {
+        let csv_content = "empty,\nhello,Hello\n";
+        let records = Vec::<CSVRecord>::from_reader(Cursor::new(csv_content)).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].key, "empty");
+        assert_eq!(records[0].value, "");
+        let resource = Resource::from(records.clone());
+        assert_eq!(resource.entries.len(), 2);
+        // The entry with empty value should be present and its value should be empty
+        let entry = &resource.entries[0];
+        assert_eq!(entry.id, "empty");
+        assert_eq!(
+            match &entry.value {
+                Translation::Singular(s) => s,
+                _ => panic!("Expected singular translation"),
+            },
+            ""
+        );
     }
 }

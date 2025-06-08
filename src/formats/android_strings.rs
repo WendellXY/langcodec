@@ -1,3 +1,8 @@
+//! Support for Android `strings.xml` localization format.
+//!
+//! Only singular `<string>` elements are supported. Plurals (`<plurals>`) are not yet implemented.
+//! Provides parsing, serialization, and conversion to/from the internal `Resource` model.
+
 use quick_xml::{
     Reader, Writer,
     events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event},
@@ -185,4 +190,100 @@ fn parse_string_resource<R: BufRead>(
         value,
         translatable,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::Parser;
+    use crate::types::EntryStatus;
+
+    #[test]
+    fn test_parse_basic_strings_xml() {
+        let xml = r#"
+        <resources>
+            <string name="hello">Hello</string>
+            <string name="bye" translatable="false">Goodbye</string>
+            <string name="empty"></string>
+        </resources>
+        "#;
+        let format = Format::from_str(xml).unwrap();
+        assert_eq!(format.strings.len(), 3);
+        let hello = &format.strings[0];
+        assert_eq!(hello.name, "hello");
+        assert_eq!(hello.value, "Hello");
+        assert_eq!(hello.translatable, None); // no attribute
+        let bye = &format.strings[1];
+        assert_eq!(bye.name, "bye");
+        assert_eq!(bye.value, "Goodbye");
+        assert_eq!(bye.translatable, Some(false));
+        let empty = &format.strings[2];
+        assert_eq!(empty.name, "empty");
+        assert_eq!(empty.value, "");
+        assert_eq!(empty.translatable, None);
+    }
+
+    #[test]
+    fn test_parse_plurals_ignored() {
+        let xml = r#"
+        <resources>
+            <string name="hello">Hello</string>
+            <plurals name="apples">
+                <item quantity="one">One apple</item>
+                <item quantity="other">%d apples</item>
+            </plurals>
+        </resources>
+        "#;
+        // Plurals are ignored (not parsed as string resources), so only 1 entry.
+        let format = Format::from_str(xml).unwrap();
+        assert_eq!(format.strings.len(), 1);
+        assert_eq!(format.strings[0].name, "hello");
+    }
+
+    #[test]
+    fn test_missing_name_attribute() {
+        let xml = r#"
+        <resources>
+            <string>No name attr</string>
+        </resources>
+        "#;
+        let result = Format::from_str(xml);
+        assert!(result.is_err());
+        let err = format!("{:?}", result.unwrap_err());
+        assert!(err.contains("missing 'name'"));
+    }
+
+    #[test]
+    fn test_round_trip_serialization() {
+        let xml = r#"
+        <resources>
+            <string name="greet">Hi</string>
+            <string name="bye" translatable="false">Bye</string>
+        </resources>
+        "#;
+        let format = Format::from_str(xml).unwrap();
+        let mut out = Vec::new();
+        format.to_writer(&mut out).unwrap();
+        let out_str = String::from_utf8(out).unwrap();
+        let reparsed = Format::from_str(&out_str).unwrap();
+        assert_eq!(format.strings.len(), reparsed.strings.len());
+        for (orig, new) in format.strings.iter().zip(reparsed.strings.iter()) {
+            assert_eq!(orig.name, new.name);
+            assert_eq!(orig.value, new.value);
+            assert_eq!(orig.translatable, new.translatable);
+        }
+    }
+
+    #[test]
+    fn test_entry_with_empty_value_status_new() {
+        let xml = r#"
+        <resources>
+            <string name="empty"></string>
+        </resources>
+        "#;
+        let format = Format::from_str(xml).unwrap();
+        assert_eq!(format.strings.len(), 1);
+        let entry = format.strings[0].to_entry();
+        assert_eq!(entry.status, EntryStatus::New);
+    }
 }

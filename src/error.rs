@@ -1,3 +1,7 @@
+//! All error types for the langcodec crate.
+//!
+//! These are returned from all fallible operations (parsing, serialization, conversion, etc.).
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
