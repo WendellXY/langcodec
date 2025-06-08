@@ -2,6 +2,13 @@
 name = "langcodec"
 version = "0.1.0"
 edition = "2024"
+description = "Universal localization file toolkit for Rust. Supports Apple, Android, and CSV formats."
+license = "MIT"
+repository = "https://github.com/WendellXY/langcodec"
+homepage = "https://github.com/WendellXY/langcodec"
+readme = "README.md"
+keywords = ["localization", "i18n", "l10n", "strings", "android", "apple"]
+categories = ["internationalization", "localization", "encoding"]
 
 [dependencies]
 csv = "1.3"

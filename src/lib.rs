@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Universal localization file toolkit for Rust.
 //!
 //! Supports parsing, writing, and converting between Apple `.strings`, `.xcstrings`, Android `strings.xml`, and CSV files.  
