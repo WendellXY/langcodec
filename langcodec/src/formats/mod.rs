@@ -107,4 +107,44 @@ impl FormatType {
             FormatType::Xcstrings => None,
         }
     }
+
+    /// Recreates the format type with a new language code, if applicable.
+    pub fn with_language(&self, lang: Option<String>) -> Self {
+        match self {
+            FormatType::AndroidStrings(_) => FormatType::AndroidStrings(lang),
+            FormatType::Strings(_) => FormatType::Strings(lang),
+            FormatType::Xcstrings => FormatType::Xcstrings,
+        }
+    }
+
+    /// Checks if this format matches the language of another format.
+    ///
+    /// For `Xcstrings`, it always returns `true` since it has no language
+    /// and matches any other `Xcstrings`. Note that this does not look at the
+    /// actual content of the files, only the format type and its language. So if the
+    /// the xcstrings file does not have that language, it will still return true.
+    ///
+    /// # Example
+    /// ```rust
+    /// use langcodec::formats::FormatType;
+    /// let format1 = FormatType::AndroidStrings(Some("en".to_string()));
+    /// let format2 = FormatType::AndroidStrings(Some("en".to_string()));
+    /// let format3 = FormatType::Strings(Some("fr".to_string()));
+    /// let format4 = FormatType::Xcstrings;
+    ///
+    /// assert!(format1.matches_language_of(&format2));
+    /// assert!(!format1.matches_language_of(&format3));
+    /// assert!(format4.matches_language_of(&format4));
+    /// assert!(format4.matches_language_of(&format1));
+    /// ```
+    ///
+    /// This is useful for ensuring that two formats can be compared or converted
+    /// without language mismatch issues.
+    ///
+    pub fn matches_language_of(&self, other: &FormatType) -> bool {
+        match &self {
+            FormatType::Xcstrings => true, // Xcstrings has no language, so it matches any other Xcstrings
+            _ => &self.language() == &other.language(),
+        }
+    }
 }

@@ -38,8 +38,13 @@ pub trait Parser {
     fn to_writer<W: Write>(&self, writer: W) -> Result<(), Error>;
 
     /// Write to file path.
+    /// Ensures all parent directories are created before writing.
     fn write_to<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
-        let file = File::create(path)?;
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(Error::Io)?;
+        }
+        let file = File::create(path).map_err(Error::Io)?;
         let writer = BufWriter::new(file);
         self.to_writer(writer)
     }

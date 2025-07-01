@@ -221,6 +221,7 @@ pub enum ExtractionState {
     Manual,
     Stale,
     ExtractedWithValue,
+    Migrated,
 }
 
 impl ToString for ExtractionState {
@@ -229,6 +230,7 @@ impl ToString for ExtractionState {
             ExtractionState::Manual => "manual".to_string(),
             ExtractionState::Stale => "stale".to_string(),
             ExtractionState::ExtractedWithValue => "extracted_with_value".to_string(),
+            ExtractionState::Migrated => "migrated".to_string(),
         }
     }
 }
@@ -241,6 +243,7 @@ impl FromStr for ExtractionState {
             "manual" => Ok(ExtractionState::Manual),
             "stale" => Ok(ExtractionState::Stale),
             "extracted_with_value" => Ok(ExtractionState::ExtractedWithValue),
+            "migrated" => Ok(ExtractionState::Migrated),
             _ => Err(Error::DataMismatch(format!(
                 "Unknown extraction state: {}",
                 s

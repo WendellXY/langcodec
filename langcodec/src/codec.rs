@@ -177,6 +177,10 @@ impl Codec {
     ///
     /// `Ok(())` if caching succeeds, or an `Error` if file I/O or serialization fails.
     pub fn cache_to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(Error::Io)?;
+        }
         let mut writer = std::fs::File::create(path).map_err(Error::Io)?;
         serde_json::to_writer(&mut writer, &*self.resources).map_err(Error::Parse)?;
         Ok(())
@@ -306,36 +310,58 @@ pub fn convert<P: AsRef<Path>>(
     use crate::formats::{AndroidStringsFormat, StringsFormat, XcstringsFormat};
     use crate::traits::Parser;
 
-    // Read input file as internal Resource(s)
+    // Propagate language code from input to output format if not specified
+    let output_format = if let Some(lang) = input_format.language() {
+        output_format.with_language(Some(lang.clone()))
+    } else {
+        output_format
+    };
+
+    if !input_format.matches_language_of(&output_format) {
+        return Err(Error::InvalidResource(
+            "Input and output formats must match in language.".to_string(),
+        ));
+    }
+
+    // Read input as resources
     let resources = match input_format {
-        FormatType::AndroidStrings(_) => {
-            let format = AndroidStringsFormat::read_from(&input)?;
-            vec![format.into()]
-        }
-        FormatType::Strings(_) => {
-            let format = StringsFormat::read_from(&input)?;
-            vec![format.into()]
-        }
+        FormatType::AndroidStrings(_) => vec![AndroidStringsFormat::read_from(&input)?.into()],
+        FormatType::Strings(_) => vec![StringsFormat::read_from(&input)?.into()],
         FormatType::Xcstrings => {
-            let format = XcstringsFormat::read_from(&input)?;
-            Vec::<crate::types::Resource>::try_from(format)?
+            Vec::<crate::types::Resource>::try_from(XcstringsFormat::read_from(&input)?)?
         }
     };
 
-    // Convert to target format and write output
+    // Helper to extract resource by language if present, or first one
+    let pick_resource = |lang: Option<String>| -> Option<crate::types::Resource> {
+        match lang {
+            Some(l) => resources.iter().find(|r| r.metadata.language == l).cloned(),
+            None => resources.first().cloned(),
+        }
+    };
+
     match output_format {
-        FormatType::AndroidStrings(_) => {
-            let format = AndroidStringsFormat::from(resources.into_iter().next().unwrap());
-            format.write_to(&output)
+        FormatType::AndroidStrings(lang) => {
+            let resource = pick_resource(lang);
+            if let Some(res) = resource {
+                AndroidStringsFormat::from(res).write_to(&output)
+            } else {
+                Err(Error::InvalidResource(
+                    "No matching resource for output language.".to_string(),
+                ))
+            }
         }
-        FormatType::Strings(_) => {
-            let format = StringsFormat::try_from(resources.into_iter().next().unwrap())?;
-            format.write_to(&output)
+        FormatType::Strings(lang) => {
+            let resource = pick_resource(lang);
+            if let Some(res) = resource {
+                StringsFormat::try_from(res)?.write_to(&output)
+            } else {
+                Err(Error::InvalidResource(
+                    "No matching resource for output language.".to_string(),
+                ))
+            }
         }
-        FormatType::Xcstrings => {
-            let format = XcstringsFormat::try_from(resources)?;
-            format.write_to(&output)
-        }
+        FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(&output),
     }
 }
 
@@ -344,9 +370,9 @@ pub fn convert<P: AsRef<Path>>(
 /// Returns `Some(FormatType)` if the extension matches a known format, otherwise `None`.
 ///
 /// # Example
-/// ```
+/// ```rust
 /// use langcodec::formats::FormatType;
-/// # use langcodec::codec::infer_format_from_extension;
+/// use langcodec::codec::infer_format_from_extension;
 /// assert_eq!(
 ///     infer_format_from_extension("foo.strings"),
 ///     Some(FormatType::Strings(None))
@@ -373,6 +399,54 @@ pub fn infer_format_from_extension<P: AsRef<Path>>(path: P) -> Option<FormatType
     }
 }
 
+/// Infers the localization file format and language code from a path.
+///
+/// - For Apple `.strings`: extracts language from `??.lproj/` (e.g. `en.lproj/Localizable.strings`)
+/// - For Android `strings.xml`: extracts language from `values-??/` (e.g. `values-es/strings.xml`)
+/// - For `.xcstrings`: returns format without language info (contained in file)
+///
+/// # Examples
+/// ```rust
+/// use langcodec::formats::FormatType;
+/// use langcodec::codec::infer_format_from_path;
+/// assert_eq!(
+///    infer_format_from_path("ar.lproj/Localizable.strings"),
+///    Some(FormatType::Strings(Some("ar".to_string())))
+/// );
+/// assert_eq!(
+///     infer_format_from_path("en.lproj/Localizable.strings"),
+///     Some(FormatType::Strings(Some("en".to_string())))
+/// );
+/// assert_eq!(
+///     infer_format_from_path("Base.lproj/Localizable.strings"),
+///     Some(FormatType::Strings(Some("Base".to_string())))
+/// );
+/// assert_eq!(
+///     infer_format_from_path("values-es/strings.xml"),
+///     Some(FormatType::AndroidStrings(Some("es".to_string())))
+/// );
+/// assert_eq!(
+///     infer_format_from_path("values/strings.xml"),
+///     Some(FormatType::AndroidStrings(None))
+/// );
+/// assert_eq!(
+///     infer_format_from_path("Localizable.xcstrings"),
+///     Some(FormatType::Xcstrings)
+/// );
+/// ```
+pub fn infer_format_from_path<P: AsRef<Path>>(path: P) -> Option<FormatType> {
+    match infer_format_from_extension(&path) {
+        Some(format) => match format {
+            FormatType::Xcstrings => Some(format),
+            FormatType::AndroidStrings(_) | FormatType::Strings(_) => {
+                let lang = infer_language_from_path(&path, &format).ok().flatten();
+                Some(format.with_language(lang))
+            }
+        },
+        None => None,
+    }
+}
+
 /// Convert a localization file from one format to another, inferring formats from file extensions.
 ///
 /// This function attempts to infer the input and output formats from their file extensions.
@@ -395,13 +469,13 @@ pub fn infer_format_from_extension<P: AsRef<Path>>(path: P) -> Option<FormatType
 /// # Ok::<(), langcodec::Error>(())
 /// ```
 pub fn convert_auto<P: AsRef<Path>>(input: P, output: P) -> Result<(), Error> {
-    let input_format = infer_format_from_extension(&input).ok_or_else(|| {
+    let input_format = infer_format_from_path(&input).ok_or_else(|| {
         Error::UnknownFormat(format!(
             "Cannot infer input format from extension: {:?}",
             input.as_ref().extension()
         ))
     })?;
-    let output_format = infer_format_from_extension(&output).ok_or_else(|| {
+    let output_format = infer_format_from_path(&output).ok_or_else(|| {
         Error::UnknownFormat(format!(
             "Cannot infer output format from extension: {:?}",
             output.as_ref().extension()
