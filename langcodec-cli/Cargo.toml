@@ -1,8 +1,23 @@
 [package]
 name = "langcodec-cli"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
+description = "A universal CLI tool for converting and inspecting localization files (Apple, Android, CSV, etc.)"
+license = "MIT"
+repository = "https://github.com/WendellXY/langcodec"
+homepage = "https://github.com/WendellXY/langcodec"
+readme = "../README.md"
+keywords = ["localization", "i18n", "cli", "android", "apple"]
+categories = ["command-line-utilities", "internationalization", "localization"]
+documentation = "https://docs.rs/langcodec-cli"
 
 [dependencies]
-langcodec = { path = "../langcodec" }
+langcodec = "0.1.1"
 clap = { version = "4", features = ["derive"] }
+unicode-width = "0.2.1"
+crossterm = "0.29.0"
+atty = "0.2.14"
+
+[[bin]]
+name = "langcodec"
+path = "src/main.rs"
