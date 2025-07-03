@@ -45,6 +45,17 @@ impl Resource {
     pub fn parse_language_identifier(&self) -> Option<LanguageIdentifier> {
         self.metadata.language.parse().ok()
     }
+
+    /// Check if this resource has a specific language.
+    pub fn has_language(&self, lang: &str) -> bool {
+        match (
+            self.parse_language_identifier(),
+            lang.parse::<LanguageIdentifier>(),
+        ) {
+            (Some(lang_id), Ok(target_lang)) => lang_id.language == target_lang.language,
+            _ => false,
+        }
+    }
 }
 
 /// Free-form metadata for the resource as a whole.
