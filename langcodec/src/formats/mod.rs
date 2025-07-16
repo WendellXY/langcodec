@@ -15,6 +15,7 @@ use std::{
 
 // Reexporting the formats for easier access
 pub use android_strings::Format as AndroidStringsFormat;
+pub use csv::CSVRecord;
 pub use strings::Format as StringsFormat;
 pub use xcstrings::Format as XcstringsFormat;
 
@@ -31,6 +32,8 @@ pub enum FormatType {
     Strings(Option<String>),
     /// Apple `.xcstrings` format (no language code).
     Xcstrings,
+    /// CSV format, with optional language code.
+    CSV(Option<String>),
 }
 
 /// Implements [`std::fmt::Display`] for [`FormatType`].
@@ -54,6 +57,7 @@ impl Display for FormatType {
             FormatType::AndroidStrings(_) => write!(f, "android"),
             FormatType::Strings(_) => write!(f, "strings"),
             FormatType::Xcstrings => write!(f, "xcstrings"),
+            FormatType::CSV(_) => write!(f, "csv"),
         }
     }
 }
@@ -84,6 +88,7 @@ impl FromStr for FormatType {
             "android" | "androidstrings" | "xml" => Ok(FormatType::AndroidStrings(None)),
             "strings" => Ok(FormatType::Strings(None)),
             "xcstrings" => Ok(FormatType::Xcstrings),
+            "csv" => Ok(FormatType::CSV(None)),
             other => Err(Error::UnknownFormat(other.to_string())),
         }
     }
@@ -96,6 +101,7 @@ impl FormatType {
             FormatType::AndroidStrings(_) => "xml",
             FormatType::Strings(_) => "strings",
             FormatType::Xcstrings => "xcstrings",
+            FormatType::CSV(_) => "csv",
         }
     }
 
@@ -105,6 +111,7 @@ impl FormatType {
             FormatType::AndroidStrings(lang) => lang.as_ref(),
             FormatType::Strings(lang) => lang.as_ref(),
             FormatType::Xcstrings => None,
+            FormatType::CSV(lang) => lang.as_ref(),
         }
     }
 
@@ -114,6 +121,7 @@ impl FormatType {
             FormatType::AndroidStrings(_) => FormatType::AndroidStrings(lang),
             FormatType::Strings(_) => FormatType::Strings(lang),
             FormatType::Xcstrings => FormatType::Xcstrings,
+            FormatType::CSV(_) => FormatType::CSV(lang),
         }
     }
 

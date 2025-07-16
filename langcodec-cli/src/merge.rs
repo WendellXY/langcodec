@@ -76,6 +76,15 @@ pub fn run_merge_command(
                 std::process::exit(1);
             }
         }
+        langcodec::formats::FormatType::CSV(_) => {
+            use langcodec::formats::CSVRecord;
+            if let Err(e) =
+                Vec::<CSVRecord>::try_from(merged_resources).and_then(|f| f.write_to(&output))
+            {
+                eprintln!("Error writing output: {}", e);
+                std::process::exit(1);
+            }
+        }
     }
 }
 

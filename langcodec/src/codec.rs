@@ -9,6 +9,7 @@
 ///
 use std::path::Path;
 
+use crate::formats::CSVRecord;
 use crate::{error::Error, formats::*, traits::Parser, types::Resource};
 
 /// Represents a collection of localized resources and provides methods to read,
@@ -92,6 +93,9 @@ impl Codec {
                 vec![Resource::from(AndroidStringsFormat::read_from(path)?)]
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
+            FormatType::CSV(_) => {
+                vec![Resource::from(Vec::<CSVRecord>::read_from(path)?)]
+            }
         };
 
         for new_resource in &mut new_resources {
@@ -129,6 +133,7 @@ impl Codec {
             Some("xml") => FormatType::AndroidStrings(lang),
             Some("strings") => FormatType::Strings(lang),
             Some("xcstrings") => FormatType::Xcstrings,
+            Some("csv") => FormatType::CSV(lang),
             extension => {
                 return Err(Error::UnsupportedFormat(format!(
                     "Unsupported file extension: {:?}.",
@@ -219,7 +224,7 @@ fn infer_language_from_path<P: AsRef<Path>>(
     format_type: &FormatType,
 ) -> Result<Option<String>, Error> {
     match &format_type {
-        FormatType::AndroidStrings(lang) | FormatType::Strings(lang) => {
+        FormatType::AndroidStrings(lang) | FormatType::Strings(lang) | FormatType::CSV(lang) => {
             let processed_lang = if let Some(lang) = lang {
                 lang.clone()
             } else {
@@ -266,6 +271,7 @@ fn write_resources_to_file(resources: &[Resource], file_path: &String) -> Result
             Some("AndroidStrings") => AndroidStringsFormat::from(first.clone()).write_to(path)?,
             Some("Strings") => StringsFormat::try_from(first.clone())?.write_to(path)?,
             Some("Xcstrings") => XcstringsFormat::try_from(resources.to_vec())?.write_to(path)?,
+            Some("CSV") => Vec::<CSVRecord>::try_from(first.clone())?.write_to(path)?,
             _ => Err(Error::UnsupportedFormat(format!(
                 "Unsupported format: {:?}",
                 first.metadata.custom.get("format")
@@ -330,6 +336,7 @@ pub fn convert<P: AsRef<Path>>(
         FormatType::Xcstrings => {
             Vec::<crate::types::Resource>::try_from(XcstringsFormat::read_from(&input)?)?
         }
+        FormatType::CSV(_) => vec![Vec::<CSVRecord>::read_from(&input)?.into()],
     };
 
     // Helper to extract resource by language if present, or first one
@@ -362,6 +369,16 @@ pub fn convert<P: AsRef<Path>>(
             }
         }
         FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(&output),
+        FormatType::CSV(lang) => {
+            let resource = pick_resource(lang);
+            if let Some(res) = resource {
+                Vec::<CSVRecord>::try_from(res)?.write_to(&output)
+            } else {
+                Err(Error::InvalidResource(
+                    "No matching resource for output language.".to_string(),
+                ))
+            }
+        }
     }
 }
 
@@ -395,6 +412,7 @@ pub fn infer_format_from_extension<P: AsRef<Path>>(path: P) -> Option<FormatType
         Some("xml") => Some(FormatType::AndroidStrings(None)),
         Some("strings") => Some(FormatType::Strings(None)),
         Some("xcstrings") => Some(FormatType::Xcstrings),
+        Some("csv") => Some(FormatType::CSV(None)),
         _ => None,
     }
 }
@@ -438,7 +456,7 @@ pub fn infer_format_from_path<P: AsRef<Path>>(path: P) -> Option<FormatType> {
     match infer_format_from_extension(&path) {
         Some(format) => match format {
             FormatType::Xcstrings => Some(format),
-            FormatType::AndroidStrings(_) | FormatType::Strings(_) => {
+            FormatType::AndroidStrings(_) | FormatType::Strings(_) | FormatType::CSV(_) => {
                 let lang = infer_language_from_path(&path, &format).ok().flatten();
                 Some(format.with_language(lang))
             }
