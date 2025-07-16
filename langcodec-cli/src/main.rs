@@ -1,9 +1,10 @@
+mod merge;
 mod view;
 
+use crate::merge::{ConflictStrategy, run_merge_command};
+use crate::view::print_view;
 use clap::{Parser, Subcommand};
 use langcodec::{Codec, convert_auto};
-
-use crate::view::print_view;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -39,6 +40,22 @@ enum Commands {
         #[arg(long)]
         full: bool,
     },
+
+    /// Merge multiple localization files of the same format into one output file.
+    Merge {
+        /// The input files to merge
+        #[arg(short, long, num_args = 1..)]
+        inputs: Vec<String>,
+        /// The output file to write the merged results to
+        #[arg(short, long)]
+        output: String,
+        /// Strategy for handling conflicts
+        #[arg(short, long, default_value = "last")]
+        strategy: ConflictStrategy,
+        /// Language code to use for all input files (e.g., "en", "fr")
+        #[arg(short, long)]
+        lang: Option<String>,
+    },
 }
 
 fn main() {
@@ -58,6 +75,14 @@ fn main() {
                 .read_file_by_extension(input, Option::None)
                 .expect("Failed to read file");
             print_view(&codec, &lang, full);
+        }
+        Commands::Merge {
+            inputs,
+            output,
+            strategy,
+            lang,
+        } => {
+            run_merge_command(inputs, output, strategy, lang);
         }
     }
 }
