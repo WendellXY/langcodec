@@ -136,15 +136,22 @@ impl Parser for Format {
                     value = value[1..value.len() - 1].to_string(); // Remove surrounding quotes
                 }
 
+                let comment = match last_comment {
+                    Some(comment) if comment.starts_with("/*") || comment.starts_with("//") => {
+                        Some(comment.trim().to_string())
+                    }
+                    _ => None,
+                };
+
+                // Clear the last_comment after using it
+                if comment.is_some() {
+                    last_comment = None;
+                }
+
                 Some(Pair {
                     key,
                     value,
-                    comment: match last_comment {
-                        Some(comment) if comment.starts_with("/*") || comment.starts_with("//") => {
-                            Some(comment.trim().to_string())
-                        }
-                        _ => None,
-                    },
+                    comment,
                 })
             })
             .collect();
