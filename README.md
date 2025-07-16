@@ -2,7 +2,7 @@
 
 **A universal localization file toolkit in Rust.**
 
-`langcodec` provides format-agnostic parsing, conversion, and serialization for major localization formats, including Apple `.strings`, `.xcstrings`, and Android `strings.xml`. It enables seamless conversion between formats, powerful internal data modeling, and extensibility for new formats.
+`langcodec` provides format-agnostic parsing, conversion, merging, and serialization for major localization formats, including Apple `.strings`, `.xcstrings`, Android `strings.xml`, and CSV. It enables seamless conversion and merging between formats, powerful internal data modeling, and extensibility for new formats.
 
 ---
 
@@ -14,7 +14,7 @@ This is an early `0.1.0` release. The API may evolve as development continues. C
 
 ## Features
 
-- ✨ Parse, write, and convert between multiple localization file formats
+- ✨ Parse, write, convert, and merge multiple localization file formats
 - 🦀 Idiomatic, modular, and ergonomic Rust API
 - 📦 Designed for CLI tools, CI/CD pipelines, and library integration
 - 🔄 Unified internal model (`Resource`) for lossless format-agnostic processing
@@ -25,15 +25,19 @@ This is an early `0.1.0` release. The API may evolve as development continues. C
 
 ## Supported Formats
 
-| Format                | Parse | Write | Plural Support   | Comments |
-|-----------------------|:-----:|:-----:|:----------------:|----------|
-| Apple `.strings`      |  ✔️   |  ✔️   |   No             |  ✔️      |
-| Apple `.xcstrings`    |  ✔️   |  ✔️   |   Yes<sup>*</sup>|  ✔️      |
-| Android `strings.xml` |  ✔️   |  ✔️   |   No<sup>*</sup> |  ✔️      |
-| CSV                   |  ✔️   |  ✔️   |   No             |  –       |
+<!-- markdownlint-disable no-inline-html no-space-in-emphasis -->
+
+| Format                | Parse | Write | Convert | Merge | Plural Support   | Comments |
+|-----------------------|:-----:|:-----:|:-------:|:-----:|:----------------:|----------|
+| Apple `.strings`      |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No             |  ✔️      |
+| Apple `.xcstrings`    |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   Yes<sup>*</sup>|  ✔️      |
+| Android `strings.xml` |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No<sup>*</sup> |  ✔️      |
+| CSV                   |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No             |  –       |
 
 <sup>* Plural support for `.xcstrings` is not under beta testing, and may not be fully implemented yet.</sup>
 <sup>* Plural support for Android may be added in the future.</sup>
+
+<!-- markdownlint-enable no-inline-html no-space-in-emphasis -->
 
 ---
 
@@ -73,22 +77,59 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ---
 
-### CLI (Planned)
+### CLI
 
-A CLI tool will be provided for easy conversion and batch processing:
+A CLI tool is provided for easy conversion, merging, and debugging of localization files.
+
+#### Install (from source)
 
 ```sh
-langcodec convert --from Localizable.strings --to strings.xml
+cargo install --path langcodec-cli
 ```
 
-*Stay tuned for CLI usage and installation instructions!*  
-*User feedback is encouraged to help prioritize CLI features and improvements.*
+#### Commands
+
+- **Convert** between formats:
+
+  ```sh
+  langcodec convert -i input.strings -o output.xml
+  langcodec convert -i input.csv -o output.strings
+  ```
+
+- **Merge** multiple files of the same format:
+
+  ```sh
+  langcodec merge -i file1.csv file2.csv -o merged.csv --lang en --strategy last
+  langcodec merge -i en.lproj/Localizable.strings fr.lproj/Localizable.strings -o merged.strings --lang en
+  ```
+
+  - `--strategy` can be `last` (default), `first`, or `error` (fail on conflict).
+  - `--lang` is required for formats that need a language code (e.g., CSV, .strings).
+
+- **Debug**: Output a file's parsed representation as JSON:
+
+  ```sh
+  langcodec debug -i input.csv --lang en
+  langcodec debug -i input.strings --lang en -o output.json
+  ```
+
+- **View**: Pretty-print entries in a localization file:
+
+  ```sh
+  langcodec view -i input.strings --lang en
+  ```
+
+#### Notes
+
+- For CSV files, the language code (`--lang`) is required for most operations.
+- All commands support Apple `.strings`, `.xcstrings`, Android `strings.xml`, and CSV.
+- The CLI will error if you try to merge files of different formats.
 
 ---
 
 ## Data Model
 
-At the core of `langcodec` is the `Resource` struct—an expressive, format-agnostic model for localization data.  
+At the core of `langcodec` is the `Resource` struct—an expressive, format-agnostic model for localization data.
 See [`src/types.rs`](src/types.rs) for details.
 
 ```rust
@@ -104,22 +145,28 @@ Each `Entry` supports singular and plural translations, comments, status, and cu
 
 ## Error Handling
 
-All public APIs use the crate’s own `Error` enum, which provides meaningful variants for parsing, I/O, and format mismatches.
+All public APIs use the crate's own `Error` enum, which provides meaningful variants for parsing, I/O, and format mismatches.
 
 ---
 
 ## Extending
 
-Adding a new localization format?  
-Implement the `Parser` trait for your format struct in `formats/`, and add `From`/`TryFrom` conversions to and from `Resource`.  
+Adding a new localization format?
+Implement the `Parser` trait for your format struct in `formats/`, and add `From`/`TryFrom` conversions to and from `Resource`.
 PRs welcome!
+
+---
+
+## Test Data
+
+Sample test files for all supported formats are located in `tests/data/lib/` and `tests/data/cli/` at the workspace root. Use these for development, testing, and examples.
 
 ---
 
 ## Contributing
 
-Contributions are welcome!  
-Please open issues for bugs, suggestions, or new format support.  
+Contributions are welcome!
+Please open issues for bugs, suggestions, or new format support.
 See [CONTRIBUTING.md](CONTRIBUTING.md) (to be written) for guidelines.
 
 ---
@@ -139,4 +186,4 @@ This project is licensed under the MIT License.
 
 ## Status and Roadmap
 
-`langcodec` aims to be a universal, format-agnostic localization toolkit that simplifies working with diverse localization file formats. The current focus is on stabilizing core features, expanding format support, and developing a user-friendly CLI. We welcome your issues, feature requests, and discussions at the project’s issue tracker.
+`langcodec` aims to be a universal, format-agnostic localization toolkit that simplifies working with diverse localization file formats. The current focus is on stabilizing core features, expanding format support, and developing a user-friendly CLI. We welcome your issues, feature requests, and discussions at the project's issue tracker.
