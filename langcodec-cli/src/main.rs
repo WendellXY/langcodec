@@ -1,6 +1,8 @@
+mod debug;
 mod merge;
 mod view;
 
+use crate::debug::run_debug_command;
 use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::view::print_view;
 use clap::{Parser, Subcommand};
@@ -56,6 +58,19 @@ enum Commands {
         #[arg(short, long)]
         lang: Option<String>,
     },
+
+    /// Debug: Read a localization file and output as JSON.
+    Debug {
+        /// The input file to debug
+        #[arg(short, long)]
+        input: String,
+        /// Language code to use (e.g., "en", "fr")
+        #[arg(short, long)]
+        lang: Option<String>,
+        /// Output file (defaults to stdout)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
 }
 
 fn main() {
@@ -83,6 +98,13 @@ fn main() {
             lang,
         } => {
             run_merge_command(inputs, output, strategy, lang);
+        }
+        Commands::Debug {
+            input,
+            lang,
+            output,
+        } => {
+            run_debug_command(input, lang, output);
         }
     }
 }
