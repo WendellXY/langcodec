@@ -1,0 +1,4 @@
+/* CLI Conflict test */
+"welcome" = "Welcome!";
+"welcome" = "Hi!";
+"exit" = "Exit"; 

@@ -1,0 +1,4 @@
+/* Conflict test localization */
+"hello" = "Hello";
+"goodbye" = "Bye";
+"hello" = "Hi"; 

@@ -1,0 +1,4 @@
+/* English localization */
+"hello" = "Hello";
+"goodbye" = "Goodbye";
+"thanks" = "Thank you!"; 

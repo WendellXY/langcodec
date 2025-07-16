@@ -1,0 +1,4 @@
+/* French localization */
+"hello" = "Bonjour";
+"goodbye" = "Au revoir";
+"thanks" = "Merci !"; 

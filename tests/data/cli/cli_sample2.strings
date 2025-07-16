@@ -1,0 +1,4 @@
+/* CLI English sample 2 */
+"welcome" = "Hello!";
+"exit" = "Quit";
+"about" = "About this app"; 
