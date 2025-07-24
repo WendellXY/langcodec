@@ -1,6 +1,6 @@
 [package]
 name = "langcodec"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "Universal localization file toolkit for Rust. Supports Apple, Android, and CSV formats."
 license = "MIT"
