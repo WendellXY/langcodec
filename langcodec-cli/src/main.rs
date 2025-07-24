@@ -35,7 +35,7 @@ enum Commands {
         /// The output file to write the results to
         #[arg(short, long)]
         output: String,
-        /// Optional input format hint (e.g., "json-language-map", "yaml-language-map", "strings", "android")
+        /// Optional input format hint (e.g., "json-language-map", "json-array-language-map", "yaml-language-map", "strings", "android")
         #[arg(long)]
         input_format: Option<String>,
         /// Optional output format hint (e.g., "xcstrings", "strings", "android")
@@ -229,7 +229,7 @@ fn print_conversion_error(input: &str, output: &str) {
         "For JSON files, the command will try both standard Resource format and key-value pairs."
     );
     eprintln!("For YAML files, the command will try YAML language map format.");
-    eprintln!("Custom formats: json-language-map, yaml-language-map");
+    eprintln!("Custom formats: json-language-map, json-array-language-map, yaml-language-map");
 }
 
 /// Convert a Vec<Resource> to a specific output format using the lib crate

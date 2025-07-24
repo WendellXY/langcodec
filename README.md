@@ -94,7 +94,13 @@ cargo install --path langcodec-cli
   ```sh
   langcodec convert -i input.strings -o output.xml
   langcodec convert -i input.csv -o output.strings
+  langcodec convert -i input.json -o output.xcstrings
   ```
+
+  The convert command automatically detects input and output formats from file extensions.
+  For JSON files, it will try multiple parsing strategies:
+  - Standard Resource format (if supported by langcodec)
+  - JSON key-value pairs (for custom JSON formats)
 
 - **Merge** multiple files of the same format:
 
@@ -123,7 +129,51 @@ cargo install --path langcodec-cli
 
 - For CSV files, the language code (`--lang`) is required for most operations.
 - All commands support Apple `.strings`, `.xcstrings`, Android `strings.xml`, and CSV.
+- The convert command also supports JSON files with key-value pairs.
 - The CLI will error if you try to merge files of different formats.
+
+#### Custom Formats
+
+The CLI supports additional custom formats for specialized use cases:
+
+**JSON Language Map** (`json-language-map`):
+```json
+{
+    "key": "hello_world",
+    "en": "Hello, World!",
+    "fr": "Bonjour, le monde!"
+}
+```
+
+**JSON Array Language Map** (`json-array-language-map`):
+```json
+[
+    {
+        "key": "hello_world",
+        "en": "Hello, World!",
+        "fr": "Bonjour, le monde!"
+    },
+    {
+        "key": "welcome_message",
+        "en": "Welcome to our app!",
+        "fr": "Bienvenue dans notre application!"
+    }
+]
+```
+
+**YAML Language Map** (`yaml-language-map`):
+```yaml
+key: hello_world
+en: Hello, World!
+fr: Bonjour, le monde!
+```
+
+Use these formats with the `--input-format` flag:
+```sh
+langcodec convert -i input.json -o output.xcstrings --input-format json-language-map
+langcodec convert -i input.json -o output.xcstrings --input-format json-array-language-map
+langcodec convert -i input.yaml -o output.xcstrings --input-format yaml-language-map
+```
 
 ---
 
