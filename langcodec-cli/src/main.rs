@@ -5,7 +5,7 @@ mod transformers;
 mod view;
 
 use crate::debug::run_debug_command;
-use crate::formats::{CustomFormat, parse_custom_format};
+use crate::formats::parse_custom_format;
 use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::transformers::custom_format_to_resource;
 use crate::view::print_view;
@@ -144,11 +144,26 @@ fn run_unified_convert_command(
         || input.ends_with(".yml")
         || input_format.is_some()
     {
-        if let Err(e) = try_custom_format_conversion(&input, &output, &input_format) {
-            eprintln!("Error: {}", e);
-            std::process::exit(1);
+        // For JSON files without explicit format, try standard format detection first
+        if input.ends_with(".json") && input_format.is_none() {
+            // Try to use the standard format detection which will show proper JSON parsing errors
+            if let Err(e) = convert_auto(&input, &output) {
+                // If standard detection fails, try custom formats
+                if let Ok(()) = try_custom_format_conversion(&input, &output, &input_format) {
+                    return;
+                }
+                // If both fail, show the standard error message
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        } else {
+            // For YAML files or when format is specified, try custom formats directly
+            if let Err(e) = try_custom_format_conversion(&input, &output, &input_format) {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            return;
         }
-        return;
     }
 
     // Strategy 3: If we have format hints, try with explicit formats
@@ -174,13 +189,17 @@ fn try_custom_format_conversion(
         println!("Using custom format: {}", format_str);
         format
     } else {
-        // Auto-detect format based on file extension
-        if input.ends_with(".yaml") || input.ends_with(".yml") {
-            println!("Standard conversion failed, trying YAML language map format...");
-            CustomFormat::YAMLLanguageMap
+        // Auto-detect format based on file content
+        let file_content = std::fs::read_to_string(input)
+            .map_err(|e| format!("Error reading file {}: {}", input, e))?;
+
+        if let Some(detected_format) = formats::detect_custom_format(input, &file_content) {
+            println!("Auto-detected custom format: {:?}", detected_format);
+            detected_format
         } else {
-            println!("Standard conversion failed, trying JSON language map format...");
-            CustomFormat::JSONLanguageMap
+            return Err(
+                "Could not auto-detect custom format. Please specify --input-format.".to_string(),
+            );
         }
     };
 
@@ -229,7 +248,10 @@ fn print_conversion_error(input: &str, output: &str) {
         "For JSON files, the command will try both standard Resource format and key-value pairs."
     );
     eprintln!("For YAML files, the command will try YAML language map format.");
-    eprintln!("Custom formats: json-language-map, json-array-language-map, yaml-language-map");
+    eprintln!(
+        "Custom formats: {}",
+        formats::get_supported_custom_formats()
+    );
 }
 
 /// Convert a Vec<Resource> to a specific output format using the lib crate

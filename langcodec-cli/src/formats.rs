@@ -73,3 +73,48 @@ impl FromStr for CustomFormat {
 pub fn parse_custom_format(s: &str) -> Result<CustomFormat, String> {
     CustomFormat::from_str(s)
 }
+
+/// Detect if a file is a custom format based on its content and extension.
+/// Returns the detected custom format if found, None otherwise.
+pub fn detect_custom_format(file_path: &str, file_content: &str) -> Option<CustomFormat> {
+    let extension = std::path::Path::new(file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    match extension.as_str() {
+        "json" => {
+            // Try to parse as JSON object first (JSONLanguageMap)
+            if let Ok(_) = serde_json::from_str::<serde_json::Value>(file_content) {
+                // Check if it's an object (not an array)
+                if let Ok(obj) = serde_json::from_str::<
+                    std::collections::HashMap<String, serde_json::Value>,
+                >(file_content)
+                {
+                    if !obj.is_empty() {
+                        return Some(CustomFormat::JSONLanguageMap);
+                    }
+                }
+                // Check if it's an array (JSONArrayLanguageMap)
+                if let Ok(_) = serde_json::from_str::<Vec<serde_json::Value>>(file_content) {
+                    return Some(CustomFormat::JSONArrayLanguageMap);
+                }
+            }
+        }
+        "yaml" | "yml" => {
+            // Try to parse as YAML
+            if let Ok(_) = serde_yaml::from_str::<serde_yaml::Value>(file_content) {
+                return Some(CustomFormat::YAMLLanguageMap);
+            }
+        }
+        _ => {}
+    }
+
+    None
+}
+
+/// Get a list of all supported custom formats for help messages.
+pub fn get_supported_custom_formats() -> &'static str {
+    "json-language-map, json-array-language-map, yaml-language-map"
+}
