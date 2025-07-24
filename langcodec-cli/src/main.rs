@@ -1,12 +1,16 @@
 mod debug;
+mod formats;
 mod merge;
+mod transformers;
 mod view;
 
 use crate::debug::run_debug_command;
+use crate::formats::{CustomFormat, parse_custom_format};
 use crate::merge::{ConflictStrategy, run_merge_command};
+use crate::transformers::custom_format_to_resource;
 use crate::view::print_view;
 use clap::{Parser, Subcommand};
-use langcodec::{Codec, convert_auto};
+use langcodec::{Codec, convert_auto, formats::FormatType, traits::Parser as CodecParser};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -19,6 +23,11 @@ struct Args {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Convert localization files between formats.
+    ///
+    /// This command automatically detects input and output formats from file extensions.
+    /// For JSON files, it will try multiple parsing strategies:
+    /// - Standard Resource format (if supported by langcodec)
+    /// - JSON key-value pairs (for custom JSON formats)
     Convert {
         /// The input file to process
         #[arg(short, long)]
@@ -26,6 +35,12 @@ enum Commands {
         /// The output file to write the results to
         #[arg(short, long)]
         output: String,
+        /// Optional input format hint (e.g., "json-language-map", "yaml-language-map", "strings", "android")
+        #[arg(long)]
+        input_format: Option<String>,
+        /// Optional output format hint (e.g., "xcstrings", "strings", "android")
+        #[arg(long)]
+        output_format: Option<String>,
     },
 
     /// View localization files.
@@ -77,11 +92,13 @@ fn main() {
     let args = Args::parse();
 
     match args.commands {
-        Commands::Convert { input, output } => {
-            // Call the conversion function with the provided input and output files
-            if let Err(e) = convert_auto(input, output) {
-                eprintln!("Error: {}", e);
-            }
+        Commands::Convert {
+            input,
+            output,
+            input_format,
+            output_format,
+        } => {
+            run_unified_convert_command(input, output, input_format, output_format);
         }
         Commands::View { input, lang, full } => {
             // Read the input file and print all the entries
@@ -105,6 +122,153 @@ fn main() {
             output,
         } => {
             run_debug_command(input, lang, output);
+        }
+    }
+}
+
+fn run_unified_convert_command(
+    input: String,
+    output: String,
+    input_format: Option<String>,
+    output_format: Option<String>,
+) {
+    // Strategy 1: Try standard lib crate conversion first
+    if let Ok(()) = convert_auto(&input, &output) {
+        println!("Successfully converted using standard format detection");
+        return;
+    }
+
+    // Strategy 2: Try custom formats for JSON files or when format is specified
+    if input.ends_with(".json")
+        || input.ends_with(".yaml")
+        || input.ends_with(".yml")
+        || input_format.is_some()
+    {
+        if let Err(e) = try_custom_format_conversion(&input, &output, &input_format) {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // Strategy 3: If we have format hints, try with explicit formats
+    if let (Some(_input_fmt), Some(_output_fmt)) = (input_format, output_format) {
+        println!("Trying with explicit format hints...");
+        // TODO: Implement explicit format conversion
+        eprintln!("Explicit format conversion not yet implemented");
+        std::process::exit(1);
+    }
+
+    // If all strategies failed, provide helpful error message
+    print_conversion_error(&input, &output);
+    std::process::exit(1);
+}
+
+fn try_custom_format_conversion(
+    input: &str,
+    output: &str,
+    input_format: &Option<String>,
+) -> Result<(), String> {
+    let custom_format = if let Some(format_str) = input_format {
+        let format = parse_custom_format(format_str)?;
+        println!("Using custom format: {}", format_str);
+        format
+    } else {
+        // Auto-detect format based on file extension
+        if input.ends_with(".yaml") || input.ends_with(".yml") {
+            println!("Standard conversion failed, trying YAML language map format...");
+            CustomFormat::YAMLLanguageMap
+        } else {
+            println!("Standard conversion failed, trying JSON language map format...");
+            CustomFormat::JSONLanguageMap
+        }
+    };
+
+    // Convert custom format to Resource
+    let resources = custom_format_to_resource(input.to_string(), custom_format)?;
+
+    // Get output format type
+    let output_format_type = langcodec::infer_format_from_extension(output)
+        .ok_or_else(|| format!("Cannot infer output format from extension: {}", output))?;
+
+    // Convert to target format
+    convert_resources_to_format(resources, output, output_format_type)
+        .map_err(|e| format!("Error converting to output format: {}", e))?;
+
+    println!("Successfully converted custom format to {}", output);
+    Ok(())
+}
+
+fn print_conversion_error(input: &str, output: &str) {
+    eprintln!("Error: Could not convert {} to {}", input, output);
+    eprintln!();
+    eprintln!("Tried the following strategies:");
+    eprintln!("1. Standard format detection from file extensions");
+    if input.ends_with(".json") {
+        eprintln!("2. Custom JSON format conversion");
+    }
+    if input.ends_with(".yaml") || input.ends_with(".yml") {
+        eprintln!("2. Custom YAML format conversion");
+    }
+    eprintln!("");
+    eprintln!("Supported input formats:");
+    eprintln!("- .strings (Apple strings files)");
+    eprintln!("- .xml (Android strings files)");
+    eprintln!("- .xcstrings (Apple xcstrings files)");
+    eprintln!("- .csv (CSV files)");
+    eprintln!("- .json (JSON key-value pairs or Resource format)");
+    eprintln!("- .yaml/.yml (YAML language map format)");
+    eprintln!("");
+    eprintln!("Supported output formats:");
+    eprintln!("- .strings (Apple strings files)");
+    eprintln!("- .xml (Android strings files)");
+    eprintln!("- .xcstrings (Apple xcstrings files)");
+    eprintln!("- .csv (CSV files)");
+    eprintln!("");
+    eprintln!(
+        "For JSON files, the command will try both standard Resource format and key-value pairs."
+    );
+    eprintln!("For YAML files, the command will try YAML language map format.");
+    eprintln!("Custom formats: json-language-map, yaml-language-map");
+}
+
+/// Convert a Vec<Resource> to a specific output format using the lib crate
+fn convert_resources_to_format(
+    resources: Vec<langcodec::Resource>,
+    output: &str,
+    output_format: FormatType,
+) -> Result<(), langcodec::Error> {
+    use langcodec::formats::{AndroidStringsFormat, CSVRecord, StringsFormat, XcstringsFormat};
+    use std::path::Path;
+
+    match output_format {
+        FormatType::AndroidStrings(_) => {
+            if let Some(resource) = resources.first() {
+                AndroidStringsFormat::from(resource.clone()).write_to(Path::new(output))
+            } else {
+                Err(langcodec::Error::InvalidResource(
+                    "No resources to convert".to_string(),
+                ))
+            }
+        }
+        FormatType::Strings(_) => {
+            if let Some(resource) = resources.first() {
+                StringsFormat::try_from(resource.clone())?.write_to(Path::new(output))
+            } else {
+                Err(langcodec::Error::InvalidResource(
+                    "No resources to convert".to_string(),
+                ))
+            }
+        }
+        FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(Path::new(output)),
+        FormatType::CSV(_) => {
+            if let Some(resource) = resources.first() {
+                Vec::<CSVRecord>::try_from(resource.clone())?.write_to(Path::new(output))
+            } else {
+                Err(langcodec::Error::InvalidResource(
+                    "No resources to convert".to_string(),
+                ))
+            }
         }
     }
 }
