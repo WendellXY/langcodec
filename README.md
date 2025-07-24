@@ -137,6 +137,7 @@ cargo install --path langcodec-cli
 The CLI supports additional custom formats for specialized use cases:
 
 **JSON Language Map** (`json-language-map`):
+
 ```json
 {
     "key": "hello_world",
@@ -146,6 +147,8 @@ The CLI supports additional custom formats for specialized use cases:
 ```
 
 **JSON Array Language Map** (`json-array-language-map`):
+
+<!-- cspell:disable -->
 ```json
 [
     {
@@ -160,8 +163,10 @@ The CLI supports additional custom formats for specialized use cases:
     }
 ]
 ```
+<!-- cspell:enable -->
 
 **YAML Language Map** (`yaml-language-map`):
+
 ```yaml
 key: hello_world
 en: Hello, World!
@@ -169,6 +174,7 @@ fr: Bonjour, le monde!
 ```
 
 Use these formats with the `--input-format` flag:
+
 ```sh
 langcodec convert -i input.json -o output.xcstrings --input-format json-language-map
 langcodec convert -i input.json -o output.xcstrings --input-format json-array-language-map
