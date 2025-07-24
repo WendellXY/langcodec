@@ -151,8 +151,11 @@ impl TryFrom<Format> for Vec<Resource> {
 #[serde(rename_all = "camelCase")]
 pub struct Item {
     pub localizations: HashMap<String, Localization>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub extraction_state: Option<ExtractionState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub should_translate: Option<bool>,
 }
 
@@ -255,7 +258,9 @@ impl FromStr for ExtractionState {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Localization {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub string_unit: Option<StringUnit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub variations: Option<Variations>,
 }
 
@@ -296,6 +301,7 @@ pub struct StringUnit {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Variations {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub plural: Option<HashMap<PluralCategory, PluralVariation>>,
 }
 
@@ -316,5 +322,6 @@ impl Variations {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluralVariation {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub string_unit: Option<StringUnit>,
 }
