@@ -17,6 +17,16 @@ fn test_parse_custom_format_yaml() {
 }
 
 #[test]
+fn test_parse_custom_format_json_array() {
+    let result = parse_custom_format("json-array-language-map");
+    assert!(result.is_ok());
+    assert!(matches!(
+        result.unwrap(),
+        CustomFormat::JSONArrayLanguageMap
+    ));
+}
+
+#[test]
 fn test_parse_custom_format_case_insensitive() {
     let result = parse_custom_format("JSON-LANGUAGE-MAP");
     assert!(result.is_ok());
@@ -81,6 +91,94 @@ fn test_json_language_map_transformation() {
     assert_eq!(
         fr_resource.entries[0].value.plain_translation_string(),
         "Bonjour, le monde!"
+    );
+}
+
+#[test]
+fn test_json_array_language_map_transformation() {
+    let temp_dir = TempDir::new().unwrap();
+    let json_file = temp_dir.path().join("test_array.json");
+
+    let json_content = r#"[
+        {
+            "key": "hello_world",
+            "en": "Hello, World!",
+            "fr": "Bonjour, le monde!"
+        },
+        {
+            "key": "welcome_message",
+            "en": "Welcome to our app!",
+            "fr": "Bienvenue dans notre application!"
+        }
+    ]"#;
+
+    fs::write(&json_file, json_content).unwrap();
+
+    let result = custom_format_to_resource(
+        json_file.to_string_lossy().to_string(),
+        CustomFormat::JSONArrayLanguageMap,
+    );
+    assert!(result.is_ok());
+
+    let resources = result.unwrap();
+    assert_eq!(resources.len(), 2); // en and fr
+
+    // Check English resource
+    let en_resource = resources
+        .iter()
+        .find(|r| r.metadata.language == "en")
+        .unwrap();
+    assert_eq!(en_resource.entries.len(), 2); // Two entries for English
+
+    // Check first English entry
+    let hello_entry = en_resource
+        .entries
+        .iter()
+        .find(|e| e.id == "hello_world")
+        .unwrap();
+    assert_eq!(
+        hello_entry.value.plain_translation_string(),
+        "Hello, World!"
+    );
+
+    // Check second English entry
+    let welcome_entry = en_resource
+        .entries
+        .iter()
+        .find(|e| e.id == "welcome_message")
+        .unwrap();
+    assert_eq!(
+        welcome_entry.value.plain_translation_string(),
+        "Welcome to our app!"
+    );
+
+    // Check French resource
+    let fr_resource = resources
+        .iter()
+        .find(|r| r.metadata.language == "fr")
+        .unwrap();
+    assert_eq!(fr_resource.entries.len(), 2); // Two entries for French
+
+    // Check first French entry
+    let bonjour_entry = fr_resource
+        .entries
+        .iter()
+        .find(|e| e.id == "hello_world")
+        .unwrap();
+    assert_eq!(
+        bonjour_entry.value.plain_translation_string(),
+        "Bonjour, le monde!"
+    );
+
+    // Check second French entry
+    let bienvenue_entry = fr_resource
+        .entries
+        .iter()
+        .find(|e| e.id == "welcome_message")
+        .unwrap();
+    assert_eq!(
+        bienvenue_entry.value.plain_translation_string(),
+        "Bienvenue dans notre application!"
     );
 }
 
@@ -211,4 +309,21 @@ fn test_nonexistent_file() {
     );
     assert!(result.is_err());
     assert!(result.unwrap_err().contains("Error reading file"));
+}
+
+#[test]
+fn test_json_array_transformation_invalid_json() {
+    let temp_dir = TempDir::new().unwrap();
+    let json_file = temp_dir.path().join("invalid_array.json");
+
+    let json_content = "[invalid json content";
+
+    fs::write(&json_file, json_content).unwrap();
+
+    let result = custom_format_to_resource(
+        json_file.to_string_lossy().to_string(),
+        CustomFormat::JSONArrayLanguageMap,
+    );
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("Error parsing JSON array"));
 }

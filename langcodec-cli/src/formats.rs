@@ -27,6 +27,26 @@ pub enum CustomFormat {
     /// fr: Bonjour, le monde!
     /// ```
     YAMLLanguageMap,
+
+    /// A JSON file which contains an array of language map objects.
+    ///
+    /// Each object contains a key and translations for different languages:
+    ///
+    /// ```json
+    /// [
+    ///     {
+    ///         "key": "hello_world",
+    ///         "en": "Hello, World!",
+    ///         "fr": "Bonjour, le monde!"
+    ///     },
+    ///     {
+    ///         "key": "welcome_message",
+    ///         "en": "Welcome to our app!",
+    ///         "fr": "Bienvenue dans notre application!"
+    ///     }
+    /// ]
+    /// ```
+    JSONArrayLanguageMap,
 }
 
 impl FromStr for CustomFormat {
@@ -37,10 +57,11 @@ impl FromStr for CustomFormat {
         //: cspell:disable
         match normalized.as_str() {
             "jsonlanguagemap" => Ok(CustomFormat::JSONLanguageMap),
+            "jsonarraylanguagemap" => Ok(CustomFormat::JSONArrayLanguageMap),
             "yamllanguagemap" => Ok(CustomFormat::YAMLLanguageMap),
             // "csvlanguages" => Ok(CustomFormat::CSVLanguages),
             _ => Err(format!(
-                "Unknown custom format: '{}'. Supported formats: json-language-map, yaml-language-map",
+                "Unknown custom format: '{}'. Supported formats: json-language-map, json-array-language-map, yaml-language-map",
                 s
             )),
         }

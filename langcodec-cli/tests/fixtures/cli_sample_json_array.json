@@ -1,0 +1,20 @@
+[
+    {
+        "key": "hello_world",
+        "en": "Hello, World!",
+        "fr": "Bonjour, le monde!",
+        "es": "¡Hola, mundo!"
+    },
+    {
+        "key": "welcome_message",
+        "en": "Welcome to our app!",
+        "fr": "Bienvenue dans notre application!",
+        "es": "¡Bienvenido a nuestra aplicación!"
+    },
+    {
+        "key": "goodbye",
+        "en": "Goodbye!",
+        "fr": "Au revoir!",
+        "es": "¡Adiós!"
+    }
+]

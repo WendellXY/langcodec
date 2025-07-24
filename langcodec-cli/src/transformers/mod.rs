@@ -1,5 +1,6 @@
 use crate::formats::CustomFormat;
 
+pub mod json_array_language_map;
 pub mod json_language_map;
 pub mod yaml_language_map;
 
@@ -10,6 +11,7 @@ pub fn custom_format_to_resource(
 ) -> Result<Vec<langcodec::Resource>, String> {
     match format {
         CustomFormat::JSONLanguageMap => json_language_map::transform(input),
+        CustomFormat::JSONArrayLanguageMap => json_array_language_map::transform(input),
         CustomFormat::YAMLLanguageMap => yaml_language_map::transform(input),
     }
 }
