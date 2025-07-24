@@ -47,7 +47,7 @@ impl TryFrom<Vec<Resource>> for Format {
                 // it should throw an error if it differs.
                 if source_language.is_empty() {
                     source_language = meta_source_language.clone();
-                } else {
+                } else if source_language != *meta_source_language {
                     return Err(Error::DataMismatch(format!(
                         "Source language mismatch: expected {}, found {}",
                         source_language, meta_source_language
@@ -64,7 +64,7 @@ impl TryFrom<Vec<Resource>> for Format {
                 // it should throw an error if it differs.
                 if version.is_empty() {
                     version = meta_version.clone();
-                } else {
+                } else if version != *meta_version {
                     return Err(Error::DataMismatch(format!(
                         "Version mismatch: expected {}, found {}",
                         version, meta_version
