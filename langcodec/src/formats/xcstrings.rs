@@ -163,7 +163,7 @@ impl Item {
     fn new(entry: Entry, language: String) -> Option<Self> {
         let mut localizations = HashMap::new();
 
-        let should_translate = Some(entry.status == EntryStatus::Translated);
+        let should_translate = Some(entry.status != EntryStatus::DoNotTranslate);
 
         match entry.value {
             Translation::Singular(value) => {
