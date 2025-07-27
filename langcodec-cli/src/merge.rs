@@ -33,39 +33,6 @@ pub fn run_merge_command(
             .unwrap(),
     );
 
-    // Infer format from the first input
-    progress_bar.set_message("Detecting input format...");
-    let first_format = langcodec::infer_format_from_extension(&inputs[0])
-        .or_else(|| langcodec::codec::infer_format_from_path(&inputs[0]))
-        .unwrap_or_else(|| {
-            progress_bar.finish_with_message("❌ Cannot infer format from extension");
-            eprintln!("Error: Cannot infer format from extension: {}", &inputs[0]);
-            std::process::exit(1);
-        });
-
-    // Validate that all input files have the same format
-    for (i, input) in inputs.iter().enumerate() {
-        let input_format = langcodec::infer_format_from_extension(input)
-            .or_else(|| langcodec::codec::infer_format_from_path(input));
-
-        if let Some(format) = input_format {
-            if format.to_string() != first_format.to_string() {
-                progress_bar.finish_with_message("❌ Input files have different formats");
-                eprintln!(
-                    "Error: Input file {} has format '{}' but expected '{}'",
-                    i + 1,
-                    format,
-                    first_format
-                );
-                std::process::exit(1);
-            }
-        } else {
-            progress_bar.finish_with_message("❌ Cannot infer format from input file");
-            eprintln!("Error: Cannot infer format from input file: {}", input);
-            std::process::exit(1);
-        }
-    }
-
     // Read all input files into a single codec
     let mut codec = Codec::new();
     for (i, input) in inputs.iter().enumerate() {
@@ -82,19 +49,27 @@ pub fn run_merge_command(
         }
     }
 
-    // Merge resources directly in the codec
+    // Validate that all resources have the same format
+    progress_bar.set_message("Validating format consistency...");
+    if let Err(e) = codec.validate() {
+        progress_bar.finish_with_message("❌ Validation failed");
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+
+    // Merge resources using the enhanced lib crate methods
     progress_bar.set_message("Merging resources...");
-    let merged = merge_resources_cli(&codec.resources, strategy);
-    if let Err(e) = merged {
+    let merged_resource = merge_resources_enhanced(&codec.resources, strategy);
+    if let Err(e) = merged_resource {
         progress_bar.finish_with_message("❌ Error merging resources");
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
-    let merged_resources = merged.unwrap();
+    let merged_resource = merged_resource.unwrap();
 
-    // Write merged resources to output file
+    // Write merged resource to output file
     progress_bar.set_message("Writing merged output...");
-    if let Err(e) = write_merged_resources_to_file(&merged_resources, &output, &first_format) {
+    if let Err(e) = write_merged_resource_to_file(&merged_resource, &output) {
         progress_bar.finish_with_message("❌ Error writing output file");
         eprintln!("Error writing to {}: {}", output, e);
         std::process::exit(1);
@@ -107,8 +82,8 @@ pub fn run_merge_command(
     ));
 }
 
-// Merge multiple resources into a single resource, handling conflicts.
-fn merge_resources_cli(
+// Enhanced merge function that leverages the new lib crate capabilities
+fn merge_resources_enhanced(
     resources: &[langcodec::Resource],
     conflict_strategy: ConflictStrategy,
 ) -> Result<langcodec::Resource, String> {
@@ -148,45 +123,38 @@ fn merge_resources_cli(
     Ok(merged)
 }
 
-// Write merged resources to a file based on the format.
-fn write_merged_resources_to_file(
-    merged_resources: &langcodec::Resource,
+// Simplified write function that uses the lib crate's format detection
+fn write_merged_resource_to_file(
+    merged_resource: &langcodec::Resource,
     output_path: &str,
-    format_type: &langcodec::formats::FormatType,
 ) -> Result<(), String> {
+    use langcodec::formats::{AndroidStringsFormat, CSVRecord, StringsFormat, XcstringsFormat};
+    use std::path::Path;
+
+    // Infer format from output path
+    let format_type = langcodec::infer_format_from_extension(output_path)
+        .ok_or_else(|| format!("Cannot infer format from output path: {}", output_path))?;
+
     match format_type {
         langcodec::formats::FormatType::AndroidStrings(_) => {
-            use langcodec::formats::AndroidStringsFormat;
-            if let Err(e) =
-                AndroidStringsFormat::from(merged_resources.clone()).write_to(output_path)
-            {
-                return Err(format!("Error writing AndroidStrings output: {}", e));
-            }
+            AndroidStringsFormat::from(merged_resource.clone())
+                .write_to(Path::new(output_path))
+                .map_err(|e| format!("Error writing AndroidStrings output: {}", e))
         }
         langcodec::formats::FormatType::Strings(_) => {
-            use langcodec::formats::StringsFormat;
-            if let Err(e) = StringsFormat::try_from(merged_resources.clone())
-                .and_then(|f| f.write_to(output_path))
-            {
-                return Err(format!("Error writing Strings output: {}", e));
-            }
+            StringsFormat::try_from(merged_resource.clone())
+                .and_then(|f| f.write_to(Path::new(output_path)))
+                .map_err(|e| format!("Error writing Strings output: {}", e))
         }
         langcodec::formats::FormatType::Xcstrings => {
-            use langcodec::formats::XcstringsFormat;
-            if let Err(e) = XcstringsFormat::try_from(vec![merged_resources.clone()])
-                .and_then(|f| f.write_to(output_path))
-            {
-                return Err(format!("Error writing Xcstrings output: {}", e));
-            }
+            XcstringsFormat::try_from(vec![merged_resource.clone()])
+                .and_then(|f| f.write_to(Path::new(output_path)))
+                .map_err(|e| format!("Error writing Xcstrings output: {}", e))
         }
         langcodec::formats::FormatType::CSV(_) => {
-            use langcodec::formats::CSVRecord;
-            if let Err(e) = Vec::<CSVRecord>::try_from(merged_resources.clone())
-                .and_then(|f| f.write_to(output_path))
-            {
-                return Err(format!("Error writing CSV output: {}", e));
-            }
+            Vec::<CSVRecord>::try_from(merged_resource.clone())
+                .and_then(|f| f.write_to(Path::new(output_path)))
+                .map_err(|e| format!("Error writing CSV output: {}", e))
         }
     }
-    Ok(())
 }

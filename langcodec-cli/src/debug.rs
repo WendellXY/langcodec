@@ -22,6 +22,16 @@ pub fn run_debug_command(input: String, lang: Option<String>, output: Option<Str
         std::process::exit(1);
     }
 
+    // Validate the codec using the new validation method
+    progress_bar.set_message("Validating resources...");
+    if let Err(validation_error) = codec.validate() {
+        progress_bar.finish_with_message("⚠️  Validation warnings found");
+        eprintln!("Warning: {}", validation_error);
+        // Continue anyway for debug purposes
+    } else {
+        progress_bar.set_message("✅ Resources validated successfully");
+    }
+
     // Convert to JSON
     progress_bar.set_message("Converting to JSON...");
     let json = serde_json::to_string_pretty(&*codec.resources).unwrap_or_else(|e| {
@@ -31,7 +41,7 @@ pub fn run_debug_command(input: String, lang: Option<String>, output: Option<Str
     });
 
     // Output to file or stdout
-    match output {
+    let output_to_file = match output {
         Some(output_path) => {
             progress_bar.set_message("Writing output file...");
             if let Err(e) =
@@ -43,10 +53,27 @@ pub fn run_debug_command(input: String, lang: Option<String>, output: Option<Str
             }
             progress_bar
                 .finish_with_message(format!("✅ Debug output written to: {}", output_path));
+            true
         }
         None => {
             progress_bar.finish_with_message("✅ Debug output:");
             println!("{}", json);
+            false
+        }
+    };
+
+    // Show additional debug information using the new high-level methods
+    if !output_to_file {
+        println!("\n=== Debug Summary ===");
+        println!(
+            "Languages: {}",
+            codec.languages().collect::<Vec<_>>().join(", ")
+        );
+        println!("Total entries: {}", codec.all_keys().count());
+
+        for lang in codec.languages() {
+            let count = codec.entry_count(lang);
+            println!("  {}: {} entries", lang, count);
         }
     }
 }

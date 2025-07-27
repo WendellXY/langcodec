@@ -8,7 +8,12 @@
 /// or extension, write resources back to files, and cache resources to JSON.
 ///
 use crate::formats::CSVRecord;
-use crate::{error::Error, formats::*, traits::Parser, types::Resource};
+use crate::{
+    error::Error,
+    formats::*,
+    traits::Parser,
+    types::{Entry, Resource},
+};
 use std::path::Path;
 
 /// Represents a collection of localized resources and provides methods to read,
@@ -340,6 +345,531 @@ impl Codec {
     /// Adds a new resource to the collection.
     pub fn add_resource(&mut self, resource: Resource) {
         self.resources.push(resource);
+    }
+
+    // ===== HIGH-LEVEL MODIFICATION METHODS =====
+
+    /// Finds an entry by its key across all languages.
+    ///
+    /// Returns an iterator over all resources and their matching entries.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The entry key to search for
+    ///
+    /// # Returns
+    ///
+    /// An iterator yielding `(&Resource, &Entry)` pairs for all matching entries.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::Codec;
+    ///
+    /// let mut codec = Codec::new();
+    /// // ... load resources ...
+    ///
+    /// for (resource, entry) in codec.find_entries("welcome_message") {
+    ///     println!("{}: {}", resource.metadata.language, entry.value);
+    /// }
+    /// ```
+    pub fn find_entries(&self, key: &str) -> Vec<(&Resource, &Entry)> {
+        let mut results = Vec::new();
+        for resource in &self.resources {
+            for entry in &resource.entries {
+                if entry.id == key {
+                    results.push((resource, entry));
+                }
+            }
+        }
+        results
+    }
+
+    /// Finds an entry by its key in a specific language.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The entry key to search for
+    /// * `language` - The language code (e.g., "en", "fr")
+    ///
+    /// # Returns
+    ///
+    /// `Some(&Entry)` if found, `None` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::Codec;
+    ///
+    /// let mut codec = Codec::new();
+    /// // ... load resources ...
+    ///
+    /// if let Some(entry) = codec.find_entry("welcome_message", "en") {
+    ///     println!("English welcome: {}", entry.value);
+    /// }
+    /// ```
+    pub fn find_entry(&self, key: &str, language: &str) -> Option<&Entry> {
+        self.get_by_language(language)?
+            .entries
+            .iter()
+            .find(|entry| entry.id == key)
+    }
+
+    /// Finds a mutable entry by its key in a specific language.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The entry key to search for
+    /// * `language` - The language code (e.g., "en", "fr")
+    ///
+    /// # Returns
+    ///
+    /// `Some(&mut Entry)` if found, `None` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::Codec;
+    /// use langcodec::types::Translation;
+    ///
+    /// let mut codec = Codec::new();
+    /// // ... load resources ...
+    ///
+    /// if let Some(entry) = codec.find_entry_mut("welcome_message", "en") {
+    ///     entry.value = Translation::Singular("Hello, World!".to_string());
+    ///     entry.status = langcodec::types::EntryStatus::Translated;
+    /// }
+    /// ```
+    pub fn find_entry_mut(&mut self, key: &str, language: &str) -> Option<&mut Entry> {
+        self.get_mut_by_language(language)?
+            .entries
+            .iter_mut()
+            .find(|entry| entry.id == key)
+    }
+
+    /// Updates a translation for a specific key and language.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The entry key to update
+    /// * `language` - The language code (e.g., "en", "fr")
+    /// * `translation` - The new translation value
+    /// * `status` - Optional new status (defaults to `Translated`)
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the entry was found and updated, `Err` if not found.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::{Codec, types::{Translation, EntryStatus}};
+    ///
+    /// let mut codec = Codec::new();
+    /// // Add an entry first
+    /// codec.add_entry("welcome", "en", Translation::Singular("Hello".to_string()), None, None)?;
+    ///
+    /// codec.update_translation(
+    ///     "welcome",
+    ///     "en",
+    ///     Translation::Singular("Hello, World!".to_string()),
+    ///     Some(EntryStatus::Translated)
+    /// )?;
+    /// # Ok::<(), langcodec::Error>(())
+    /// ```
+    pub fn update_translation(
+        &mut self,
+        key: &str,
+        language: &str,
+        translation: crate::types::Translation,
+        status: Option<crate::types::EntryStatus>,
+    ) -> Result<(), Error> {
+        if let Some(entry) = self.find_entry_mut(key, language) {
+            entry.value = translation;
+            if let Some(new_status) = status {
+                entry.status = new_status;
+            }
+            Ok(())
+        } else {
+            Err(Error::InvalidResource(format!(
+                "Entry '{}' not found in language '{}'",
+                key, language
+            )))
+        }
+    }
+
+    /// Adds a new entry to a specific language.
+    ///
+    /// If the language doesn't exist, it will be created automatically.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The entry key
+    /// * `language` - The language code (e.g., "en", "fr")
+    /// * `translation` - The translation value
+    /// * `comment` - Optional comment for translators
+    /// * `status` - Optional status (defaults to `New`)
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the entry was added successfully.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::{Codec, types::{Translation, EntryStatus}};
+    ///
+    /// let mut codec = Codec::new();
+    ///
+    /// codec.add_entry(
+    ///     "new_message",
+    ///     "en",
+    ///     Translation::Singular("This is a new message".to_string()),
+    ///     Some("This is a new message for users".to_string()),
+    ///     Some(EntryStatus::New)
+    /// )?;
+    /// # Ok::<(), langcodec::Error>(())
+    /// ```
+    pub fn add_entry(
+        &mut self,
+        key: &str,
+        language: &str,
+        translation: crate::types::Translation,
+        comment: Option<String>,
+        status: Option<crate::types::EntryStatus>,
+    ) -> Result<(), Error> {
+        // Find or create the resource for this language
+        let resource = if let Some(resource) = self.get_mut_by_language(language) {
+            resource
+        } else {
+            // Create a new resource for this language
+            let new_resource = crate::types::Resource {
+                metadata: crate::types::Metadata {
+                    language: language.to_string(),
+                    domain: "".to_string(),
+                    custom: std::collections::HashMap::new(),
+                },
+                entries: Vec::new(),
+            };
+            self.add_resource(new_resource);
+            self.get_mut_by_language(language).unwrap()
+        };
+
+        let entry = crate::types::Entry {
+            id: key.to_string(),
+            value: translation,
+            comment,
+            status: status.unwrap_or(crate::types::EntryStatus::New),
+            custom: std::collections::HashMap::new(),
+        };
+        resource.add_entry(entry);
+        Ok(())
+    }
+
+    /// Removes an entry from a specific language.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The entry key to remove
+    /// * `language` - The language code (e.g., "en", "fr")
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the entry was found and removed, `Err` if not found.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::{Codec, types::{Translation, EntryStatus}};
+    ///
+    /// let mut codec = Codec::new();
+    /// // Add a resource first
+    /// codec.add_entry("test_key", "en", Translation::Singular("Test".to_string()), None, None)?;
+    ///
+    /// // Now remove it
+    /// codec.remove_entry("test_key", "en")?;
+    /// # Ok::<(), langcodec::Error>(())
+    /// ```
+    pub fn remove_entry(&mut self, key: &str, language: &str) -> Result<(), Error> {
+        if let Some(resource) = self.get_mut_by_language(language) {
+            let initial_len = resource.entries.len();
+            resource.entries.retain(|entry| entry.id != key);
+
+            if resource.entries.len() == initial_len {
+                Err(Error::InvalidResource(format!(
+                    "Entry '{}' not found in language '{}'",
+                    key, language
+                )))
+            } else {
+                Ok(())
+            }
+        } else {
+            Err(Error::InvalidResource(format!(
+                "Language '{}' not found",
+                language
+            )))
+        }
+    }
+
+    /// Copies an entry from one language to another.
+    ///
+    /// This is useful for creating new translations based on existing ones.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The entry key to copy
+    /// * `from_language` - The source language
+    /// * `to_language` - The target language
+    /// * `update_status` - Whether to update the status to `New` in the target language
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the entry was copied successfully, `Err` if not found.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::{Codec, types::{Translation, EntryStatus}};
+    ///
+    /// let mut codec = Codec::new();
+    /// // Add source entry first
+    /// codec.add_entry("welcome", "en", Translation::Singular("Hello".to_string()), None, None)?;
+    ///
+    /// // Copy English entry to French as a starting point
+    /// codec.copy_entry("welcome", "en", "fr", true)?;
+    /// # Ok::<(), langcodec::Error>(())
+    /// ```
+    pub fn copy_entry(
+        &mut self,
+        key: &str,
+        from_language: &str,
+        to_language: &str,
+        update_status: bool,
+    ) -> Result<(), Error> {
+        let source_entry = self.find_entry(key, from_language).ok_or_else(|| {
+            Error::InvalidResource(format!(
+                "Entry '{}' not found in source language '{}'",
+                key, from_language
+            ))
+        })?;
+
+        let mut new_entry = source_entry.clone();
+        if update_status {
+            new_entry.status = crate::types::EntryStatus::New;
+        }
+
+        // Find or create the target resource
+        let target_resource = if let Some(resource) = self.get_mut_by_language(to_language) {
+            resource
+        } else {
+            // Create a new resource for the target language
+            let new_resource = crate::types::Resource {
+                metadata: crate::types::Metadata {
+                    language: to_language.to_string(),
+                    domain: "".to_string(),
+                    custom: std::collections::HashMap::new(),
+                },
+                entries: Vec::new(),
+            };
+            self.add_resource(new_resource);
+            self.get_mut_by_language(to_language).unwrap()
+        };
+
+        // Remove existing entry if it exists
+        target_resource.entries.retain(|entry| entry.id != key);
+        target_resource.add_entry(new_entry);
+        Ok(())
+    }
+
+    /// Gets all languages available in the codec.
+    ///
+    /// # Returns
+    ///
+    /// An iterator over all language codes.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::Codec;
+    ///
+    /// let codec = Codec::new();
+    /// // ... load resources ...
+    ///
+    /// for language in codec.languages() {
+    ///     println!("Available language: {}", language);
+    /// }
+    /// ```
+    pub fn languages(&self) -> impl Iterator<Item = &str> {
+        self.resources.iter().map(|r| r.metadata.language.as_str())
+    }
+
+    /// Gets all unique entry keys across all languages.
+    ///
+    /// # Returns
+    ///
+    /// An iterator over all unique entry keys.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::Codec;
+    ///
+    /// let codec = Codec::new();
+    /// // ... load resources ...
+    ///
+    /// for key in codec.all_keys() {
+    ///     println!("Available key: {}", key);
+    /// }
+    /// ```
+    pub fn all_keys(&self) -> impl Iterator<Item = &str> {
+        use std::collections::HashSet;
+
+        let mut keys = HashSet::new();
+        for resource in &self.resources {
+            for entry in &resource.entries {
+                keys.insert(entry.id.as_str());
+            }
+        }
+        keys.into_iter()
+    }
+
+    /// Checks if an entry exists in a specific language.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The entry key to check
+    /// * `language` - The language code (e.g., "en", "fr")
+    ///
+    /// # Returns
+    ///
+    /// `true` if the entry exists, `false` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::Codec;
+    ///
+    /// let codec = Codec::new();
+    /// // ... load resources ...
+    ///
+    /// if codec.has_entry("welcome_message", "en") {
+    ///     println!("English welcome message exists");
+    /// }
+    /// ```
+    pub fn has_entry(&self, key: &str, language: &str) -> bool {
+        self.find_entry(key, language).is_some()
+    }
+
+    /// Gets the count of entries in a specific language.
+    ///
+    /// # Arguments
+    ///
+    /// * `language` - The language code (e.g., "en", "fr")
+    ///
+    /// # Returns
+    ///
+    /// The number of entries in the specified language, or 0 if the language doesn't exist.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::Codec;
+    ///
+    /// let codec = Codec::new();
+    /// // ... load resources ...
+    ///
+    /// let count = codec.entry_count("en");
+    /// println!("English has {} entries", count);
+    /// ```
+    pub fn entry_count(&self, language: &str) -> usize {
+        self.get_by_language(language)
+            .map(|r| r.entries.len())
+            .unwrap_or(0)
+    }
+
+    /// Validates the codec for common issues.
+    ///
+    /// Checks for:
+    /// - Empty languages
+    /// - Duplicate languages
+    /// - Missing translations
+    /// - Inconsistent keys across languages
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if validation passes, `Err` with details if issues are found.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::Codec;
+    ///
+    /// let codec = Codec::new();
+    /// // ... load resources ...
+    ///
+    /// if let Err(validation_error) = codec.validate() {
+    ///     eprintln!("Validation failed: {}", validation_error);
+    /// }
+    /// ```
+    pub fn validate(&self) -> Result<(), Error> {
+        // Check for empty languages
+        for (i, resource) in self.resources.iter().enumerate() {
+            if resource.metadata.language.is_empty() {
+                return Err(Error::Validation(format!(
+                    "Resource at index {} has no language specified",
+                    i
+                )));
+            }
+        }
+
+        // Check for duplicate languages
+        let mut languages = std::collections::HashSet::new();
+        for resource in &self.resources {
+            if !languages.insert(&resource.metadata.language) {
+                return Err(Error::Validation(format!(
+                    "Duplicate language found: {}",
+                    resource.metadata.language
+                )));
+            }
+        }
+
+        // Check for inconsistent keys across languages
+        let mut all_keys = std::collections::HashMap::new();
+        for resource in &self.resources {
+            for entry in &resource.entries {
+                all_keys
+                    .entry(&entry.id)
+                    .or_insert_with(Vec::new)
+                    .push(&resource.metadata.language);
+            }
+        }
+
+        // Report missing translations
+        let mut missing_translations = Vec::new();
+        for (key, languages) in &all_keys {
+            if languages.len() < self.resources.len() {
+                let missing_langs: Vec<_> = self
+                    .resources
+                    .iter()
+                    .filter(|r| !languages.contains(&&r.metadata.language))
+                    .map(|r| r.metadata.language.as_str())
+                    .collect();
+                missing_translations.push((key.as_str(), missing_langs));
+            }
+        }
+
+        if !missing_translations.is_empty() {
+            let details: Vec<_> = missing_translations
+                .iter()
+                .map(|(key, langs)| format!("'{}' missing in: {}", key, langs.join(", ")))
+                .collect();
+            return Err(Error::Validation(format!(
+                "Missing translations: {}",
+                details.join("; ")
+            )));
+        }
+
+        Ok(())
     }
 
     /// Reads a resource file given its path and explicit format type.
@@ -908,5 +1438,186 @@ mod tests {
         assert_eq!(codec.resources.len(), 2);
         assert_eq!(codec.resources[0].metadata.language, "en");
         assert_eq!(codec.resources[1].metadata.language, "fr");
+    }
+
+    #[test]
+    fn test_modification_methods() {
+        use crate::types::{EntryStatus, Translation};
+
+        // Create a codec with some test data
+        let mut codec = Codec::new();
+
+        // Add resources
+        let resource1 = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "test".to_string(),
+                custom: std::collections::HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "welcome".to_string(),
+                value: Translation::Singular("Hello".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: std::collections::HashMap::new(),
+            }],
+        };
+
+        let resource2 = Resource {
+            metadata: Metadata {
+                language: "fr".to_string(),
+                domain: "test".to_string(),
+                custom: std::collections::HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "welcome".to_string(),
+                value: Translation::Singular("Bonjour".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: std::collections::HashMap::new(),
+            }],
+        };
+
+        codec.add_resource(resource1);
+        codec.add_resource(resource2);
+
+        // Test find_entries
+        let entries = codec.find_entries("welcome");
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0.metadata.language, "en");
+        assert_eq!(entries[1].0.metadata.language, "fr");
+
+        // Test find_entry
+        let entry = codec.find_entry("welcome", "en");
+        assert!(entry.is_some());
+        assert_eq!(entry.unwrap().id, "welcome");
+
+        // Test find_entry_mut and update
+        if let Some(entry) = codec.find_entry_mut("welcome", "en") {
+            entry.value = Translation::Singular("Hello, World!".to_string());
+            entry.status = EntryStatus::NeedsReview;
+        }
+
+        // Verify the update
+        let updated_entry = codec.find_entry("welcome", "en").unwrap();
+        assert_eq!(updated_entry.value.to_string(), "Hello, World!");
+        assert_eq!(updated_entry.status, EntryStatus::NeedsReview);
+
+        // Test update_translation
+        codec
+            .update_translation(
+                "welcome",
+                "fr",
+                Translation::Singular("Bonjour, le monde!".to_string()),
+                Some(EntryStatus::NeedsReview),
+            )
+            .unwrap();
+
+        // Test add_entry
+        codec
+            .add_entry(
+                "new_key",
+                "en",
+                Translation::Singular("New message".to_string()),
+                Some("A new message".to_string()),
+                Some(EntryStatus::New),
+            )
+            .unwrap();
+
+        assert!(codec.has_entry("new_key", "en"));
+        assert_eq!(codec.entry_count("en"), 2);
+
+        // Test remove_entry
+        codec.remove_entry("new_key", "en").unwrap();
+        assert!(!codec.has_entry("new_key", "en"));
+        assert_eq!(codec.entry_count("en"), 1);
+
+        // Test copy_entry
+        codec.copy_entry("welcome", "en", "fr", true).unwrap();
+        let copied_entry = codec.find_entry("welcome", "fr").unwrap();
+        assert_eq!(copied_entry.status, EntryStatus::New);
+
+        // Test languages
+        let languages: Vec<_> = codec.languages().collect();
+        assert_eq!(languages.len(), 2);
+        assert!(languages.contains(&"en"));
+        assert!(languages.contains(&"fr"));
+
+        // Test all_keys
+        let keys: Vec<_> = codec.all_keys().collect();
+        assert_eq!(keys.len(), 1);
+        assert!(keys.contains(&"welcome"));
+    }
+
+    #[test]
+    fn test_validation() {
+        let mut codec = Codec::new();
+
+        // Test validation with empty language
+        let resource_without_language = Resource {
+            metadata: Metadata {
+                language: "".to_string(),
+                domain: "test".to_string(),
+                custom: std::collections::HashMap::new(),
+            },
+            entries: vec![],
+        };
+
+        codec.add_resource(resource_without_language);
+        assert!(codec.validate().is_err());
+
+        // Test validation with duplicate languages
+        let mut codec = Codec::new();
+        let resource1 = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "test".to_string(),
+                custom: std::collections::HashMap::new(),
+            },
+            entries: vec![],
+        };
+
+        let resource2 = Resource {
+            metadata: Metadata {
+                language: "en".to_string(), // Duplicate language
+                domain: "test".to_string(),
+                custom: std::collections::HashMap::new(),
+            },
+            entries: vec![],
+        };
+
+        codec.add_resource(resource1);
+        codec.add_resource(resource2);
+        assert!(codec.validate().is_err());
+
+        // Test validation with missing translations
+        let mut codec = Codec::new();
+        let resource1 = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "test".to_string(),
+                custom: std::collections::HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "welcome".to_string(),
+                value: Translation::Singular("Hello".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: std::collections::HashMap::new(),
+            }],
+        };
+
+        let resource2 = Resource {
+            metadata: Metadata {
+                language: "fr".to_string(),
+                domain: "test".to_string(),
+                custom: std::collections::HashMap::new(),
+            },
+            entries: vec![], // Missing welcome entry
+        };
+
+        codec.add_resource(resource1);
+        codec.add_resource(resource2);
+        assert!(codec.validate().is_err());
     }
 }

@@ -13,13 +13,27 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
 
     progress_bar.set_message("Processing resources...");
 
+    // Use the new high-level methods from the lib crate
     let resources = if let Some(lang) = lang_filter {
+        // Check if the language exists
+        if !codec.languages().any(|l| l == lang) {
+            progress_bar.finish_with_message("❌ Language not found");
+            eprintln!(
+                "Language '{}' not found. Available languages: {}",
+                lang,
+                codec.languages().collect::<Vec<_>>().join(", ")
+            );
+            std::process::exit(1);
+        }
+
+        // Get resources for the specific language
         codec
             .resources
             .iter()
             .filter(|r| r.metadata.language == *lang)
             .collect::<Vec<_>>()
     } else {
+        // Get all resources
         codec.resources.iter().collect::<Vec<_>>()
     };
 
@@ -78,6 +92,18 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
                     }
                 }
             }
+        }
+    }
+
+    // Show summary using the new high-level methods
+    if lang_filter.is_none() {
+        println!("\n=== Summary ===");
+        println!("Total languages: {}", codec.languages().count());
+        println!("Total unique keys: {}", codec.all_keys().count());
+
+        for lang in codec.languages() {
+            let count = codec.entry_count(lang);
+            println!("  {}: {} entries", lang, count);
         }
     }
 }

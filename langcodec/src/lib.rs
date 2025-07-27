@@ -75,6 +75,47 @@
 //! # Ok::<(), langcodec::Error>(())
 //! ```
 //!
+//! ## Modifying Translations
+//! ```rust,no_run
+//! use langcodec::{Codec, types::{Translation, EntryStatus}};
+//!
+//! let mut codec = Codec::builder()
+//!     .add_file("en.lproj/Localizable.strings")?
+//!     .add_file("fr.lproj/Localizable.strings")?
+//!     .build();
+//!
+//! // Update an existing translation
+//! codec.update_translation(
+//!     "welcome_message",
+//!     "en",
+//!     Translation::Singular("Hello, World!".to_string()),
+//!     Some(EntryStatus::Translated)
+//! )?;
+//!
+//! // Add a new translation
+//! codec.add_entry(
+//!     "new_feature",
+//!     "en",
+//!     Translation::Singular("Check out our new feature!".to_string()),
+//!     Some("Promotional message for new feature".to_string()),
+//!     Some(EntryStatus::New)
+//! )?;
+//!
+//! // Copy a translation from one language to another
+//! codec.copy_entry("welcome_message", "en", "fr", true)?;
+//!
+//! // Find all translations for a key
+//! for (resource, entry) in codec.find_entries("welcome_message") {
+//!     println!("{}: {}", resource.metadata.language, entry.value);
+//! }
+//!
+//! // Validate the codec
+//! if let Err(validation_error) = codec.validate() {
+//!     eprintln!("Validation failed: {}", validation_error);
+//! }
+//! # Ok::<(), langcodec::Error>(())
+//! ```
+//!
 //! ## Batch Processing
 //! ```rust,no_run
 //! use langcodec::Codec;

@@ -135,12 +135,13 @@ fn main() {
                 std::process::exit(1);
             }
 
-            // Read the input file and print all the entries
+            // Read the input file using the traditional method
             let mut codec = Codec::new();
             if let Err(e) = codec.read_file_by_extension(&input, lang.clone()) {
                 eprintln!("Failed to read file: {}", e);
                 std::process::exit(1);
             }
+
             print_view(&codec, &lang, full);
         }
         Commands::Merge {
