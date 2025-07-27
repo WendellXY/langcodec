@@ -1,79 +1,83 @@
-use atty::Stream;
-use crossterm::terminal::size;
+use indicatif::{ProgressBar, ProgressStyle};
 use langcodec::Codec;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-/// Print a view of the localization data, adapting to terminal or pipe output.
-pub fn print_view(codec: &Codec, lang: &Option<String>, full: bool) {
-    if is_terminal() {
-        let term_width = get_terminal_width();
-        let key_width = 24;
-        let value_width = if term_width > key_width + 16 {
-            term_width - key_width - 1
+/// Print a view of the resources in a codec.
+pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
+    // Create progress bar
+    let progress_bar = ProgressBar::new_spinner();
+    progress_bar.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {wide_msg}")
+            .unwrap(),
+    );
+
+    progress_bar.set_message("Processing resources...");
+
+    let resources = if let Some(lang) = lang_filter {
+        codec
+            .resources
+            .iter()
+            .filter(|r| r.metadata.language == *lang)
+            .collect::<Vec<_>>()
+    } else {
+        codec.resources.iter().collect::<Vec<_>>()
+    };
+
+    if resources.is_empty() {
+        progress_bar.finish_with_message("❌ No resources found");
+        if let Some(lang) = lang_filter {
+            eprintln!("No resources found for language: {}", lang);
         } else {
-            16
-        };
-
-        println!("{:<key_width$} Value", "Key", key_width = key_width);
-        for resource in &*codec.resources {
-            if let Some(lang) = lang {
-                if !resource.has_language(lang) {
-                    continue;
-                }
-            }
-            for entry in &resource.entries {
-                let key = if full {
-                    entry.id.to_string()
-                } else {
-                    truncate_display(&entry.id, key_width)
-                };
-                let value = if full {
-                    entry.value.plain_translation_string()
-                } else {
-                    truncate_display(&entry.value.plain_translation_string(), value_width)
-                };
-                println!("{:<key_width$} {}", key, value, key_width = key_width);
-            }
+            eprintln!("No resources found");
         }
-    } else {
-        for resource in &*codec.resources {
-            if let Some(lang) = lang {
-                if !resource.has_language(lang) {
-                    continue;
-                }
-            }
-            for entry in &resource.entries {
-                println!("{}\t{}", entry.id, entry.value);
-            }
-        }
+        std::process::exit(1);
     }
-}
 
-fn is_terminal() -> bool {
-    atty::is(Stream::Stdout)
-}
+    progress_bar.finish_with_message(format!("✅ Found {} resource(s)", resources.len()));
 
-fn get_terminal_width() -> usize {
-    size().map(|(w, _)| w as usize).unwrap_or(80)
-}
+    for (i, resource) in resources.iter().enumerate() {
+        println!("\n=== Resource {} ===", i + 1);
+        println!("Language: {}", resource.metadata.language);
+        println!("Domain: {}", resource.metadata.domain);
+        println!("Entries: {}", resource.entries.len());
 
-fn truncate_display(s: &str, max: usize) -> String {
-    if s.width() <= max {
-        s.to_string()
-    } else if max > 3 {
-        let mut width = 0;
-        let mut result = String::new();
-        for c in s.chars() {
-            let cw = c.width().unwrap_or(0);
-            if width + cw > max - 3 {
-                break;
+        for (j, entry) in resource.entries.iter().enumerate() {
+            println!("\n  Entry {}: {}", j + 1, entry.id);
+            println!("    Status: {:?}", entry.status);
+
+            if let Some(comment) = &entry.comment {
+                println!("    Comment: {}", comment);
             }
-            result.push(c);
-            width += cw;
+
+            match &entry.value {
+                langcodec::types::Translation::Singular(value) => {
+                    if full {
+                        println!("    Value: {}", value);
+                    } else {
+                        let truncated = if value.len() > 50 {
+                            format!("{}...", &value[..50])
+                        } else {
+                            value.clone()
+                        };
+                        println!("    Value: {}", truncated);
+                    }
+                }
+                langcodec::types::Translation::Plural(plural) => {
+                    println!("    Plural ID: {}", plural.id);
+                    for (category, value) in &plural.forms {
+                        if full {
+                            println!("      {:?}: {}", category, value);
+                        } else {
+                            let truncated = if value.len() > 50 {
+                                format!("{}...", &value[..50])
+                            } else {
+                                value.clone()
+                            };
+                            println!("      {:?}: {}", category, truncated);
+                        }
+                    }
+                }
+            }
         }
-        result.push_str("...");
-        result
-    } else {
-        ".".repeat(max)
     }
 }

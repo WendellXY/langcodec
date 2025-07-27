@@ -10,6 +10,7 @@ use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::transformers::custom_format_to_resource;
 use crate::view::print_view;
 use clap::{Parser, Subcommand};
+use indicatif::{ProgressBar, ProgressStyle};
 use langcodec::{Codec, convert_auto, formats::FormatType, traits::Parser as CodecParser};
 
 #[derive(Parser, Debug)]
@@ -103,9 +104,10 @@ fn main() {
         Commands::View { input, lang, full } => {
             // Read the input file and print all the entries
             let mut codec = Codec::new();
-            codec
-                .read_file_by_extension(input, Option::None)
-                .expect("Failed to read file");
+            if let Err(e) = codec.read_file_by_extension(input, lang.clone()) {
+                eprintln!("Failed to read file: {}", e);
+                std::process::exit(1);
+            }
             print_view(&codec, &lang, full);
         }
         Commands::Merge {
@@ -132,9 +134,20 @@ fn run_unified_convert_command(
     input_format: Option<String>,
     output_format: Option<String>,
 ) {
+    // Create progress bar
+    let progress_bar = ProgressBar::new_spinner();
+    progress_bar.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} {wide_msg}")
+            .unwrap(),
+    );
+    progress_bar.set_message("Detecting input format...");
+
     // Strategy 1: Try standard lib crate conversion first
+    progress_bar.set_message("Trying standard format detection...");
     if let Ok(()) = convert_auto(&input, &output) {
-        println!("Successfully converted using standard format detection");
+        progress_bar
+            .finish_with_message("✅ Successfully converted using standard format detection");
         return;
     }
 
@@ -146,37 +159,48 @@ fn run_unified_convert_command(
     {
         // For JSON files without explicit format, try standard format detection first
         if input.ends_with(".json") && input_format.is_none() {
+            progress_bar.set_message("Trying standard JSON format detection...");
             // Try to use the standard format detection which will show proper JSON parsing errors
             if let Err(e) = convert_auto(&input, &output) {
+                progress_bar.set_message("Trying custom JSON format conversion...");
                 // If standard detection fails, try custom formats
                 if let Ok(()) = try_custom_format_conversion(&input, &output, &input_format) {
+                    progress_bar
+                        .finish_with_message("✅ Successfully converted using custom JSON format");
                     return;
                 }
                 // If both fail, show the standard error message
+                progress_bar.finish_with_message("❌ Conversion failed");
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         } else {
             // For YAML files or when format is specified, try custom formats directly
+            progress_bar.set_message("Converting using custom format...");
             if let Err(e) = try_custom_format_conversion(&input, &output, &input_format) {
+                progress_bar.finish_with_message("❌ Custom format conversion failed");
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
+            progress_bar.finish_with_message("✅ Successfully converted using custom format");
             return;
         }
     }
 
     // Strategy 3: If we have format hints, try with explicit formats
     if let (Some(input_fmt), Some(output_fmt)) = (input_format, output_format) {
-        println!("Trying with explicit format hints...");
+        progress_bar.set_message("Converting with explicit format hints...");
         if let Err(e) = try_explicit_format_conversion(&input, &output, &input_fmt, &output_fmt) {
+            progress_bar.finish_with_message("❌ Explicit format conversion failed");
             eprintln!("Error: {}", e);
             std::process::exit(1);
         }
+        progress_bar.finish_with_message("✅ Successfully converted with explicit formats");
         return;
     }
 
     // If all strategies failed, provide helpful error message
+    progress_bar.finish_with_message("❌ All conversion strategies failed");
     print_conversion_error(&input, &output);
     std::process::exit(1);
 }
@@ -187,16 +211,13 @@ fn try_custom_format_conversion(
     input_format: &Option<String>,
 ) -> Result<(), String> {
     let custom_format = if let Some(format_str) = input_format {
-        let format = parse_custom_format(format_str)?;
-        println!("Using custom format: {}", format_str);
-        format
+        parse_custom_format(format_str)?
     } else {
         // Auto-detect format based on file content
         let file_content = std::fs::read_to_string(input)
             .map_err(|e| format!("Error reading file {}: {}", input, e))?;
 
         if let Some(detected_format) = formats::detect_custom_format(input, &file_content) {
-            println!("Auto-detected custom format: {:?}", detected_format);
             detected_format
         } else {
             return Err(
@@ -216,7 +237,6 @@ fn try_custom_format_conversion(
     convert_resources_to_format(resources, output, output_format_type)
         .map_err(|e| format!("Error converting to output format: {}", e))?;
 
-    println!("Successfully converted custom format to {}", output);
     Ok(())
 }
 
