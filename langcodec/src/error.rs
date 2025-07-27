@@ -29,4 +29,32 @@ pub enum Error {
 
     #[error("unsupported format: {0}")]
     UnsupportedFormat(String),
+
+    #[error("conversion error: {message}")]
+    Conversion {
+        message: String,
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+
+    #[error("validation error: {0}")]
+    Validation(String),
+}
+
+impl Error {
+    /// Creates a new conversion error with optional source error
+    pub fn conversion_error(
+        message: impl Into<String>,
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    ) -> Self {
+        Error::Conversion {
+            message: message.into(),
+            source,
+        }
+    }
+
+    /// Creates a new validation error
+    pub fn validation_error(message: impl Into<String>) -> Self {
+        Error::Validation(message.into())
+    }
 }

@@ -167,11 +167,13 @@ fn run_unified_convert_command(
     }
 
     // Strategy 3: If we have format hints, try with explicit formats
-    if let (Some(_input_fmt), Some(_output_fmt)) = (input_format, output_format) {
+    if let (Some(input_fmt), Some(output_fmt)) = (input_format, output_format) {
         println!("Trying with explicit format hints...");
-        // TODO: Implement explicit format conversion
-        eprintln!("Explicit format conversion not yet implemented");
-        std::process::exit(1);
+        if let Err(e) = try_explicit_format_conversion(&input, &output, &input_fmt, &output_fmt) {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+        return;
     }
 
     // If all strategies failed, provide helpful error message
@@ -293,4 +295,34 @@ fn convert_resources_to_format(
             }
         }
     }
+}
+
+/// Try explicit format conversion with specified input and output formats
+fn try_explicit_format_conversion(
+    input: &str,
+    output: &str,
+    input_format: &str,
+    output_format: &str,
+) -> Result<(), String> {
+    // Parse input format
+    let input_format_type = match input_format.to_lowercase().as_str() {
+        "strings" => langcodec::formats::FormatType::Strings(None),
+        "android" | "androidstrings" => langcodec::formats::FormatType::AndroidStrings(None),
+        "xcstrings" => langcodec::formats::FormatType::Xcstrings,
+        "csv" => langcodec::formats::FormatType::CSV(None),
+        _ => return Err(format!("Unsupported input format: {}", input_format)),
+    };
+
+    // Parse output format
+    let output_format_type = match output_format.to_lowercase().as_str() {
+        "strings" => langcodec::formats::FormatType::Strings(None),
+        "android" | "androidstrings" => langcodec::formats::FormatType::AndroidStrings(None),
+        "xcstrings" => langcodec::formats::FormatType::Xcstrings,
+        "csv" => langcodec::formats::FormatType::CSV(None),
+        _ => return Err(format!("Unsupported output format: {}", output_format)),
+    };
+
+    // Use the lib crate's convert function
+    langcodec::convert(input, input_format_type, output, output_format_type)
+        .map_err(|e| format!("Conversion error: {}", e))
 }

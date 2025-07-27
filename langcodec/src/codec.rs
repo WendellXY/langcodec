@@ -15,7 +15,7 @@ use std::path::Path;
 /// write, cache, and load these resources.
 pub struct Codec {
     /// The collection of resources managed by this codec.
-    pub resources: Box<Vec<Resource>>,
+    pub resources: Vec<Resource>,
 }
 
 impl Default for Codec {
@@ -32,7 +32,7 @@ impl Codec {
     /// A new `Codec` instance with no resources.
     pub fn new() -> Self {
         Codec {
-            resources: Box::new(Vec::new()),
+            resources: Vec::new(),
         }
     }
 
@@ -206,7 +206,7 @@ impl Codec {
     /// `Ok(Codec)` with loaded resources, or an `Error` if loading or deserialization fails.
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         let mut reader = std::fs::File::open(path).map_err(Error::Io)?;
-        let resources: Box<Vec<Resource>> =
+        let resources: Vec<Resource> =
             serde_json::from_reader(&mut reader).map_err(Error::Parse)?;
         Ok(Codec { resources })
     }
