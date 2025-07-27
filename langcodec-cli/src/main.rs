@@ -13,7 +13,7 @@ use crate::validation::{ValidationContext, validate_context, validate_custom_for
 use crate::view::print_view;
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
-use langcodec::{Codec, convert_auto, formats::FormatType, traits::Parser as CodecParser};
+use langcodec::{Codec, convert_auto, formats::FormatType};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -347,39 +347,7 @@ fn convert_resources_to_format(
     output: &str,
     output_format: FormatType,
 ) -> Result<(), langcodec::Error> {
-    use langcodec::formats::{AndroidStringsFormat, CSVRecord, StringsFormat, XcstringsFormat};
-    use std::path::Path;
-
-    match output_format {
-        FormatType::AndroidStrings(_) => {
-            if let Some(resource) = resources.first() {
-                AndroidStringsFormat::from(resource.clone()).write_to(Path::new(output))
-            } else {
-                Err(langcodec::Error::InvalidResource(
-                    "No resources to convert".to_string(),
-                ))
-            }
-        }
-        FormatType::Strings(_) => {
-            if let Some(resource) = resources.first() {
-                StringsFormat::try_from(resource.clone())?.write_to(Path::new(output))
-            } else {
-                Err(langcodec::Error::InvalidResource(
-                    "No resources to convert".to_string(),
-                ))
-            }
-        }
-        FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(Path::new(output)),
-        FormatType::CSV(_) => {
-            if let Some(resource) = resources.first() {
-                Vec::<CSVRecord>::try_from(resource.clone())?.write_to(Path::new(output))
-            } else {
-                Err(langcodec::Error::InvalidResource(
-                    "No resources to convert".to_string(),
-                ))
-            }
-        }
-    }
+    langcodec::Codec::convert_resources_to_format(resources, output, output_format)
 }
 
 /// Try explicit format conversion with specified input and output formats

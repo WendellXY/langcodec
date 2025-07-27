@@ -285,6 +285,17 @@ impl FromStr for EntryStatus {
     }
 }
 
+/// Strategy for handling conflicts when merging resources.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConflictStrategy {
+    /// Keep the first occurrence of a key
+    First,
+    /// Keep the last occurrence of a key (default)
+    Last,
+    /// Skip conflicting entries
+    Skip,
+}
+
 // Remove HTML tags from translation string.
 fn make_plain_translation_string(translation: String) -> String {
     let mut translation = translation;

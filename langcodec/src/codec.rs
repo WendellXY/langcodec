@@ -789,87 +789,303 @@ impl Codec {
 
     /// Validates the codec for common issues.
     ///
-    /// Checks for:
-    /// - Empty languages
-    /// - Duplicate languages
-    /// - Missing translations
-    /// - Inconsistent keys across languages
-    ///
     /// # Returns
     ///
-    /// `Ok(())` if validation passes, `Err` with details if issues are found.
+    /// `Ok(())` if validation passes, `Err(Error)` with details if validation fails.
     ///
     /// # Example
     ///
     /// ```rust
     /// use langcodec::Codec;
     ///
-    /// let codec = Codec::new();
-    /// // ... load resources ...
+    /// let mut codec = Codec::new();
+    /// // ... add resources ...
     ///
     /// if let Err(validation_error) = codec.validate() {
     ///     eprintln!("Validation failed: {}", validation_error);
     /// }
     /// ```
     pub fn validate(&self) -> Result<(), Error> {
-        // Check for empty languages
-        for (i, resource) in self.resources.iter().enumerate() {
-            if resource.metadata.language.is_empty() {
-                return Err(Error::Validation(format!(
-                    "Resource at index {} has no language specified",
-                    i
-                )));
-            }
+        // Check for empty resources
+        if self.resources.is_empty() {
+            return Err(Error::InvalidResource("No resources found".to_string()));
         }
 
         // Check for duplicate languages
         let mut languages = std::collections::HashSet::new();
         for resource in &self.resources {
             if !languages.insert(&resource.metadata.language) {
-                return Err(Error::Validation(format!(
+                return Err(Error::InvalidResource(format!(
                     "Duplicate language found: {}",
                     resource.metadata.language
                 )));
             }
         }
 
-        // Check for inconsistent keys across languages
-        let mut all_keys = std::collections::HashMap::new();
+        // Check for empty resources
         for resource in &self.resources {
-            for entry in &resource.entries {
-                all_keys
-                    .entry(&entry.id)
-                    .or_insert_with(Vec::new)
-                    .push(&resource.metadata.language);
+            if resource.entries.is_empty() {
+                return Err(Error::InvalidResource(format!(
+                    "Resource for language '{}' has no entries",
+                    resource.metadata.language
+                )));
             }
-        }
-
-        // Report missing translations
-        let mut missing_translations = Vec::new();
-        for (key, languages) in &all_keys {
-            if languages.len() < self.resources.len() {
-                let missing_langs: Vec<_> = self
-                    .resources
-                    .iter()
-                    .filter(|r| !languages.contains(&&r.metadata.language))
-                    .map(|r| r.metadata.language.as_str())
-                    .collect();
-                missing_translations.push((key.as_str(), missing_langs));
-            }
-        }
-
-        if !missing_translations.is_empty() {
-            let details: Vec<_> = missing_translations
-                .iter()
-                .map(|(key, langs)| format!("'{}' missing in: {}", key, langs.join(", ")))
-                .collect();
-            return Err(Error::Validation(format!(
-                "Missing translations: {}",
-                details.join("; ")
-            )));
         }
 
         Ok(())
+    }
+
+    /// Merges multiple resources into a single resource with conflict resolution.
+    ///
+    /// # Arguments
+    ///
+    /// * `resources` - The resources to merge
+    /// * `conflict_strategy` - How to handle conflicting entries
+    ///
+    /// # Returns
+    ///
+    /// A merged resource with all entries from the input resources.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::{Codec, types::{Resource, Metadata, Entry, Translation, EntryStatus}};
+    ///
+    /// let mut codec = Codec::new();
+    /// // ... load resources ...
+    ///
+    /// // Create some sample resources for merging
+    /// let resource1 = Resource {
+    ///     metadata: Metadata {
+    ///         language: "en".to_string(),
+    ///         domain: "domain".to_string(),
+    ///         custom: std::collections::HashMap::new(),
+    ///     },
+    ///     entries: vec![
+    ///         Entry {
+    ///             id: "hello".to_string(),
+    ///             value: Translation::Singular("Hello".to_string()),
+    ///             comment: None,
+    ///             status: EntryStatus::Translated,
+    ///             custom: std::collections::HashMap::new(),
+    ///         }
+    ///     ],
+    /// };
+    ///
+    /// let merged = Codec::merge_resources(
+    ///     &[resource1],
+    ///     langcodec::types::ConflictStrategy::Last
+    /// )?;
+    /// # Ok::<(), langcodec::Error>(())
+    /// ```
+    pub fn merge_resources(
+        resources: &[Resource],
+        conflict_strategy: crate::types::ConflictStrategy,
+    ) -> Result<Resource, Error> {
+        if resources.is_empty() {
+            return Err(Error::InvalidResource("No resources to merge".to_string()));
+        }
+
+        let mut merged = resources[0].clone();
+        let mut all_entries = std::collections::HashMap::new();
+
+        // Collect all entries from all resources
+        for resource in resources {
+            for entry in &resource.entries {
+                let key = entry.id.clone();
+                match conflict_strategy {
+                    crate::types::ConflictStrategy::First => {
+                        all_entries.entry(key).or_insert_with(|| entry.clone());
+                    }
+                    crate::types::ConflictStrategy::Last => {
+                        all_entries.insert(key, entry.clone());
+                    }
+                    crate::types::ConflictStrategy::Skip => {
+                        if all_entries.contains_key(&key) {
+                            // Skip this entry if we already have one with the same key
+                            continue;
+                        }
+                        all_entries.insert(key, entry.clone());
+                    }
+                }
+            }
+        }
+
+        // Convert back to vector and sort by key for consistent output
+        merged.entries = all_entries.into_values().collect();
+        merged.entries.sort_by(|a, b| a.id.cmp(&b.id));
+
+        Ok(merged)
+    }
+
+    /// Writes a resource to a file with automatic format detection.
+    ///
+    /// # Arguments
+    ///
+    /// * `resource` - The resource to write
+    /// * `output_path` - The output file path
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, `Err(Error)` on failure.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::{Codec, types::{Resource, Metadata, Entry, Translation, EntryStatus}};
+    ///
+    /// let resource = Resource {
+    ///     metadata: Metadata {
+    ///         language: "en".to_string(),
+    ///         domain: "domain".to_string(),
+    ///         custom: std::collections::HashMap::new(),
+    ///     },
+    ///     entries: vec![],
+    /// };
+    /// Codec::write_resource_to_file(&resource, "output.strings")?;
+    /// # Ok::<(), langcodec::Error>(())
+    /// ```
+    pub fn write_resource_to_file(resource: &Resource, output_path: &str) -> Result<(), Error> {
+        use crate::formats::{AndroidStringsFormat, CSVRecord, StringsFormat, XcstringsFormat};
+        use std::path::Path;
+
+        // Infer format from output path
+        let format_type = infer_format_from_extension(output_path).ok_or_else(|| {
+            Error::InvalidResource(format!(
+                "Cannot infer format from output path: {}",
+                output_path
+            ))
+        })?;
+
+        match format_type {
+            crate::formats::FormatType::AndroidStrings(_) => {
+                AndroidStringsFormat::from(resource.clone())
+                    .write_to(Path::new(output_path))
+                    .map_err(|e| {
+                        Error::conversion_error(
+                            format!("Error writing AndroidStrings output: {}", e),
+                            None,
+                        )
+                    })
+            }
+            crate::formats::FormatType::Strings(_) => StringsFormat::try_from(resource.clone())
+                .and_then(|f| f.write_to(Path::new(output_path)))
+                .map_err(|e| {
+                    Error::conversion_error(format!("Error writing Strings output: {}", e), None)
+                }),
+            crate::formats::FormatType::Xcstrings => {
+                XcstringsFormat::try_from(vec![resource.clone()])
+                    .and_then(|f| f.write_to(Path::new(output_path)))
+                    .map_err(|e| {
+                        Error::conversion_error(
+                            format!("Error writing Xcstrings output: {}", e),
+                            None,
+                        )
+                    })
+            }
+            crate::formats::FormatType::CSV(_) => Vec::<CSVRecord>::try_from(resource.clone())
+                .and_then(|f| f.write_to(Path::new(output_path)))
+                .map_err(|e| {
+                    Error::conversion_error(format!("Error writing CSV output: {}", e), None)
+                }),
+        }
+    }
+
+    /// Converts a vector of resources to a specific output format.
+    ///
+    /// # Arguments
+    ///
+    /// * `resources` - The resources to convert
+    /// * `output_path` - The output file path
+    /// * `output_format` - The target format
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` on success, `Err(Error)` on failure.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::{Codec, types::{Resource, Metadata, Entry, Translation, EntryStatus}, formats::FormatType};
+    ///
+    /// let resources = vec![Resource {
+    ///     metadata: Metadata {
+    ///         language: "en".to_string(),
+    ///         domain: "domain".to_string(),
+    ///         custom: std::collections::HashMap::new(),
+    ///     },
+    ///     entries: vec![],
+    /// }];
+    /// Codec::convert_resources_to_format(
+    ///     resources,
+    ///     "output.strings",
+    ///     FormatType::Strings(None)
+    /// )?;
+    /// # Ok::<(), langcodec::Error>(())
+    /// ```
+    pub fn convert_resources_to_format(
+        resources: Vec<Resource>,
+        output_path: &str,
+        output_format: crate::formats::FormatType,
+    ) -> Result<(), Error> {
+        use crate::formats::{AndroidStringsFormat, CSVRecord, StringsFormat, XcstringsFormat};
+        use std::path::Path;
+
+        match output_format {
+            crate::formats::FormatType::AndroidStrings(_) => {
+                if let Some(resource) = resources.first() {
+                    AndroidStringsFormat::from(resource.clone())
+                        .write_to(Path::new(output_path))
+                        .map_err(|e| {
+                            Error::conversion_error(
+                                format!("Error writing AndroidStrings output: {}", e),
+                                None,
+                            )
+                        })
+                } else {
+                    Err(Error::InvalidResource(
+                        "No resources to convert".to_string(),
+                    ))
+                }
+            }
+            crate::formats::FormatType::Strings(_) => {
+                if let Some(resource) = resources.first() {
+                    StringsFormat::try_from(resource.clone())
+                        .and_then(|f| f.write_to(Path::new(output_path)))
+                        .map_err(|e| {
+                            Error::conversion_error(
+                                format!("Error writing Strings output: {}", e),
+                                None,
+                            )
+                        })
+                } else {
+                    Err(Error::InvalidResource(
+                        "No resources to convert".to_string(),
+                    ))
+                }
+            }
+            crate::formats::FormatType::Xcstrings => XcstringsFormat::try_from(resources)
+                .and_then(|f| f.write_to(Path::new(output_path)))
+                .map_err(|e| {
+                    Error::conversion_error(format!("Error writing Xcstrings output: {}", e), None)
+                }),
+            crate::formats::FormatType::CSV(_) => {
+                if let Some(resource) = resources.first() {
+                    Vec::<CSVRecord>::try_from(resource.clone())
+                        .and_then(|f| f.write_to(Path::new(output_path)))
+                        .map_err(|e| {
+                            Error::conversion_error(
+                                format!("Error writing CSV output: {}", e),
+                                None,
+                            )
+                        })
+                } else {
+                    Err(Error::InvalidResource(
+                        "No resources to convert".to_string(),
+                    ))
+                }
+            }
+        }
     }
 
     /// Reads a resource file given its path and explicit format type.

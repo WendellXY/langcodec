@@ -147,5 +147,8 @@ pub use crate::{
     codec::{Codec, CodecBuilder, convert, convert_auto, infer_format_from_extension},
     error::Error,
     formats::FormatType,
-    types::{Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource, Translation},
+    types::{
+        ConflictStrategy, Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource,
+        Translation,
+    },
 };
