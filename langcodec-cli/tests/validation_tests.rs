@@ -350,7 +350,7 @@ fn test_validate_symlinks() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::symlink;
-        if let Ok(_) = symlink(&original_file, &symlink_file) {
+        if symlink(&original_file, &symlink_file).is_ok() {
             let result = validate_file_path(symlink_file.to_str().unwrap());
             assert!(result.is_ok());
         }

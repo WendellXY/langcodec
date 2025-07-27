@@ -11,6 +11,12 @@ pub struct ValidationContext {
     pub output_format: Option<String>,
 }
 
+impl Default for ValidationContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ValidationContext {
     pub fn new() -> Self {
         Self {
