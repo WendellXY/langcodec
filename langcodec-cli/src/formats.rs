@@ -3,6 +3,7 @@ use std::str::FromStr;
 /// Custom format types that are not supported by the lib crate.
 /// These are one-way conversions only (to Resource format).
 #[derive(Debug, Clone, PartialEq, clap::ValueEnum)]
+#[allow(clippy::enum_variant_names)]
 pub enum CustomFormat {
     /// A JSON file which contains a map of language codes to translations.
     ///
