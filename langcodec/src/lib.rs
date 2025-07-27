@@ -16,6 +16,13 @@
 //! let mut codec = Codec::new();
 //! codec.read_file_by_extension("en.lproj/Localizable.strings", None)?;
 //! codec.write_to_file()?;
+//!
+//! // Or use the builder pattern for fluent construction
+//! let codec = Codec::builder()
+//!     .add_file("en.lproj/Localizable.strings")?
+//!     .add_file("fr.lproj/Localizable.strings")?
+//!     .add_file("values-es/strings.xml")?
+//!     .build();
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -33,6 +40,60 @@
 //! - 📦 Designed for CLI tools, CI/CD pipelines, and library integration
 //! - 🔄 Unified internal model (`Resource`) for lossless format-agnostic processing
 //! - 📖 Well-documented, robust error handling and extensible codebase
+//!
+//! # Examples
+//!
+//! ## Basic Format Conversion
+//! ```rust,no_run
+//! use langcodec::convert_auto;
+//!
+//! // Convert Apple .strings to Android XML
+//! convert_auto("en.lproj/Localizable.strings", "values-en/strings.xml")?;
+//!
+//! // Convert to CSV for analysis
+//! convert_auto("Localizable.xcstrings", "translations.csv")?;
+//! # Ok::<(), langcodec::Error>(())
+//! ```
+//!
+//! ## Working with Resources
+//! ```rust,no_run
+//! use langcodec::{Codec, types::Entry};
+//!
+//! // Load multiple files with the builder pattern
+//! let codec = Codec::builder()
+//!     .add_file("en.lproj/Localizable.strings")?
+//!     .add_file("fr.lproj/Localizable.strings")?
+//!     .add_file("values-es/strings.xml")?
+//!     .build();
+//!
+//! // Find specific translations
+//! if let Some(en_resource) = codec.get_by_language("en") {
+//!     if let Some(entry) = en_resource.entries.iter().find(|e| e.id == "welcome") {
+//!         println!("Welcome message: {}", entry.value);
+//!     }
+//! }
+//! # Ok::<(), langcodec::Error>(())
+//! ```
+//!
+//! ## Batch Processing
+//! ```rust,no_run
+//! use langcodec::Codec;
+//! use std::path::Path;
+//!
+//! let mut codec = Codec::new();
+//!
+//! // Load all localization files in a directory
+//! for entry in std::fs::read_dir("locales")? {
+//!     let path = entry?.path();
+//!     if path.extension().and_then(|s| s.to_str()) == Some("strings") {
+//!         codec.read_file_by_extension(&path, None)?;
+//!     }
+//! }
+//!
+//! // Write all resources back to their original formats
+//! codec.write_to_file()?;
+//! # Ok::<(), langcodec::Error>(())
+//! ```
 
 pub mod codec;
 pub mod error;
@@ -42,7 +103,7 @@ pub mod types;
 
 // Re-export most used types for easy consumption
 pub use crate::{
-    codec::{Codec, convert, convert_auto, infer_format_from_extension},
+    codec::{Codec, CodecBuilder, convert, convert_auto, infer_format_from_extension},
     error::Error,
     formats::FormatType,
     types::{Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource, Translation},
