@@ -7,11 +7,18 @@ use std::{
     str::FromStr,
 };
 
+use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 
 use crate::{error::Error, traits::Parser};
+
+// Static regex patterns for HTML tag removal
+lazy_static! {
+    static ref HTML_TAG_REGEX: Regex = Regex::new(r"<[^>]+>").unwrap();
+    static ref HTML_CLOSE_TAG_REGEX: Regex = Regex::new(r"</[^>]+>").unwrap();
+}
 
 impl Parser for Vec<Resource> {
     /// Parse from any reader.
@@ -284,12 +291,12 @@ fn make_plain_translation_string(translation: String) -> String {
     translation = translation.trim().to_string();
 
     // Remove all HTML tags (non-greedy)
-    let re_html = Regex::new(r"<[^>]+>").unwrap();
-    translation = re_html.replace_all(&translation, "").to_string();
+    translation = HTML_TAG_REGEX.replace_all(&translation, "").to_string();
 
     // Remove all closing tags like </font>
-    let re_html_close = Regex::new(r"</[^>]+>").unwrap();
-    translation = re_html_close.replace_all(&translation, "").to_string();
+    translation = HTML_CLOSE_TAG_REGEX
+        .replace_all(&translation, "")
+        .to_string();
 
     // Replace any newline characters with explicit "\n" for better formatting,
     translation = translation
