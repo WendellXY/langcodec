@@ -8,7 +8,28 @@
 
 ## Status
 
-This is an early `0.1.0` release. The API may evolve as development continues. Contributions and feedback are very welcome to help shape the future of this project!
+This is a `0.2.0` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, the API may evolve as development continues. The library is functional and well-tested, but breaking changes may occur in future releases. Contributions and feedback are very welcome to help shape the future of this project!
+
+---
+
+## Installation
+
+### CLI Tool
+
+Install the command-line interface from crates.io:
+
+```sh
+cargo install langcodec-cli
+```
+
+### Library
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+langcodec = "0.2.0"
+```
 
 ---
 
@@ -49,7 +70,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-langcodec = "0.1"
+langcodec = "0.2.0"
 ```
 
 #### Example: Read, Manipulate, and Write
@@ -81,9 +102,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 A CLI tool is provided for easy conversion, merging, and debugging of localization files.
 
-#### Install (from source)
+#### Install
 
 ```sh
+# From crates.io (recommended)
+cargo install langcodec-cli
+
+# From source
 cargo install --path langcodec-cli
 ```
 
@@ -242,4 +267,4 @@ This project is licensed under the MIT License.
 
 ## Status and Roadmap
 
-`langcodec` aims to be a universal, format-agnostic localization toolkit that simplifies working with diverse localization file formats. The current focus is on stabilizing core features, expanding format support, and developing a user-friendly CLI. We welcome your issues, feature requests, and discussions at the project's issue tracker.
+`langcodec` is now available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, the API may evolve as development continues. The current focus is on expanding format support, improving the CLI experience, and building a robust ecosystem for localization tooling. We welcome your issues, feature requests, and discussions at the project's issue tracker.
