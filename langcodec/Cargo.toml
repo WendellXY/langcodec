@@ -24,3 +24,6 @@ thiserror = "2.0.12"
 quick-xml = "0.37.5"
 regex = "1.11.1"
 unic-langid = "0.9.6"
+
+[dev-dependencies]
+tempfile = "3.8"

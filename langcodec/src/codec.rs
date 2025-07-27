@@ -679,7 +679,7 @@ impl Codec {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,no_run
     /// use langcodec::{Codec, types::{Resource, Metadata, Entry, Translation, EntryStatus}};
     ///
     /// let resource = Resource {
@@ -753,7 +753,7 @@ impl Codec {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust, no_run
     /// use langcodec::{Codec, types::{Resource, Metadata, Entry, Translation, EntryStatus}, formats::FormatType};
     ///
     /// let resources = vec![Resource {

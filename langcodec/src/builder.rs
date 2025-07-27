@@ -290,12 +290,13 @@ impl Default for CodecBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_builder_read_file_by_extension() {
-        // Create a temporary strings file
-        let temp_dir = std::env::temp_dir();
-        let test_file = temp_dir.join("test_en.strings");
+        // Create a temporary strings file using tempfile
+        let temp_file = NamedTempFile::new().unwrap();
+        let test_file = temp_file.path().with_extension("strings");
 
         let content = r#"/* English localization */
 "hello" = "Hello";
@@ -303,21 +304,22 @@ mod tests {
 "thanks" = "Thank you!";
 "#;
 
+        // Write the test file
         std::fs::write(&test_file, content).unwrap();
 
         // Test the builder with read_file_by_extension
-        let codec = CodecBuilder::new()
+        let result = CodecBuilder::new()
             .read_file_by_extension(&test_file, Some("en".to_string()))
             .unwrap()
             .build();
 
         // Verify the result
-        assert_eq!(codec.resources.len(), 1);
-        let resource = &codec.resources[0];
+        assert_eq!(result.resources.len(), 1);
+        let resource = &result.resources[0];
         assert_eq!(resource.metadata.language, "en");
         assert_eq!(resource.entries.len(), 3);
 
-        // Clean up
-        std::fs::remove_file(test_file).unwrap();
+        // Clean up - tempfile will automatically clean up when temp_file goes out of scope
+        let _ = std::fs::remove_file(&test_file);
     }
 }
