@@ -22,6 +22,7 @@
 //!     .add_file("en.lproj/Localizable.strings")?
 //!     .add_file("fr.lproj/Localizable.strings")?
 //!     .add_file("values-es/strings.xml")?
+//!     .read_file_by_extension("de.strings", Some("de".to_string()))?
 //!     .build();
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -136,6 +137,7 @@
 //! # Ok::<(), langcodec::Error>(())
 //! ```
 
+pub mod builder;
 pub mod codec;
 pub mod error;
 pub mod formats;
@@ -144,7 +146,8 @@ pub mod types;
 
 // Re-export most used types for easy consumption
 pub use crate::{
-    codec::{Codec, CodecBuilder, convert, convert_auto, infer_format_from_extension},
+    builder::CodecBuilder,
+    codec::{Codec, convert, convert_auto, infer_format_from_extension},
     error::Error,
     formats::FormatType,
     types::{
