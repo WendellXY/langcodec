@@ -2,12 +2,14 @@ mod debug;
 mod formats;
 mod merge;
 mod transformers;
+mod validation;
 mod view;
 
 use crate::debug::run_debug_command;
 use crate::formats::parse_custom_format;
 use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::transformers::custom_format_to_resource;
+use crate::validation::{ValidationContext, validate_context, validate_custom_format_file};
 use crate::view::print_view;
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -99,12 +101,43 @@ fn main() {
             input_format,
             output_format,
         } => {
+            // Create validation context
+            let mut context = ValidationContext::new()
+                .with_input_file(input.clone())
+                .with_output_file(output.clone());
+
+            if let Some(format) = &input_format {
+                context = context.with_input_format(format.clone());
+            }
+            if let Some(format) = &output_format {
+                context = context.with_output_format(format.clone());
+            }
+
+            // Validate all inputs
+            if let Err(e) = validate_context(&context) {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+
             run_unified_convert_command(input, output, input_format, output_format);
         }
         Commands::View { input, lang, full } => {
+            // Create validation context
+            let mut context = ValidationContext::new().with_input_file(input.clone());
+
+            if let Some(lang_code) = &lang {
+                context = context.with_language_code(lang_code.clone());
+            }
+
+            // Validate all inputs
+            if let Err(e) = validate_context(&context) {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+
             // Read the input file and print all the entries
             let mut codec = Codec::new();
-            if let Err(e) = codec.read_file_by_extension(input, lang.clone()) {
+            if let Err(e) = codec.read_file_by_extension(&input, lang.clone()) {
                 eprintln!("Failed to read file: {}", e);
                 std::process::exit(1);
             }
@@ -116,6 +149,23 @@ fn main() {
             strategy,
             lang,
         } => {
+            // Create validation context
+            let mut context = ValidationContext::new().with_output_file(output.clone());
+
+            for input in &inputs {
+                context = context.with_input_file(input.clone());
+            }
+
+            if let Some(lang_code) = &lang {
+                context = context.with_language_code(lang_code.clone());
+            }
+
+            // Validate all inputs
+            if let Err(e) = validate_context(&context) {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+
             run_merge_command(inputs, output, strategy, lang);
         }
         Commands::Debug {
@@ -123,6 +173,22 @@ fn main() {
             lang,
             output,
         } => {
+            // Create validation context
+            let mut context = ValidationContext::new().with_input_file(input.clone());
+
+            if let Some(lang_code) = &lang {
+                context = context.with_language_code(lang_code.clone());
+            }
+            if let Some(output_path) = &output {
+                context = context.with_output_file(output_path.clone());
+            }
+
+            // Validate all inputs
+            if let Err(e) = validate_context(&context) {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+
             run_debug_command(input, lang, output);
         }
     }
@@ -210,6 +276,9 @@ fn try_custom_format_conversion(
     output: &str,
     input_format: &Option<String>,
 ) -> Result<(), String> {
+    // Validate custom format file
+    validate_custom_format_file(input)?;
+
     let custom_format = if let Some(format_str) = input_format {
         parse_custom_format(format_str)?
     } else {
@@ -217,13 +286,8 @@ fn try_custom_format_conversion(
         let file_content = std::fs::read_to_string(input)
             .map_err(|e| format!("Error reading file {}: {}", input, e))?;
 
-        if let Some(detected_format) = formats::detect_custom_format(input, &file_content) {
-            detected_format
-        } else {
-            return Err(
-                "Could not auto-detect custom format. Please specify --input-format.".to_string(),
-            );
-        }
+        // Validate file content
+        formats::validate_custom_format_content(input, &file_content)?
     };
 
     // Convert custom format to Resource
@@ -324,6 +388,12 @@ fn try_explicit_format_conversion(
     input_format: &str,
     output_format: &str,
 ) -> Result<(), String> {
+    // Validate input file exists
+    validation::validate_file_path(input)?;
+
+    // Validate output path
+    validation::validate_output_path(output)?;
+
     // Parse input format
     let input_format_type = match input_format.to_lowercase().as_str() {
         "strings" => langcodec::formats::FormatType::Strings(None),

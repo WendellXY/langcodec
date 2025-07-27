@@ -43,6 +43,29 @@ pub fn run_merge_command(
             std::process::exit(1);
         });
 
+    // Validate that all input files have the same format
+    for (i, input) in inputs.iter().enumerate() {
+        let input_format = langcodec::infer_format_from_extension(input)
+            .or_else(|| langcodec::codec::infer_format_from_path(input));
+
+        if let Some(format) = input_format {
+            if format.to_string() != first_format.to_string() {
+                progress_bar.finish_with_message("❌ Input files have different formats");
+                eprintln!(
+                    "Error: Input file {} has format '{}' but expected '{}'",
+                    i + 1,
+                    format,
+                    first_format
+                );
+                std::process::exit(1);
+            }
+        } else {
+            progress_bar.finish_with_message("❌ Cannot infer format from input file");
+            eprintln!("Error: Cannot infer format from input file: {}", input);
+            std::process::exit(1);
+        }
+    }
+
     // Read all input files into a single codec
     let mut codec = Codec::new();
     for (i, input) in inputs.iter().enumerate() {

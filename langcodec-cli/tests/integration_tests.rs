@@ -194,7 +194,10 @@ fn test_convert_invalid_format() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Unknown custom format"));
+    assert!(
+        stderr.contains("Input format validation failed")
+            || stderr.contains("Unsupported custom format")
+    );
 }
 
 #[test]
@@ -217,9 +220,8 @@ fn test_convert_nonexistent_file() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Since JSON is not a standard format, the error should be about unknown format
-    // rather than file reading error
-    assert!(stderr.contains("Error reading file") || stderr.contains("Cannot infer input format"));
+    // With new validation, we should get a file validation error
+    assert!(stderr.contains("Input validation failed") || stderr.contains("File does not exist"));
 }
 
 #[test]

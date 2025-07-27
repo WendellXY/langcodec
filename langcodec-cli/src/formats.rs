@@ -115,6 +115,25 @@ pub fn detect_custom_format(file_path: &str, file_content: &str) -> Option<Custo
     None
 }
 
+/// Validate custom format file content
+pub fn validate_custom_format_content(
+    file_path: &str,
+    file_content: &str,
+) -> Result<CustomFormat, String> {
+    if file_content.trim().is_empty() {
+        return Err("File content is empty".to_string());
+    }
+
+    if let Some(format) = detect_custom_format(file_path, file_content) {
+        Ok(format)
+    } else {
+        Err(format!(
+            "Could not detect custom format from file content. Supported formats: {}",
+            get_supported_custom_formats()
+        ))
+    }
+}
+
 /// Get a list of all supported custom formats for help messages.
 pub fn get_supported_custom_formats() -> &'static str {
     "json-language-map, json-array-language-map, yaml-language-map"
