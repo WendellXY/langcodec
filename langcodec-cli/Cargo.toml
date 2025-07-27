@@ -12,7 +12,7 @@ categories = ["command-line-utilities", "internationalization", "localization"]
 documentation = "https://docs.rs/langcodec-cli"
 
 [dependencies]
-langcodec = { path = "../langcodec" }
+langcodec = "0.2.0"
 clap = { version = "4", features = ["derive"] }
 unicode-width = "0.2.1"
 crossterm = "0.29.0"
