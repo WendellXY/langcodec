@@ -585,14 +585,23 @@ impl Codec {
 
     /// Merges multiple resources into a single resource with conflict resolution.
     ///
+    /// This function merges resources that all have the same language.
+    /// Only entries with the same ID are treated as conflicts.
+    ///
     /// # Arguments
     ///
-    /// * `resources` - The resources to merge
-    /// * `conflict_strategy` - How to handle conflicting entries
+    /// * `resources` - The resources to merge (must all have the same language)
+    /// * `conflict_strategy` - How to handle conflicting entries (same ID)
     ///
     /// # Returns
     ///
     /// A merged resource with all entries from the input resources.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No resources are provided
+    /// - Resources have different languages (each Resource represents one language)
     ///
     /// # Example
     ///
@@ -634,26 +643,43 @@ impl Codec {
             return Err(Error::InvalidResource("No resources to merge".to_string()));
         }
 
+        // Validate that all resources have the same language
+        let first_language = &resources[0].metadata.language;
+        for (i, resource) in resources.iter().enumerate() {
+            if resource.metadata.language != *first_language {
+                return Err(Error::InvalidResource(format!(
+                    "Cannot merge resources with different languages: resource {} has language '{}', but first resource has language '{}'",
+                    i + 1,
+                    resource.metadata.language,
+                    first_language
+                )));
+            }
+        }
+
         let mut merged = resources[0].clone();
         let mut all_entries = std::collections::HashMap::new();
 
         // Collect all entries from all resources
         for resource in resources {
             for entry in &resource.entries {
-                let key = entry.id.clone();
+                // Use the original entry ID for conflict resolution
+                // Since all resources have the same language, conflicts are based on ID only
                 match conflict_strategy {
                     crate::types::ConflictStrategy::First => {
-                        all_entries.entry(key).or_insert_with(|| entry.clone());
+                        all_entries
+                            .entry(&entry.id)
+                            .or_insert_with(|| entry.clone());
                     }
                     crate::types::ConflictStrategy::Last => {
-                        all_entries.insert(key, entry.clone());
+                        all_entries.insert(&entry.id, entry.clone());
                     }
                     crate::types::ConflictStrategy::Skip => {
-                        if all_entries.contains_key(&key) {
-                            // Skip this entry if we already have one with the same key
+                        if all_entries.contains_key(&entry.id) {
+                            // Remove the existing entry and skip this one too
+                            all_entries.remove(&entry.id);
                             continue;
                         }
-                        all_entries.insert(key, entry.clone());
+                        all_entries.insert(&entry.id, entry.clone());
                     }
                 }
             }

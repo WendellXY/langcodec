@@ -156,3 +156,167 @@ impl FormatType {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_type_display() {
+        assert_eq!(FormatType::AndroidStrings(None).to_string(), "android");
+        assert_eq!(FormatType::Strings(None).to_string(), "strings");
+        assert_eq!(FormatType::Xcstrings.to_string(), "xcstrings");
+        assert_eq!(FormatType::CSV(None).to_string(), "csv");
+    }
+
+    #[test]
+    fn test_format_type_from_str() {
+        // Android formats
+        assert_eq!(
+            FormatType::from_str("android").unwrap(),
+            FormatType::AndroidStrings(None)
+        );
+        assert_eq!(
+            FormatType::from_str("ANDROID").unwrap(),
+            FormatType::AndroidStrings(None)
+        );
+        assert_eq!(
+            FormatType::from_str("androidstrings").unwrap(),
+            FormatType::AndroidStrings(None)
+        );
+        assert_eq!(
+            FormatType::from_str("xml").unwrap(),
+            FormatType::AndroidStrings(None)
+        );
+
+        // Strings format
+        assert_eq!(
+            FormatType::from_str("strings").unwrap(),
+            FormatType::Strings(None)
+        );
+        assert_eq!(
+            FormatType::from_str("STRINGS").unwrap(),
+            FormatType::Strings(None)
+        );
+
+        // Xcstrings format
+        assert_eq!(
+            FormatType::from_str("xcstrings").unwrap(),
+            FormatType::Xcstrings
+        );
+        assert_eq!(
+            FormatType::from_str("XCSTRINGS").unwrap(),
+            FormatType::Xcstrings
+        );
+
+        // CSV format
+        assert_eq!(FormatType::from_str("csv").unwrap(), FormatType::CSV(None));
+        assert_eq!(FormatType::from_str("CSV").unwrap(), FormatType::CSV(None));
+    }
+
+    #[test]
+    fn test_format_type_from_str_with_whitespace() {
+        assert_eq!(
+            FormatType::from_str("  android  ").unwrap(),
+            FormatType::AndroidStrings(None)
+        );
+        assert_eq!(
+            FormatType::from_str("  strings  ").unwrap(),
+            FormatType::Strings(None)
+        );
+    }
+
+    #[test]
+    fn test_format_type_from_str_invalid() {
+        assert!(FormatType::from_str("invalid").is_err());
+        assert!(FormatType::from_str("foobar").is_err());
+        assert!(FormatType::from_str("").is_err());
+    }
+
+    #[test]
+    fn test_format_type_extension() {
+        assert_eq!(FormatType::AndroidStrings(None).extension(), "xml");
+        assert_eq!(FormatType::Strings(None).extension(), "strings");
+        assert_eq!(FormatType::Xcstrings.extension(), "xcstrings");
+        assert_eq!(FormatType::CSV(None).extension(), "csv");
+    }
+
+    #[test]
+    fn test_format_type_language() {
+        assert_eq!(
+            FormatType::AndroidStrings(Some("en".to_string())).language(),
+            Some(&"en".to_string())
+        );
+        assert_eq!(
+            FormatType::Strings(Some("fr".to_string())).language(),
+            Some(&"fr".to_string())
+        );
+        assert_eq!(FormatType::Xcstrings.language(), None);
+        assert_eq!(
+            FormatType::CSV(Some("es".to_string())).language(),
+            Some(&"es".to_string())
+        );
+    }
+
+    #[test]
+    fn test_format_type_with_language() {
+        let original = FormatType::AndroidStrings(None);
+        let with_lang = original.with_language(Some("en".to_string()));
+        assert_eq!(
+            with_lang,
+            FormatType::AndroidStrings(Some("en".to_string()))
+        );
+
+        let original = FormatType::Strings(Some("fr".to_string()));
+        let without_lang = original.with_language(None);
+        assert_eq!(without_lang, FormatType::Strings(None));
+    }
+
+    #[test]
+    fn test_format_type_matches_language_of() {
+        let format1 = FormatType::AndroidStrings(Some("en".to_string()));
+        let format2 = FormatType::Strings(Some("en".to_string()));
+        let format3 = FormatType::CSV(Some("fr".to_string()));
+
+        assert!(format1.matches_language_of(&format2));
+        assert!(!format1.matches_language_of(&format3));
+        assert!(!format1.matches_language_of(&FormatType::Xcstrings));
+    }
+
+    #[test]
+    fn test_format_type_matches_language_of_none() {
+        let format1 = FormatType::AndroidStrings(None);
+        let format2 = FormatType::Strings(None);
+        let format3 = FormatType::CSV(Some("en".to_string()));
+
+        // When both have None language, they should match
+        assert!(format1.matches_language_of(&format2));
+        // When one has None and other has Some, they should not match
+        assert!(!format1.matches_language_of(&format3));
+    }
+
+    #[test]
+    fn test_format_type_debug() {
+        let format = FormatType::AndroidStrings(Some("en".to_string()));
+        let debug = format!("{:?}", format);
+        assert!(debug.contains("AndroidStrings"));
+        assert!(debug.contains("en"));
+    }
+
+    #[test]
+    fn test_format_type_clone() {
+        let original = FormatType::Strings(Some("en".to_string()));
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_format_type_partial_eq() {
+        let format1 = FormatType::AndroidStrings(Some("en".to_string()));
+        let format2 = FormatType::AndroidStrings(Some("en".to_string()));
+        let format3 = FormatType::AndroidStrings(Some("fr".to_string()));
+
+        assert_eq!(format1, format2);
+        assert_ne!(format1, format3);
+    }
+}

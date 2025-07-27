@@ -137,8 +137,21 @@ fn main() {
 
             // Read the input file using the traditional method
             let mut codec = Codec::new();
-            if let Err(e) = codec.read_file_by_extension(&input, lang.clone()) {
-                eprintln!("Failed to read file: {}", e);
+
+            // Try standard format first
+            if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
+                // Standard format succeeded
+            } else if input.ends_with(".json")
+                || input.ends_with(".yaml")
+                || input.ends_with(".yml")
+            {
+                // Try custom format for JSON/YAML files
+                if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
+                    eprintln!("Failed to read file: {}", e);
+                    std::process::exit(1);
+                }
+            } else {
+                eprintln!("Failed to read file: unsupported format");
                 std::process::exit(1);
             }
 
@@ -384,4 +397,32 @@ fn try_explicit_format_conversion(
     // Use the lib crate's convert function
     langcodec::convert(input, input_format_type, output, output_format_type)
         .map_err(|e| format!("Conversion error: {}", e))
+}
+
+/// Try to read a custom format file and add it to the codec for view
+fn try_custom_format_view(
+    input: &str,
+    _lang: Option<String>,
+    codec: &mut Codec,
+) -> Result<(), String> {
+    // Validate custom format file
+    validation::validate_custom_format_file(input)?;
+
+    // Auto-detect format based on file content
+    let file_content = std::fs::read_to_string(input)
+        .map_err(|e| format!("Error reading file {}: {}", input, e))?;
+
+    // Validate file content
+    formats::validate_custom_format_content(input, &file_content)?;
+
+    // Convert custom format to Resource
+    let resources =
+        custom_format_to_resource(input.to_string(), parse_custom_format("json-language-map")?)?;
+
+    // Add resources to codec
+    for resource in resources {
+        codec.add_resource(resource);
+    }
+
+    Ok(())
 }

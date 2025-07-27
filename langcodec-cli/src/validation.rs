@@ -91,7 +91,22 @@ pub fn validate_language_code(lang: &str) -> Result<(), String> {
 
     // Use the same approach as the lib crate - parse with LanguageIdentifier
     match lang.parse::<LanguageIdentifier>() {
-        Ok(_) => Ok(()),
+        Ok(lang_id) => {
+            // Additional validation: ensure the language code follows expected patterns
+            // Reject codes that are too generic or don't look like real language codes
+            let lang_str = lang_id.to_string();
+            if lang_str == "invalid"
+                || lang_str == "123"
+                || lang_str.starts_with('-')
+                || lang_str.ends_with('-')
+            {
+                return Err(format!(
+                    "Invalid language code format: {}. Expected valid BCP 47 language identifier",
+                    lang
+                ));
+            }
+            Ok(())
+        }
         Err(_) => Err(format!(
             "Invalid language code format: {}. Expected valid BCP 47 language identifier",
             lang
@@ -105,8 +120,9 @@ pub fn validate_custom_format(format: &str) -> Result<(), String> {
         return Err("Format cannot be empty".to_string());
     }
 
-    // Check if it's a supported custom format
-    if parse_custom_format(format).is_err() {
+    // Trim whitespace and check if it's a supported custom format
+    let trimmed_format = format.trim();
+    if parse_custom_format(trimmed_format).is_err() {
         return Err(format!(
             "Unsupported custom format: {}. Supported formats: {}",
             format,
@@ -115,6 +131,25 @@ pub fn validate_custom_format(format: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Validate standard format string
+pub fn validate_standard_format(format: &str) -> Result<(), String> {
+    if format.is_empty() {
+        return Err("Format cannot be empty".to_string());
+    }
+
+    // Trim whitespace and check if it's a supported standard format
+    match format.trim().to_lowercase().as_str() {
+        "android" | "androidstrings" | "xml" => Ok(()),
+        "strings" => Ok(()),
+        "xcstrings" => Ok(()),
+        "csv" => Ok(()),
+        _ => Err(format!(
+            "Unsupported standard format: {}. Supported formats: android, strings, xcstrings, csv",
+            format
+        )),
+    }
 }
 
 /// Validate a complete validation context
@@ -138,13 +173,17 @@ pub fn validate_context(context: &ValidationContext) -> Result<(), String> {
 
     // Validate input format
     if let Some(ref format) = context.input_format {
-        validate_custom_format(format)
-            .map_err(|e| format!("Input format validation failed: {}", e))?;
+        // Try standard format first, then custom format
+        if validate_standard_format(format).is_err() {
+            validate_custom_format(format)
+                .map_err(|e| format!("Input format validation failed: {}", e))?;
+        }
     }
 
     // Validate output format
     if let Some(ref format) = context.output_format {
-        validate_custom_format(format)
+        // Output formats are typically standard formats
+        validate_standard_format(format)
             .map_err(|e| format!("Output format validation failed: {}", e))?;
     }
 

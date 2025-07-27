@@ -72,10 +72,17 @@ pub fn transform(input: String) -> Result<Vec<Resource>, String> {
                 custom: entry_custom,
             };
 
-            language_resources
-                .entry(lang_code.clone())
-                .or_default()
-                .push(resource_entry);
+            // Handle duplicate keys by replacing the previous entry
+            let entries = language_resources.entry(lang_code.clone()).or_default();
+
+            // Check if an entry with the same key already exists
+            if let Some(existing_index) = entries.iter().position(|e| e.id == *localization_key) {
+                // Replace the existing entry with the new one
+                entries[existing_index] = resource_entry;
+            } else {
+                // Add new entry
+                entries.push(resource_entry);
+            }
         }
     }
 
