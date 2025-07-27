@@ -150,6 +150,8 @@ impl TryFrom<Format> for Vec<Resource> {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub localizations: HashMap<String, Localization>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
