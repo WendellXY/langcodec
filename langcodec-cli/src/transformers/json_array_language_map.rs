@@ -52,7 +52,7 @@ pub fn transform(input: String) -> Result<Vec<Resource>, String> {
         // Priority: "key" field > "en" field > first field value
         let localization_key = entry
             .get("key")
-            .unwrap_or(&entry.get("en").unwrap_or(&entry.iter().next().unwrap().1));
+            .unwrap_or(entry.get("en").unwrap_or(entry.iter().next().unwrap().1));
 
         for (lang_code, value) in entry.iter() {
             // Skip the "key" field as it's not a language code
@@ -74,7 +74,7 @@ pub fn transform(input: String) -> Result<Vec<Resource>, String> {
 
             language_resources
                 .entry(lang_code.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(resource_entry);
         }
     }

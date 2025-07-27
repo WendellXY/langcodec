@@ -7,16 +7,21 @@
 /// Android XML strings, and `.xcstrings`, providing methods to read from files by type
 /// or extension, write resources back to files, and cache resources to JSON.
 ///
-use std::path::Path;
-
 use crate::formats::CSVRecord;
 use crate::{error::Error, formats::*, traits::Parser, types::Resource};
+use std::path::Path;
 
 /// Represents a collection of localized resources and provides methods to read,
 /// write, cache, and load these resources.
 pub struct Codec {
     /// The collection of resources managed by this codec.
     pub resources: Box<Vec<Resource>>,
+}
+
+impl Default for Codec {
+    fn default() -> Self {
+        Codec::new()
+    }
 }
 
 impl Codec {
@@ -161,7 +166,7 @@ impl Codec {
             let domain = resource.metadata.domain.clone();
             grouped_resources
                 .entry(domain)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(resource.clone());
         }
 

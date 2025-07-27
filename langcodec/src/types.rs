@@ -145,7 +145,7 @@ impl Translation {
                 // Return the first plural form as a singular translation
                 let id = plural.id;
                 let forms = plural.forms.into_iter().next().map_or_else(
-                    || BTreeMap::new(),
+                    BTreeMap::new,
                     |(category, value)| {
                         let mut map = BTreeMap::new();
                         map.insert(category, make_plain_translation_string(value));
@@ -162,10 +162,13 @@ impl Translation {
             Translation::Singular(value) => make_plain_translation_string(value.clone()),
             Translation::Plural(plural) => {
                 // Return the first plural form as a singular translation
-                plural.forms.values().next().map_or_else(
-                    || String::new(),
-                    |value| make_plain_translation_string(value.clone()),
-                )
+                plural
+                    .forms
+                    .values()
+                    .next()
+                    .map_or_else(String::new, |value| {
+                        make_plain_translation_string(value.clone())
+                    })
             }
         }
     }

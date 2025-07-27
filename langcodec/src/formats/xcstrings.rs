@@ -94,9 +94,9 @@ impl TryFrom<Vec<Resource>> for Format {
         }
 
         Ok(Format {
-            source_language: source_language,
-            version: version,
-            strings: strings,
+            source_language,
+            version,
+            strings,
         })
     }
 }
@@ -172,7 +172,7 @@ impl Item {
                     Localization {
                         string_unit: Some(StringUnit {
                             state: entry.status,
-                            value: value,
+                            value,
                         }),
                         variations: None,
                     },
@@ -186,7 +186,7 @@ impl Item {
                         PluralVariation {
                             string_unit: Some(StringUnit {
                                 state: entry.status.clone(),
-                                value: value,
+                                value,
                             }),
                         },
                     );
@@ -227,13 +227,13 @@ pub enum ExtractionState {
     Migrated,
 }
 
-impl ToString for ExtractionState {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for ExtractionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExtractionState::Manual => "manual".to_string(),
-            ExtractionState::Stale => "stale".to_string(),
-            ExtractionState::ExtractedWithValue => "extracted_with_value".to_string(),
-            ExtractionState::Migrated => "migrated".to_string(),
+            ExtractionState::Manual => write!(f, "manual"),
+            ExtractionState::Stale => write!(f, "stale"),
+            ExtractionState::ExtractedWithValue => write!(f, "extracted_with_value"),
+            ExtractionState::Migrated => write!(f, "migrated"),
         }
     }
 }

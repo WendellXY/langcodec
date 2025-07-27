@@ -34,9 +34,9 @@ pub fn transform(input: String) -> Result<Vec<Resource>, String> {
     // Find the localization key
     // Priority: "key" field > "en" field > first field value
     let localization_key = yaml_object.get("key").unwrap_or(
-        &yaml_object
+        yaml_object
             .get("en")
-            .unwrap_or(&yaml_object.iter().next().unwrap().1),
+            .unwrap_or(yaml_object.iter().next().unwrap().1),
     );
 
     let mut resources = Vec::new();

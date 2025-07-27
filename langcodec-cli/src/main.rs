@@ -229,7 +229,7 @@ fn print_conversion_error(input: &str, output: &str) {
     if input.ends_with(".yaml") || input.ends_with(".yml") {
         eprintln!("2. Custom YAML format conversion");
     }
-    eprintln!("");
+    eprintln!();
     eprintln!("Supported input formats:");
     eprintln!("- .strings (Apple strings files)");
     eprintln!("- .xml (Android strings files)");
@@ -237,13 +237,13 @@ fn print_conversion_error(input: &str, output: &str) {
     eprintln!("- .csv (CSV files)");
     eprintln!("- .json (JSON key-value pairs or Resource format)");
     eprintln!("- .yaml/.yml (YAML language map format)");
-    eprintln!("");
+    eprintln!();
     eprintln!("Supported output formats:");
     eprintln!("- .strings (Apple strings files)");
     eprintln!("- .xml (Android strings files)");
     eprintln!("- .xcstrings (Apple xcstrings files)");
     eprintln!("- .csv (CSV files)");
-    eprintln!("");
+    eprintln!();
     eprintln!(
         "For JSON files, the command will try both standard Resource format and key-value pairs."
     );

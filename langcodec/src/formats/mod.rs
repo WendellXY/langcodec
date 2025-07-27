@@ -152,7 +152,7 @@ impl FormatType {
     pub fn matches_language_of(&self, other: &FormatType) -> bool {
         match &self {
             FormatType::Xcstrings => true, // Xcstrings has no language, so it matches any other Xcstrings
-            _ => &self.language() == &other.language(),
+            _ => self.language() == other.language(),
         }
     }
 }

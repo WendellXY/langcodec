@@ -86,7 +86,7 @@ pub fn detect_custom_format(file_path: &str, file_content: &str) -> Option<Custo
     match extension.as_str() {
         "json" => {
             // Try to parse as JSON object first (JSONLanguageMap)
-            if let Ok(_) = serde_json::from_str::<serde_json::Value>(file_content) {
+            if serde_json::from_str::<serde_json::Value>(file_content).is_ok() {
                 // Check if it's an object (not an array)
                 if let Ok(obj) = serde_json::from_str::<
                     std::collections::HashMap<String, serde_json::Value>,
@@ -97,14 +97,14 @@ pub fn detect_custom_format(file_path: &str, file_content: &str) -> Option<Custo
                     }
                 }
                 // Check if it's an array (JSONArrayLanguageMap)
-                if let Ok(_) = serde_json::from_str::<Vec<serde_json::Value>>(file_content) {
+                if serde_json::from_str::<Vec<serde_json::Value>>(file_content).is_ok() {
                     return Some(CustomFormat::JSONArrayLanguageMap);
                 }
             }
         }
         "yaml" | "yml" => {
             // Try to parse as YAML
-            if let Ok(_) = serde_yaml::from_str::<serde_yaml::Value>(file_content) {
+            if serde_yaml::from_str::<serde_yaml::Value>(file_content).is_ok() {
                 return Some(CustomFormat::YAMLLanguageMap);
             }
         }

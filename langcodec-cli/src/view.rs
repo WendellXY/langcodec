@@ -14,7 +14,7 @@ pub fn print_view(codec: &Codec, lang: &Option<String>, full: bool) {
             16
         };
 
-        println!("{:<key_width$} {}", "Key", "Value", key_width = key_width);
+        println!("{:<key_width$} Value", "Key", key_width = key_width);
         for resource in &*codec.resources {
             if let Some(lang) = lang {
                 if !resource.has_language(lang) {

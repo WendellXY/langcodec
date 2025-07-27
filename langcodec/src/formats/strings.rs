@@ -157,14 +157,11 @@ impl Parser for Format {
             .collect();
 
         // Extract language from header if available
-        let language = &header
-            .get("Language")
-            .cloned()
-            .unwrap_or_else(|| String::new());
+        let language = &header.get("Language").cloned().unwrap_or_default();
 
         Ok(Format {
             language: language.to_string(), // .strings format does not have a language field
-            pairs: pairs,
+            pairs,
         })
     }
 
@@ -269,7 +266,7 @@ impl TryFrom<Entry> for Pair {
         match Translation::plain_translation(entry.value) {
             Translation::Singular(value) => Ok(Pair {
                 key: entry.id,
-                value: value,
+                value,
                 comment: entry.comment,
             }),
             Translation::Plural(_) => Err(Error::DataMismatch(
@@ -302,8 +299,8 @@ impl Pair {
         if let Some(comment) = &self.comment {
             if comment.starts_with("/*") && comment.ends_with("*/") {
                 comment[2..comment.len() - 2].trim().to_string()
-            } else if comment.starts_with("//") {
-                comment[2..].trim().to_string()
+            } else if let Some(comment) = comment.strip_prefix("//") {
+                comment.trim().to_string()
             } else {
                 comment.trim().to_string()
             }
@@ -311,13 +308,15 @@ impl Pair {
             String::new()
         }
     }
+}
 
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Pair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut result = format!("\"{}\" = \"{}\";", self.key, self.value);
         if let Some(comment) = &self.comment {
             result.insert_str(0, &format!("{}\n", comment));
         }
-        result
+        write!(f, "{}", result)
     }
 }
 
