@@ -2,7 +2,7 @@
 
 **A universal localization file toolkit in Rust.**
 
-`langcodec` provides format-agnostic parsing, conversion, merging, and serialization for major localization formats, including Apple `.strings`, `.xcstrings`, Android `strings.xml`, and CSV. It enables seamless conversion and merging between formats, powerful internal data modeling, and extensibility for new formats.
+`langcodec` provides format-agnostic parsing, conversion, merging, and serialization for major localization formats, including Apple `.strings`, `.xcstrings`, Android `strings.xml`, CSV, and TSV. It enables seamless conversion and merging between formats, powerful internal data modeling, and extensibility for new formats.
 
 ---
 
@@ -54,6 +54,7 @@ langcodec = "0.2.0"
 | Apple `.xcstrings`    |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   Yes<sup>*</sup>|  ✔️      |
 | Android `strings.xml` |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No<sup>*</sup> |  ✔️      |
 | CSV                   |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No             |  –       |
+| TSV                   |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No             |  –       |
 
 <sup>* Plural support for `.xcstrings` is not under beta testing, and may not be fully implemented yet.</sup>
 <sup>* Plural support for Android may be added in the future.</sup>

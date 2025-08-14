@@ -70,6 +70,9 @@ impl CodecBuilder {
             FormatType::CSV(_) => {
                 vec![Resource::from(Vec::<CSVRecord>::read_from(path)?)]
             }
+            FormatType::TSV(_) => {
+                vec![Resource::from(Vec::<TSVRecord>::read_from(path)?)]
+            }
         };
 
         for new_resource in &mut new_resources {
@@ -125,6 +128,9 @@ impl CodecBuilder {
             FormatType::CSV(_) => {
                 vec![Resource::from(Vec::<CSVRecord>::read_from(path)?)]
             }
+            FormatType::TSV(_) => {
+                vec![Resource::from(Vec::<TSVRecord>::read_from(path)?)]
+            }
         };
 
         for new_resource in &mut new_resources {
@@ -165,6 +171,7 @@ impl CodecBuilder {
             Some("strings") => FormatType::Strings(lang),
             Some("xcstrings") => FormatType::Xcstrings,
             Some("csv") => FormatType::CSV(lang),
+            Some("tsv") => FormatType::TSV(lang),
             extension => {
                 return Err(Error::UnsupportedFormat(format!(
                     "Unsupported file extension: {:?}.",

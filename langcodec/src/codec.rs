@@ -7,7 +7,7 @@
 /// Android XML strings, and `.xcstrings`, providing methods to read from files by type
 /// or extension, write resources back to files, and cache resources to JSON.
 ///
-use crate::formats::CSVRecord;
+use crate::formats::{CSVRecord, TSVRecord};
 use crate::{
     error::Error,
     formats::*,
@@ -720,7 +720,9 @@ impl Codec {
     /// # Ok::<(), langcodec::Error>(())
     /// ```
     pub fn write_resource_to_file(resource: &Resource, output_path: &str) -> Result<(), Error> {
-        use crate::formats::{AndroidStringsFormat, CSVRecord, StringsFormat, XcstringsFormat};
+        use crate::formats::{
+            AndroidStringsFormat, CSVRecord, StringsFormat, TSVRecord, XcstringsFormat,
+        };
         use std::path::Path;
 
         // Infer format from output path
@@ -762,6 +764,11 @@ impl Codec {
                 .map_err(|e| {
                     Error::conversion_error(format!("Error writing CSV output: {}", e), None)
                 }),
+            crate::formats::FormatType::TSV(_) => Vec::<TSVRecord>::try_from(resource.clone())
+                .and_then(|f| f.write_to(Path::new(output_path)))
+                .map_err(|e| {
+                    Error::conversion_error(format!("Error writing TSV output: {}", e), None)
+                }),
         }
     }
 
@@ -802,7 +809,9 @@ impl Codec {
         output_path: &str,
         output_format: crate::formats::FormatType,
     ) -> Result<(), Error> {
-        use crate::formats::{AndroidStringsFormat, CSVRecord, StringsFormat, XcstringsFormat};
+        use crate::formats::{
+            AndroidStringsFormat, CSVRecord, StringsFormat, TSVRecord, XcstringsFormat,
+        };
         use std::path::Path;
 
         match output_format {
@@ -859,6 +868,22 @@ impl Codec {
                     ))
                 }
             }
+            crate::formats::FormatType::TSV(_) => {
+                if let Some(resource) = resources.first() {
+                    Vec::<TSVRecord>::try_from(resource.clone())
+                        .and_then(|f| f.write_to(Path::new(output_path)))
+                        .map_err(|e| {
+                            Error::conversion_error(
+                                format!("Error writing TSV output: {}", e),
+                                None,
+                            )
+                        })
+                } else {
+                    Err(Error::InvalidResource(
+                        "No resources to convert".to_string(),
+                    ))
+                }
+            }
         }
     }
 
@@ -898,6 +923,9 @@ impl Codec {
             FormatType::CSV(_) => {
                 vec![Resource::from(Vec::<CSVRecord>::read_from(path)?)]
             }
+            FormatType::TSV(_) => {
+                vec![Resource::from(Vec::<TSVRecord>::read_from(path)?)]
+            }
         };
 
         for new_resource in &mut new_resources {
@@ -936,6 +964,7 @@ impl Codec {
             Some("strings") => FormatType::Strings(lang),
             Some("xcstrings") => FormatType::Xcstrings,
             Some("csv") => FormatType::CSV(lang),
+            Some("tsv") => FormatType::TSV(lang),
             extension => {
                 return Err(Error::UnsupportedFormat(format!(
                     "Unsupported file extension: {:?}.",
@@ -1074,6 +1103,7 @@ fn write_resources_to_file(resources: &[Resource], file_path: &String) -> Result
             Some("Strings") => StringsFormat::try_from(first.clone())?.write_to(path)?,
             Some("Xcstrings") => XcstringsFormat::try_from(resources.to_vec())?.write_to(path)?,
             Some("CSV") => Vec::<CSVRecord>::try_from(first.clone())?.write_to(path)?,
+            Some("TSV") => Vec::<TSVRecord>::try_from(first.clone())?.write_to(path)?,
             _ => Err(Error::UnsupportedFormat(format!(
                 "Unsupported format: {:?}",
                 first.metadata.custom.get("format")
@@ -1115,7 +1145,9 @@ pub fn convert<P: AsRef<Path>>(
     output: P,
     output_format: FormatType,
 ) -> Result<(), Error> {
-    use crate::formats::{AndroidStringsFormat, StringsFormat, XcstringsFormat};
+    use crate::formats::{
+        AndroidStringsFormat, CSVRecord, StringsFormat, TSVRecord, XcstringsFormat,
+    };
     use crate::traits::Parser;
 
     // Propagate language code from input to output format if not specified
@@ -1139,6 +1171,7 @@ pub fn convert<P: AsRef<Path>>(
             Vec::<crate::types::Resource>::try_from(XcstringsFormat::read_from(&input)?)?
         }
         FormatType::CSV(_) => vec![Vec::<CSVRecord>::read_from(&input)?.into()],
+        FormatType::TSV(_) => vec![Vec::<TSVRecord>::read_from(&input)?.into()],
     };
 
     // Helper to extract resource by language if present, or first one
@@ -1181,6 +1214,16 @@ pub fn convert<P: AsRef<Path>>(
                 ))
             }
         }
+        FormatType::TSV(lang) => {
+            let resource = pick_resource(lang);
+            if let Some(res) = resource {
+                Vec::<TSVRecord>::try_from(res)?.write_to(&output)
+            } else {
+                Err(Error::InvalidResource(
+                    "No matching resource for output language.".to_string(),
+                ))
+            }
+        }
     }
 }
 
@@ -1215,6 +1258,7 @@ pub fn infer_format_from_extension<P: AsRef<Path>>(path: P) -> Option<FormatType
         Some("strings") => Some(FormatType::Strings(None)),
         Some("xcstrings") => Some(FormatType::Xcstrings),
         Some("csv") => Some(FormatType::CSV(None)),
+        Some("tsv") => Some(FormatType::TSV(None)),
         _ => None,
     }
 }
@@ -1258,7 +1302,10 @@ pub fn infer_format_from_path<P: AsRef<Path>>(path: P) -> Option<FormatType> {
     match infer_format_from_extension(&path) {
         Some(format) => match format {
             FormatType::Xcstrings => Some(format),
-            FormatType::AndroidStrings(_) | FormatType::Strings(_) | FormatType::CSV(_) => {
+            FormatType::AndroidStrings(_)
+            | FormatType::Strings(_)
+            | FormatType::CSV(_)
+            | FormatType::TSV(_) => {
                 let lang = infer_language_from_path(&path, &format).ok().flatten();
                 Some(format.with_language(lang))
             }
