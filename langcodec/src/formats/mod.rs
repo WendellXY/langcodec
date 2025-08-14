@@ -16,9 +16,9 @@ use std::{
 
 // Reexporting the formats for easier access
 pub use android_strings::Format as AndroidStringsFormat;
-pub use csv::CSVRecord;
+pub use csv::{CSVRecord, MultiLanguageCSVRecord};
 pub use strings::Format as StringsFormat;
-pub use tsv::TSVRecord;
+pub use tsv::{MultiLanguageTSVRecord, TSVRecord};
 pub use xcstrings::Format as XcstringsFormat;
 
 use crate::Error;

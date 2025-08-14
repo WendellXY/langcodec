@@ -7,7 +7,7 @@
 /// Android XML strings, and `.xcstrings`, providing methods to read from files by type
 /// or extension, write resources back to files, and cache resources to JSON.
 ///
-use crate::formats::{CSVRecord, TSVRecord};
+use crate::formats::{CSVRecord, MultiLanguageCSVRecord, MultiLanguageTSVRecord, TSVRecord};
 use crate::{
     error::Error,
     formats::*,
@@ -921,10 +921,30 @@ impl Codec {
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
             FormatType::CSV(_) => {
-                vec![Resource::from(Vec::<CSVRecord>::read_from(path)?)]
+                // Try multi-language CSV first, fall back to single language if it fails
+                match Vec::<MultiLanguageCSVRecord>::read_from(path) {
+                    Ok(multi_records) => {
+                        use crate::formats::csv::multi_language_csv_to_resources;
+                        multi_language_csv_to_resources(multi_records)
+                    }
+                    Err(_) => {
+                        // Fall back to single language CSV
+                        vec![Resource::from(Vec::<CSVRecord>::read_from(path)?)]
+                    }
+                }
             }
             FormatType::TSV(_) => {
-                vec![Resource::from(Vec::<TSVRecord>::read_from(path)?)]
+                // Try multi-language TSV first, fall back to single language if it fails
+                match Vec::<MultiLanguageTSVRecord>::read_from(path) {
+                    Ok(multi_records) => {
+                        use crate::formats::tsv::multi_language_tsv_to_resources;
+                        multi_language_tsv_to_resources(multi_records)
+                    }
+                    Err(_) => {
+                        // Fall back to single language TSV
+                        vec![Resource::from(Vec::<TSVRecord>::read_from(path)?)]
+                    }
+                }
             }
         };
 
