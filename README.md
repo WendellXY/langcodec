@@ -120,6 +120,7 @@ cargo install --path langcodec-cli
   ```sh
   langcodec convert -i input.strings -o output.xml
   langcodec convert -i input.csv -o output.strings
+  langcodec convert -i input.tsv -o output.xcstrings
   langcodec convert -i input.json -o output.xcstrings
   ```
 
@@ -132,6 +133,7 @@ cargo install --path langcodec-cli
 
   ```sh
   langcodec merge -i file1.csv file2.csv -o merged.csv --lang en --strategy last
+  langcodec merge -i file1.tsv file2.tsv -o merged.tsv --lang en --strategy last
   langcodec merge -i en.lproj/Localizable.strings fr.lproj/Localizable.strings -o merged.strings --lang en
   ```
 
@@ -142,6 +144,7 @@ cargo install --path langcodec-cli
 
   ```sh
   langcodec debug -i input.csv --lang en
+  langcodec debug -i input.tsv --lang en
   langcodec debug -i input.strings --lang en -o output.json
   ```
 
@@ -149,6 +152,7 @@ cargo install --path langcodec-cli
 
   ```sh
   langcodec view -i input.strings --lang en
+  langcodec view -i input.tsv --lang en
   ```
 
 #### Notes

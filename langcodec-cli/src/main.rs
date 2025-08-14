@@ -335,6 +335,7 @@ fn print_conversion_error(input: &str, output: &str) {
     eprintln!("- .xml (Android strings files)");
     eprintln!("- .xcstrings (Apple xcstrings files)");
     eprintln!("- .csv (CSV files)");
+    eprintln!("- .tsv (TSV files)");
     eprintln!("- .json (JSON key-value pairs or Resource format)");
     eprintln!("- .yaml/.yml (YAML language map format)");
     eprintln!();
@@ -343,6 +344,7 @@ fn print_conversion_error(input: &str, output: &str) {
     eprintln!("- .xml (Android strings files)");
     eprintln!("- .xcstrings (Apple xcstrings files)");
     eprintln!("- .csv (CSV files)");
+    eprintln!("- .tsv (TSV files)");
     eprintln!();
     eprintln!(
         "For JSON files, the command will try both standard Resource format and key-value pairs."
@@ -382,6 +384,7 @@ fn try_explicit_format_conversion(
         "android" | "androidstrings" => langcodec::formats::FormatType::AndroidStrings(None),
         "xcstrings" => langcodec::formats::FormatType::Xcstrings,
         "csv" => langcodec::formats::FormatType::CSV(None),
+        "tsv" => langcodec::formats::FormatType::TSV(None),
         _ => return Err(format!("Unsupported input format: {}", input_format)),
     };
 
@@ -391,6 +394,7 @@ fn try_explicit_format_conversion(
         "android" | "androidstrings" => langcodec::formats::FormatType::AndroidStrings(None),
         "xcstrings" => langcodec::formats::FormatType::Xcstrings,
         "csv" => langcodec::formats::FormatType::CSV(None),
+        "tsv" => langcodec::formats::FormatType::TSV(None),
         _ => return Err(format!("Unsupported output format: {}", output_format)),
     };
 
