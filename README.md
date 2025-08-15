@@ -8,7 +8,7 @@
 
 ## Status
 
-This is a `0.2.0` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, the API may evolve as development continues. The library is functional and well-tested, but breaking changes may occur in future releases. Contributions and feedback are very welcome to help shape the future of this project!
+This is a `0.3.1` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, the API may evolve as development continues. The library is functional and well-tested, but breaking changes may occur in future releases. Contributions and feedback are very welcome to help shape the future of this project!
 
 ---
 
@@ -28,7 +28,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-langcodec = "0.2.0"
+langcodec = "0.3.1"
 ```
 
 ---
