@@ -207,9 +207,8 @@ impl Item {
 
         let extraction_state = entry
             .custom
-            .get("extraction_state")?
-            .parse::<ExtractionState>()
-            .ok();
+            .get("extraction_state")
+            .and_then(|s| s.parse::<ExtractionState>().ok());
 
         Some(Item {
             localizations,

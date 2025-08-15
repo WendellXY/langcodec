@@ -95,26 +95,9 @@ impl Parser for Format {
         if let Some(first_line) = lines.next() {
             let first_line = first_line.map_err(Error::CsvParse)?;
 
-            if first_line.len() >= 3 {
-                // Multi-language format: key, lang1, lang2, ...
-                let languages: Vec<String> =
-                    first_line.iter().skip(1).map(|s| s.to_string()).collect();
-
-                // First line is header, process remaining lines as data
-                for line in lines {
-                    let line = line.map_err(Error::CsvParse)?;
-                    if line.len() >= 2 {
-                        let mut record = MultiLanguageTSVRecord::new(line[0].to_string());
-                        for (i, lang) in languages.iter().enumerate() {
-                            if i + 1 < line.len() {
-                                record.add_translation(lang.clone(), line[i + 1].to_string());
-                            }
-                        }
-                        records.push(record);
-                    }
-                }
-            } else if first_line.len() == 2 {
+            if first_line.len() == 2 {
                 // Single language format: key, value
+                // First line is data, not header
                 records.push(MultiLanguageTSVRecord {
                     key: first_line[0].to_string(),
                     translations: {
@@ -130,6 +113,24 @@ impl Parser for Format {
                     if line.len() == 2 {
                         let mut record = MultiLanguageTSVRecord::new(line[0].to_string());
                         record.add_translation("default".to_string(), line[1].to_string());
+                        records.push(record);
+                    }
+                }
+            } else if first_line.len() >= 3 {
+                // Multi-language format: key, lang1, lang2, ...
+                let languages: Vec<String> =
+                    first_line.iter().skip(1).map(|s| s.to_string()).collect();
+
+                // First line is header, process remaining lines as data
+                for line in lines {
+                    let line = line.map_err(Error::CsvParse)?;
+                    if line.len() >= 2 {
+                        let mut record = MultiLanguageTSVRecord::new(line[0].to_string());
+                        for (i, lang) in languages.iter().enumerate() {
+                            if i + 1 < line.len() {
+                                record.add_translation(lang.clone(), line[i + 1].to_string());
+                            }
+                        }
                         records.push(record);
                     }
                 }
@@ -242,12 +243,20 @@ impl TryFrom<Format> for Vec<Resource> {
 
         // Create a resource for each language
         let mut resources = Vec::new();
+        let mut custom_metadata = HashMap::new();
+        
+        // Add required metadata for XCStrings compatibility
+        // Use the first language as source language, or "en" as default
+        let source_language = all_languages.iter().next().unwrap_or(&"en".to_string()).clone();
+        custom_metadata.insert("source_language".to_string(), source_language);
+        custom_metadata.insert("version".to_string(), "1.0".to_string());
+        
         for language in all_languages {
             let mut resource = Resource {
                 metadata: Metadata {
                     language: language.clone(),
                     domain: String::from(""),
-                    custom: HashMap::new(),
+                    custom: custom_metadata.clone(),
                 },
                 entries: Vec::new(),
             };

@@ -231,12 +231,8 @@ fn run_unified_convert_command(
         return;
     }
 
-    // Strategy 2: Try custom formats for JSON files or when format is specified
-    if input.ends_with(".json")
-        || input.ends_with(".yaml")
-        || input.ends_with(".yml")
-        || input_format.is_some()
-    {
+    // Strategy 2: Try custom formats for JSON/YAML files only
+    if input.ends_with(".json") || input.ends_with(".yaml") || input.ends_with(".yml") {
         // For JSON files without explicit format, try standard format detection first
         if input.ends_with(".json") && input_format.is_none() {
             progress_bar.set_message("Trying standard JSON format detection...");
@@ -255,7 +251,7 @@ fn run_unified_convert_command(
                 std::process::exit(1);
             }
         } else {
-            // For YAML files or when format is specified, try custom formats directly
+            // For YAML files, try custom formats directly
             progress_bar.set_message("Converting using custom format...");
             if let Err(e) = try_custom_format_conversion(&input, &output, &input_format) {
                 progress_bar.finish_with_message("❌ Custom format conversion failed");

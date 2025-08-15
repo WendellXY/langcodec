@@ -1314,10 +1314,8 @@ pub fn infer_format_from_path<P: AsRef<Path>>(path: P) -> Option<FormatType> {
     match infer_format_from_extension(&path) {
         Some(format) => match format {
             FormatType::Xcstrings => Some(format),
-            FormatType::AndroidStrings(_)
-            | FormatType::Strings(_)
-            | FormatType::CSV
-            | FormatType::TSV => {
+            FormatType::CSV | FormatType::TSV => Some(format), // Multi-language formats, no language inference needed
+            FormatType::AndroidStrings(_) | FormatType::Strings(_) => {
                 let lang = infer_language_from_path(&path, &format).ok().flatten();
                 Some(format.with_language(lang))
             }
@@ -1668,5 +1666,55 @@ mod tests {
         codec.add_resource(resource1);
         codec.add_resource(resource2);
         assert!(codec.validate().is_err());
+    }
+
+    #[test]
+    fn test_convert_csv_to_xcstrings() {
+        // Test CSV to XCStrings conversion
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input_file = temp_dir.path().join("test.csv");
+        let output_file = temp_dir.path().join("output.xcstrings");
+
+        let csv_content =
+            "key,en,fr,de\nhello,Hello,Bonjour,Hallo\nbye,Goodbye,Au revoir,Auf Wiedersehen\n";
+        std::fs::write(&input_file, csv_content).unwrap();
+
+        // First, let's see what the CSV parsing produces
+        let csv_format = CSVFormat::read_from(&input_file).unwrap();
+        let resources = Vec::<Resource>::try_from(csv_format).unwrap();
+        println!("CSV parsed to {} resources:", resources.len());
+        for (i, resource) in resources.iter().enumerate() {
+            println!(
+                "  Resource {}: language={}, entries={}",
+                i,
+                resource.metadata.language,
+                resource.entries.len()
+            );
+            for entry in &resource.entries {
+                println!("    Entry: id={}, value={:?}", entry.id, entry.value);
+            }
+        }
+
+        let result = convert(
+            &input_file,
+            FormatType::CSV,
+            &output_file,
+            FormatType::Xcstrings,
+        );
+
+        match result {
+            Ok(()) => println!("✅ CSV to XCStrings conversion succeeded"),
+            Err(e) => println!("❌ CSV to XCStrings conversion failed: {}", e),
+        }
+
+        // Check the output file content
+        if output_file.exists() {
+            let content = std::fs::read_to_string(&output_file).unwrap();
+            println!("Output file content: {}", content);
+        }
+
+        // Clean up
+        let _ = std::fs::remove_file(input_file);
+        let _ = std::fs::remove_file(output_file);
     }
 }

@@ -83,6 +83,47 @@ fr: Bonjour, le monde!"#;
 }
 
 #[test]
+fn test_convert_csv_to_xcstrings() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("test.csv");
+    let output_file = temp_dir.path().join("output.xcstrings");
+
+    let csv_content = r#"key,en,fr,de
+hello,Hello,Bonjour,Hallo
+bye,Goodbye,Au revoir,Auf Wiedersehen"#;
+
+    fs::write(&input_file, csv_content).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "convert",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "Command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify output file exists and contains expected content
+    assert!(output_file.exists());
+    let output_content = fs::read_to_string(&output_file).unwrap();
+    assert!(output_content.contains("hello"));
+    assert!(output_content.contains("bye"));
+    assert!(output_content.contains("Hello"));
+    assert!(output_content.contains("Bonjour"));
+    assert!(output_content.contains("Hallo"));
+}
+
+#[test]
 fn test_convert_with_explicit_format() {
     let temp_dir = TempDir::new().unwrap();
     let input_file = temp_dir.path().join("test.json");
