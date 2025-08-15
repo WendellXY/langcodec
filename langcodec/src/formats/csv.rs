@@ -539,6 +539,143 @@ mod tests {
     }
 
     #[test]
+    fn test_csv_language_key_preservation() {
+        // Create a CSV with specific language keys
+        let csv_content =
+            "key,en,fr,de\nhello,Hello,Bonjour,Hallo\nbye,Goodbye,Au revoir,Auf Wiedersehen\n";
+        let format = Format::from_reader(Cursor::new(csv_content)).unwrap();
+
+        // Check that the language keys are preserved
+        assert_eq!(format.records.len(), 2);
+
+        // Check first record
+        let first_record = &format.records[0];
+        assert_eq!(first_record.key, "hello");
+        assert_eq!(
+            first_record.get_translation("en"),
+            Some(&"Hello".to_string())
+        );
+        assert_eq!(
+            first_record.get_translation("fr"),
+            Some(&"Bonjour".to_string())
+        );
+        assert_eq!(
+            first_record.get_translation("de"),
+            Some(&"Hallo".to_string())
+        );
+
+        // Check second record
+        let second_record = &format.records[1];
+        assert_eq!(second_record.key, "bye");
+        assert_eq!(
+            second_record.get_translation("en"),
+            Some(&"Goodbye".to_string())
+        );
+        assert_eq!(
+            second_record.get_translation("fr"),
+            Some(&"Au revoir".to_string())
+        );
+        assert_eq!(
+            second_record.get_translation("de"),
+            Some(&"Auf Wiedersehen".to_string())
+        );
+    }
+
+    #[test]
+    fn test_csv_to_resources_language_preservation() {
+        // Create a CSV with specific language keys
+        let csv_content =
+            "key,en,fr,de\nhello,Hello,Bonjour,Hallo\nbye,Goodbye,Au revoir,Auf Wiedersehen\n";
+        let format = Format::from_reader(Cursor::new(csv_content)).unwrap();
+
+        // Convert to resources
+        let resources = Vec::<Resource>::try_from(format).unwrap();
+
+        // Check that we have resources for each language
+        assert_eq!(resources.len(), 3);
+
+        // Check English resource
+        let en_resource = resources
+            .iter()
+            .find(|r| r.metadata.language == "en")
+            .unwrap();
+        assert_eq!(en_resource.entries.len(), 2);
+        assert_eq!(en_resource.entries[0].id, "hello");
+        assert_eq!(
+            en_resource.entries[0].value,
+            Translation::Singular("Hello".to_string())
+        );
+        assert_eq!(en_resource.entries[1].id, "bye");
+        assert_eq!(
+            en_resource.entries[1].value,
+            Translation::Singular("Goodbye".to_string())
+        );
+
+        // Check French resource
+        let fr_resource = resources
+            .iter()
+            .find(|r| r.metadata.language == "fr")
+            .unwrap();
+        assert_eq!(fr_resource.entries.len(), 2);
+        assert_eq!(fr_resource.entries[0].id, "hello");
+        assert_eq!(
+            fr_resource.entries[0].value,
+            Translation::Singular("Bonjour".to_string())
+        );
+        assert_eq!(fr_resource.entries[1].id, "bye");
+        assert_eq!(
+            fr_resource.entries[1].value,
+            Translation::Singular("Au revoir".to_string())
+        );
+
+        // Check German resource
+        let de_resource = resources
+            .iter()
+            .find(|r| r.metadata.language == "de")
+            .unwrap();
+        assert_eq!(de_resource.entries.len(), 2);
+        assert_eq!(de_resource.entries[0].id, "hello");
+        assert_eq!(
+            de_resource.entries[0].value,
+            Translation::Singular("Hallo".to_string())
+        );
+        assert_eq!(de_resource.entries[1].id, "bye");
+        assert_eq!(
+            de_resource.entries[1].value,
+            Translation::Singular("Auf Wiedersehen".to_string())
+        );
+    }
+
+    #[test]
+    fn test_csv_round_trip_language_preservation() {
+        // Create a CSV with specific language keys
+        let csv_content =
+            "key,en,fr,de\nhello,Hello,Bonjour,Hallo\nbye,Goodbye,Au revoir,Auf Wiedersehen\n";
+        let original_format = Format::from_reader(Cursor::new(csv_content)).unwrap();
+
+        // Convert to resources and back to CSV
+        let resources = Vec::<Resource>::try_from(original_format.clone()).unwrap();
+        let round_trip_format = Format::try_from(resources).unwrap();
+
+        // Check that language keys are preserved in round trip
+        assert_eq!(
+            original_format.records.len(),
+            round_trip_format.records.len()
+        );
+
+        // Sort records by key for comparison
+        let mut original_records = original_format.records.clone();
+        let mut round_trip_records = round_trip_format.records.clone();
+        original_records.sort_by(|a, b| a.key.cmp(&b.key));
+        round_trip_records.sort_by(|a, b| a.key.cmp(&b.key));
+
+        for (original, round_trip) in original_records.iter().zip(round_trip_records.iter()) {
+            assert_eq!(original.key, round_trip.key);
+            assert_eq!(original.translations, round_trip.translations);
+        }
+    }
+
+    #[test]
     fn test_multi_language_csv_record_special_characters() {
         let mut record = MultiLanguageCSVRecord::new("key_with_special_chars".to_string());
         record.add_translation("en".to_string(), "Hello, World!".to_string());

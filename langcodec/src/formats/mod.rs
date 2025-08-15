@@ -34,10 +34,10 @@ pub enum FormatType {
     Strings(Option<String>),
     /// Apple `.xcstrings` format (no language code).
     Xcstrings,
-    /// CSV format, with optional language code.
-    CSV(Option<String>),
-    /// TSV format, with optional language code.
-    TSV(Option<String>),
+    /// CSV format (multi-language support built-in).
+    CSV,
+    /// TSV format (multi-language support built-in).
+    TSV,
 }
 
 /// Implements [`std::fmt::Display`] for [`FormatType`].
@@ -61,8 +61,8 @@ impl Display for FormatType {
             FormatType::AndroidStrings(_) => write!(f, "android"),
             FormatType::Strings(_) => write!(f, "strings"),
             FormatType::Xcstrings => write!(f, "xcstrings"),
-            FormatType::CSV(_) => write!(f, "csv"),
-            FormatType::TSV(_) => write!(f, "tsv"),
+            FormatType::CSV => write!(f, "csv"),
+            FormatType::TSV => write!(f, "tsv"),
         }
     }
 }
@@ -93,8 +93,8 @@ impl FromStr for FormatType {
             "android" | "androidstrings" | "xml" => Ok(FormatType::AndroidStrings(None)),
             "strings" => Ok(FormatType::Strings(None)),
             "xcstrings" => Ok(FormatType::Xcstrings),
-            "csv" => Ok(FormatType::CSV(None)),
-            "tsv" => Ok(FormatType::TSV(None)),
+            "csv" => Ok(FormatType::CSV),
+            "tsv" => Ok(FormatType::TSV),
             other => Err(Error::UnknownFormat(other.to_string())),
         }
     }
@@ -107,8 +107,8 @@ impl FormatType {
             FormatType::AndroidStrings(_) => "xml",
             FormatType::Strings(_) => "strings",
             FormatType::Xcstrings => "xcstrings",
-            FormatType::CSV(_) => "csv",
-            FormatType::TSV(_) => "tsv",
+            FormatType::CSV => "csv",
+            FormatType::TSV => "tsv",
         }
     }
 
@@ -118,8 +118,8 @@ impl FormatType {
             FormatType::AndroidStrings(lang) => lang.as_ref(),
             FormatType::Strings(lang) => lang.as_ref(),
             FormatType::Xcstrings => None,
-            FormatType::CSV(lang) => lang.as_ref(),
-            FormatType::TSV(lang) => lang.as_ref(),
+            FormatType::CSV => None,
+            FormatType::TSV => None,
         }
     }
 
@@ -129,8 +129,8 @@ impl FormatType {
             FormatType::AndroidStrings(_) => FormatType::AndroidStrings(lang),
             FormatType::Strings(_) => FormatType::Strings(lang),
             FormatType::Xcstrings => FormatType::Xcstrings,
-            FormatType::CSV(_) => FormatType::CSV(lang),
-            FormatType::TSV(_) => FormatType::TSV(lang),
+            FormatType::CSV => FormatType::CSV,
+            FormatType::TSV => FormatType::TSV,
         }
     }
 
@@ -159,8 +159,10 @@ impl FormatType {
     /// without language mismatch issues.
     ///
     pub fn matches_language_of(&self, other: &FormatType) -> bool {
-        match &self {
-            FormatType::Xcstrings => true, // Xcstrings has no language, so it matches any other Xcstrings
+        match (self, other) {
+            (FormatType::Xcstrings, _) => true, // Xcstrings can match any other format
+            (FormatType::CSV, _) | (_, FormatType::CSV) => true, // CSV has multi-language support built-in, so it matches any other format
+            (FormatType::TSV, _) | (_, FormatType::TSV) => true, // TSV has multi-language support built-in, so it matches any other format
             _ => self.language() == other.language(),
         }
     }
@@ -175,8 +177,8 @@ mod tests {
         assert_eq!(FormatType::AndroidStrings(None).to_string(), "android");
         assert_eq!(FormatType::Strings(None).to_string(), "strings");
         assert_eq!(FormatType::Xcstrings.to_string(), "xcstrings");
-        assert_eq!(FormatType::CSV(None).to_string(), "csv");
-        assert_eq!(FormatType::TSV(None).to_string(), "tsv");
+        assert_eq!(FormatType::CSV.to_string(), "csv");
+        assert_eq!(FormatType::TSV.to_string(), "tsv");
     }
 
     #[test]
@@ -220,12 +222,12 @@ mod tests {
         );
 
         // CSV format
-        assert_eq!(FormatType::from_str("csv").unwrap(), FormatType::CSV(None));
-        assert_eq!(FormatType::from_str("CSV").unwrap(), FormatType::CSV(None));
+        assert_eq!(FormatType::from_str("csv").unwrap(), FormatType::CSV);
+        assert_eq!(FormatType::from_str("CSV").unwrap(), FormatType::CSV);
 
         // TSV format
-        assert_eq!(FormatType::from_str("tsv").unwrap(), FormatType::TSV(None));
-        assert_eq!(FormatType::from_str("TSV").unwrap(), FormatType::TSV(None));
+        assert_eq!(FormatType::from_str("tsv").unwrap(), FormatType::TSV);
+        assert_eq!(FormatType::from_str("TSV").unwrap(), FormatType::TSV);
     }
 
     #[test]
@@ -252,8 +254,8 @@ mod tests {
         assert_eq!(FormatType::AndroidStrings(None).extension(), "xml");
         assert_eq!(FormatType::Strings(None).extension(), "strings");
         assert_eq!(FormatType::Xcstrings.extension(), "xcstrings");
-        assert_eq!(FormatType::CSV(None).extension(), "csv");
-        assert_eq!(FormatType::TSV(None).extension(), "tsv");
+        assert_eq!(FormatType::CSV.extension(), "csv");
+        assert_eq!(FormatType::TSV.extension(), "tsv");
     }
 
     #[test]
@@ -267,14 +269,8 @@ mod tests {
             Some(&"fr".to_string())
         );
         assert_eq!(FormatType::Xcstrings.language(), None);
-        assert_eq!(
-            FormatType::CSV(Some("es".to_string())).language(),
-            Some(&"es".to_string())
-        );
-        assert_eq!(
-            FormatType::TSV(Some("de".to_string())).language(),
-            Some(&"de".to_string())
-        );
+        assert_eq!(FormatType::CSV.language(), None);
+        assert_eq!(FormatType::TSV.language(), None);
     }
 
     #[test]
@@ -290,21 +286,22 @@ mod tests {
         let without_lang = original.with_language(None);
         assert_eq!(without_lang, FormatType::Strings(None));
 
-        let original = FormatType::TSV(Some("de".to_string()));
+        let original = FormatType::TSV;
         let with_lang = original.with_language(Some("fr".to_string()));
-        assert_eq!(with_lang, FormatType::TSV(Some("fr".to_string())));
+        assert_eq!(with_lang, FormatType::TSV);
     }
 
     #[test]
     fn test_format_type_matches_language_of() {
         let format1 = FormatType::AndroidStrings(Some("en".to_string()));
         let format2 = FormatType::Strings(Some("en".to_string()));
-        let format3 = FormatType::CSV(Some("fr".to_string()));
-        let format4 = FormatType::TSV(Some("en".to_string()));
+        let format3 = FormatType::CSV;
+        let format4 = FormatType::TSV;
 
         assert!(format1.matches_language_of(&format2));
+        // CSV and TSV are multi-language formats that can match any other format
+        assert!(format1.matches_language_of(&format3));
         assert!(format1.matches_language_of(&format4));
-        assert!(!format1.matches_language_of(&format3));
         assert!(!format1.matches_language_of(&FormatType::Xcstrings));
     }
 
@@ -312,12 +309,12 @@ mod tests {
     fn test_format_type_matches_language_of_none() {
         let format1 = FormatType::AndroidStrings(None);
         let format2 = FormatType::Strings(None);
-        let format3 = FormatType::CSV(Some("en".to_string()));
+        let format3 = FormatType::CSV;
 
         // When both have None language, they should match
         assert!(format1.matches_language_of(&format2));
-        // When one has None and other has Some, they should not match
-        assert!(!format1.matches_language_of(&format3));
+        // CSV is a multi-language format that can match any other format
+        assert!(format1.matches_language_of(&format3));
     }
 
     #[test]

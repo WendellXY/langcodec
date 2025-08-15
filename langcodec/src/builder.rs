@@ -68,12 +68,12 @@ impl CodecBuilder {
                 vec![Resource::from(AndroidStringsFormat::read_from(path)?)]
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
-            FormatType::CSV(_) => {
+            FormatType::CSV => {
                 // Parse CSV format and convert to resources
                 let csv_format = CSVFormat::read_from(path)?;
                 Vec::<Resource>::try_from(csv_format)?
             }
-            FormatType::TSV(_) => {
+            FormatType::TSV => {
                 // Parse TSV format and convert to resources
                 let tsv_format = TSVFormat::read_from(path)?;
                 Vec::<Resource>::try_from(tsv_format)?
@@ -130,12 +130,12 @@ impl CodecBuilder {
                 vec![Resource::from(AndroidStringsFormat::read_from(path)?)]
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
-            FormatType::CSV(_) => {
+            FormatType::CSV => {
                 // Parse CSV format and convert to resources
                 let csv_format = CSVFormat::read_from(path)?;
                 Vec::<Resource>::try_from(csv_format)?
             }
-            FormatType::TSV(_) => {
+            FormatType::TSV => {
                 // Parse TSV format and convert to resources
                 let tsv_format = TSVFormat::read_from(path)?;
                 Vec::<Resource>::try_from(tsv_format)?
@@ -179,8 +179,8 @@ impl CodecBuilder {
             Some("xml") => FormatType::AndroidStrings(lang),
             Some("strings") => FormatType::Strings(lang),
             Some("xcstrings") => FormatType::Xcstrings,
-            Some("csv") => FormatType::CSV(lang),
-            Some("tsv") => FormatType::TSV(lang),
+            Some("csv") => FormatType::CSV,
+            Some("tsv") => FormatType::TSV,
             extension => {
                 return Err(Error::UnsupportedFormat(format!(
                     "Unsupported file extension: {:?}.",

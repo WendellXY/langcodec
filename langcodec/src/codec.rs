@@ -759,12 +759,12 @@ impl Codec {
                         )
                     })
             }
-            crate::formats::FormatType::CSV(_) => CSVFormat::try_from(vec![resource.clone()])
+            crate::formats::FormatType::CSV => CSVFormat::try_from(vec![resource.clone()])
                 .and_then(|f| f.write_to(Path::new(output_path)))
                 .map_err(|e| {
                     Error::conversion_error(format!("Error writing CSV output: {}", e), None)
                 }),
-            crate::formats::FormatType::TSV(_) => TSVFormat::try_from(vec![resource.clone()])
+            crate::formats::FormatType::TSV => TSVFormat::try_from(vec![resource.clone()])
                 .and_then(|f| f.write_to(Path::new(output_path)))
                 .map_err(|e| {
                     Error::conversion_error(format!("Error writing TSV output: {}", e), None)
@@ -852,7 +852,7 @@ impl Codec {
                 .map_err(|e| {
                     Error::conversion_error(format!("Error writing Xcstrings output: {}", e), None)
                 }),
-            crate::formats::FormatType::CSV(_) => {
+            crate::formats::FormatType::CSV => {
                 if let Some(resource) = resources.first() {
                     CSVFormat::try_from(vec![resource.clone()])
                         .and_then(|f| f.write_to(Path::new(output_path)))
@@ -868,7 +868,7 @@ impl Codec {
                     ))
                 }
             }
-            crate::formats::FormatType::TSV(_) => {
+            crate::formats::FormatType::TSV => {
                 if let Some(resource) = resources.first() {
                     TSVFormat::try_from(vec![resource.clone()])
                         .and_then(|f| f.write_to(Path::new(output_path)))
@@ -920,12 +920,12 @@ impl Codec {
                 vec![Resource::from(AndroidStringsFormat::read_from(path)?)]
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
-            FormatType::CSV(_) => {
+            FormatType::CSV => {
                 // Parse CSV format and convert to resources
                 let csv_format = CSVFormat::read_from(path)?;
                 Vec::<Resource>::try_from(csv_format)?
             }
-            FormatType::TSV(_) => {
+            FormatType::TSV => {
                 // Parse TSV format and convert to resources
                 let tsv_format = TSVFormat::read_from(path)?;
                 Vec::<Resource>::try_from(tsv_format)?
@@ -967,8 +967,8 @@ impl Codec {
             Some("xml") => FormatType::AndroidStrings(lang),
             Some("strings") => FormatType::Strings(lang),
             Some("xcstrings") => FormatType::Xcstrings,
-            Some("csv") => FormatType::CSV(lang),
-            Some("tsv") => FormatType::TSV(lang),
+            Some("csv") => FormatType::CSV,
+            Some("tsv") => FormatType::TSV,
             extension => {
                 return Err(Error::UnsupportedFormat(format!(
                     "Unsupported file extension: {:?}.",
@@ -1059,7 +1059,7 @@ pub fn infer_language_from_path<P: AsRef<Path>>(
     format_type: &FormatType,
 ) -> Result<Option<String>, Error> {
     match &format_type {
-        FormatType::AndroidStrings(lang) | FormatType::Strings(lang) | FormatType::CSV(lang) => {
+        FormatType::AndroidStrings(lang) | FormatType::Strings(lang) => {
             let processed_lang = if let Some(lang) = lang {
                 lang.clone()
             } else {
@@ -1082,6 +1082,44 @@ pub fn infer_language_from_path<P: AsRef<Path>>(
                     ))?
             };
 
+            Ok(Some(processed_lang))
+        }
+        FormatType::CSV => {
+            // CSV format doesn't have language parameter, infer from path or use default
+            let processed_lang = path
+                .as_ref()
+                .components()
+                .rev()
+                .find_map(|c| {
+                    let component = c.as_os_str().to_str()?;
+                    if component.ends_with(".lproj") {
+                        Some(component.trim_end_matches(".lproj").to_string())
+                    } else if component.starts_with("values-") {
+                        Some(component.trim_start_matches("values-").to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| "en".to_string());
+            Ok(Some(processed_lang))
+        }
+        FormatType::TSV => {
+            // TSV format doesn't have language parameter, infer from path or use default
+            let processed_lang = path
+                .as_ref()
+                .components()
+                .rev()
+                .find_map(|c| {
+                    let component = c.as_os_str().to_str()?;
+                    if component.ends_with(".lproj") {
+                        Some(component.trim_end_matches(".lproj").to_string())
+                    } else if component.starts_with("values-") {
+                        Some(component.trim_start_matches("values-").to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_else(|| "en".to_string());
             Ok(Some(processed_lang))
         }
         _ => Ok(None),
@@ -1174,8 +1212,8 @@ pub fn convert<P: AsRef<Path>>(
         FormatType::Xcstrings => {
             Vec::<crate::types::Resource>::try_from(XcstringsFormat::read_from(&input)?)?
         }
-        FormatType::CSV(_) => Vec::<Resource>::try_from(CSVFormat::read_from(&input)?)?,
-        FormatType::TSV(_) => Vec::<Resource>::try_from(TSVFormat::read_from(&input)?)?,
+        FormatType::CSV => Vec::<Resource>::try_from(CSVFormat::read_from(&input)?)?,
+        FormatType::TSV => Vec::<Resource>::try_from(TSVFormat::read_from(&input)?)?,
     };
 
     // Helper to extract resource by language if present, or first one
@@ -1208,8 +1246,8 @@ pub fn convert<P: AsRef<Path>>(
             }
         }
         FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(&output),
-        FormatType::CSV(lang) => {
-            let resource = pick_resource(lang);
+        FormatType::CSV => {
+            let resource = pick_resource(None);
             if let Some(res) = resource {
                 CSVFormat::try_from(vec![res])?.write_to(&output)
             } else {
@@ -1218,8 +1256,8 @@ pub fn convert<P: AsRef<Path>>(
                 ))
             }
         }
-        FormatType::TSV(lang) => {
-            let resource = pick_resource(lang);
+        FormatType::TSV => {
+            let resource = pick_resource(None);
             if let Some(res) = resource {
                 TSVFormat::try_from(vec![res])?.write_to(&output)
             } else {
@@ -1261,8 +1299,8 @@ pub fn infer_format_from_extension<P: AsRef<Path>>(path: P) -> Option<FormatType
         Some("xml") => Some(FormatType::AndroidStrings(None)),
         Some("strings") => Some(FormatType::Strings(None)),
         Some("xcstrings") => Some(FormatType::Xcstrings),
-        Some("csv") => Some(FormatType::CSV(None)),
-        Some("tsv") => Some(FormatType::TSV(None)),
+        Some("csv") => Some(FormatType::CSV),
+        Some("tsv") => Some(FormatType::TSV),
         _ => None,
     }
 }
@@ -1308,8 +1346,8 @@ pub fn infer_format_from_path<P: AsRef<Path>>(path: P) -> Option<FormatType> {
             FormatType::Xcstrings => Some(format),
             FormatType::AndroidStrings(_)
             | FormatType::Strings(_)
-            | FormatType::CSV(_)
-            | FormatType::TSV(_) => {
+            | FormatType::CSV
+            | FormatType::TSV => {
                 let lang = infer_language_from_path(&path, &format).ok().flatten();
                 Some(format.with_language(lang))
             }
