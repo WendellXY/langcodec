@@ -7,7 +7,7 @@
 /// Android XML strings, and `.xcstrings`, providing methods to read from files by type
 /// or extension, write resources back to files, and cache resources to JSON.
 ///
-use crate::formats::{CSVRecord, MultiLanguageCSVRecord, MultiLanguageTSVRecord, TSVRecord};
+use crate::formats::{CSVFormat, TSVFormat};
 use crate::{
     error::Error,
     formats::*,
@@ -721,7 +721,7 @@ impl Codec {
     /// ```
     pub fn write_resource_to_file(resource: &Resource, output_path: &str) -> Result<(), Error> {
         use crate::formats::{
-            AndroidStringsFormat, CSVRecord, StringsFormat, TSVRecord, XcstringsFormat,
+            AndroidStringsFormat, CSVFormat, StringsFormat, TSVFormat, XcstringsFormat,
         };
         use std::path::Path;
 
@@ -759,12 +759,12 @@ impl Codec {
                         )
                     })
             }
-            crate::formats::FormatType::CSV(_) => Vec::<CSVRecord>::try_from(resource.clone())
+            crate::formats::FormatType::CSV(_) => CSVFormat::try_from(vec![resource.clone()])
                 .and_then(|f| f.write_to(Path::new(output_path)))
                 .map_err(|e| {
                     Error::conversion_error(format!("Error writing CSV output: {}", e), None)
                 }),
-            crate::formats::FormatType::TSV(_) => Vec::<TSVRecord>::try_from(resource.clone())
+            crate::formats::FormatType::TSV(_) => TSVFormat::try_from(vec![resource.clone()])
                 .and_then(|f| f.write_to(Path::new(output_path)))
                 .map_err(|e| {
                     Error::conversion_error(format!("Error writing TSV output: {}", e), None)
@@ -810,7 +810,7 @@ impl Codec {
         output_format: crate::formats::FormatType,
     ) -> Result<(), Error> {
         use crate::formats::{
-            AndroidStringsFormat, CSVRecord, StringsFormat, TSVRecord, XcstringsFormat,
+            AndroidStringsFormat, CSVFormat, StringsFormat, TSVFormat, XcstringsFormat,
         };
         use std::path::Path;
 
@@ -854,7 +854,7 @@ impl Codec {
                 }),
             crate::formats::FormatType::CSV(_) => {
                 if let Some(resource) = resources.first() {
-                    Vec::<CSVRecord>::try_from(resource.clone())
+                    CSVFormat::try_from(vec![resource.clone()])
                         .and_then(|f| f.write_to(Path::new(output_path)))
                         .map_err(|e| {
                             Error::conversion_error(
@@ -870,7 +870,7 @@ impl Codec {
             }
             crate::formats::FormatType::TSV(_) => {
                 if let Some(resource) = resources.first() {
-                    Vec::<TSVRecord>::try_from(resource.clone())
+                    TSVFormat::try_from(vec![resource.clone()])
                         .and_then(|f| f.write_to(Path::new(output_path)))
                         .map_err(|e| {
                             Error::conversion_error(
@@ -921,30 +921,14 @@ impl Codec {
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
             FormatType::CSV(_) => {
-                // Try multi-language CSV first, fall back to single language if it fails
-                match Vec::<MultiLanguageCSVRecord>::read_from(path) {
-                    Ok(multi_records) => {
-                        use crate::formats::csv::multi_language_csv_to_resources;
-                        multi_language_csv_to_resources(multi_records)
-                    }
-                    Err(_) => {
-                        // Fall back to single language CSV
-                        vec![Resource::from(Vec::<CSVRecord>::read_from(path)?)]
-                    }
-                }
+                // Parse CSV format and convert to resources
+                let csv_format = CSVFormat::read_from(path)?;
+                Vec::<Resource>::try_from(csv_format)?
             }
             FormatType::TSV(_) => {
-                // Try multi-language TSV first, fall back to single language if it fails
-                match Vec::<MultiLanguageTSVRecord>::read_from(path) {
-                    Ok(multi_records) => {
-                        use crate::formats::tsv::multi_language_tsv_to_resources;
-                        multi_language_tsv_to_resources(multi_records)
-                    }
-                    Err(_) => {
-                        // Fall back to single language TSV
-                        vec![Resource::from(Vec::<TSVRecord>::read_from(path)?)]
-                    }
-                }
+                // Parse TSV format and convert to resources
+                let tsv_format = TSVFormat::read_from(path)?;
+                Vec::<Resource>::try_from(tsv_format)?
             }
         };
 
@@ -1122,8 +1106,8 @@ fn write_resources_to_file(resources: &[Resource], file_path: &String) -> Result
             Some("AndroidStrings") => AndroidStringsFormat::from(first.clone()).write_to(path)?,
             Some("Strings") => StringsFormat::try_from(first.clone())?.write_to(path)?,
             Some("Xcstrings") => XcstringsFormat::try_from(resources.to_vec())?.write_to(path)?,
-            Some("CSV") => Vec::<CSVRecord>::try_from(first.clone())?.write_to(path)?,
-            Some("TSV") => Vec::<TSVRecord>::try_from(first.clone())?.write_to(path)?,
+            Some("CSV") => CSVFormat::try_from(vec![first.clone()])?.write_to(path)?,
+            Some("TSV") => TSVFormat::try_from(vec![first.clone()])?.write_to(path)?,
             _ => Err(Error::UnsupportedFormat(format!(
                 "Unsupported format: {:?}",
                 first.metadata.custom.get("format")
@@ -1166,7 +1150,7 @@ pub fn convert<P: AsRef<Path>>(
     output_format: FormatType,
 ) -> Result<(), Error> {
     use crate::formats::{
-        AndroidStringsFormat, CSVRecord, StringsFormat, TSVRecord, XcstringsFormat,
+        AndroidStringsFormat, CSVFormat, StringsFormat, TSVFormat, XcstringsFormat,
     };
     use crate::traits::Parser;
 
@@ -1190,8 +1174,8 @@ pub fn convert<P: AsRef<Path>>(
         FormatType::Xcstrings => {
             Vec::<crate::types::Resource>::try_from(XcstringsFormat::read_from(&input)?)?
         }
-        FormatType::CSV(_) => vec![Vec::<CSVRecord>::read_from(&input)?.into()],
-        FormatType::TSV(_) => vec![Vec::<TSVRecord>::read_from(&input)?.into()],
+        FormatType::CSV(_) => Vec::<Resource>::try_from(CSVFormat::read_from(&input)?)?,
+        FormatType::TSV(_) => Vec::<Resource>::try_from(TSVFormat::read_from(&input)?)?,
     };
 
     // Helper to extract resource by language if present, or first one
@@ -1227,7 +1211,7 @@ pub fn convert<P: AsRef<Path>>(
         FormatType::CSV(lang) => {
             let resource = pick_resource(lang);
             if let Some(res) = resource {
-                Vec::<CSVRecord>::try_from(res)?.write_to(&output)
+                CSVFormat::try_from(vec![res])?.write_to(&output)
             } else {
                 Err(Error::InvalidResource(
                     "No matching resource for output language.".to_string(),
@@ -1237,7 +1221,7 @@ pub fn convert<P: AsRef<Path>>(
         FormatType::TSV(lang) => {
             let resource = pick_resource(lang);
             if let Some(res) = resource {
-                Vec::<TSVRecord>::try_from(res)?.write_to(&output)
+                TSVFormat::try_from(vec![res])?.write_to(&output)
             } else {
                 Err(Error::InvalidResource(
                     "No matching resource for output language.".to_string(),

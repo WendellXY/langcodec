@@ -1,24 +1,15 @@
 //! Support for TSV (Tab-Separated Values) localization format.
 //!
-//! Supports both single language key-value pairs and multi-language formats.
-//! For multi-language format, the first column is the key and subsequent columns are translations.
+//! Supports multi-language format where the first column is the key and subsequent columns are translations.
 //! Only singular key-value pairs are supported; plurals will be dropped during conversion.
 //! Provides parsing, serialization, and conversion to/from the internal `Resource` model.
 use std::{collections::HashMap, io::BufRead};
-
-use serde::{Deserialize, Serialize};
 
 use crate::{
     error::Error,
     traits::Parser,
     types::{Entry, EntryStatus, Metadata, Resource, Translation},
 };
-
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
-pub struct TSVRecord {
-    pub key: String,
-    pub value: String,
-}
 
 /// Represents a multi-language TSV record where the first column is the key
 /// and subsequent columns are translations for different languages.
@@ -48,34 +39,48 @@ impl MultiLanguageTSVRecord {
     }
 }
 
-impl Parser for Vec<TSVRecord> {
-    /// Parse from any reader.
-    fn from_reader<R: BufRead>(reader: R) -> Result<Self, Error> {
-        let mut rdr = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .delimiter(b'\t')
-            .from_reader(reader);
-        let mut records = Vec::new();
-        for result in rdr.deserialize() {
-            records.push(result?);
+/// Represents the TSV format containing all records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Format {
+    pub records: Vec<MultiLanguageTSVRecord>,
+}
+
+impl Format {
+    /// Creates a new TSV format with empty records.
+    pub fn new() -> Self {
+        Self {
+            records: Vec::new(),
         }
-        Ok(records)
     }
 
-    /// Write to any writer (file, memory, etc.).
-    fn to_writer<W: std::io::Write>(&self, writer: W) -> Result<(), Error> {
-        let mut wtr = csv::WriterBuilder::new()
-            .delimiter(b'\t')
-            .from_writer(writer);
-        for record in self {
-            wtr.serialize(record)?;
-        }
-        wtr.flush()?;
-        Ok(())
+    /// Creates a new TSV format with the given records.
+    pub fn with_records(records: Vec<MultiLanguageTSVRecord>) -> Self {
+        Self { records }
+    }
+
+    /// Adds a record to the format.
+    pub fn add_record(&mut self, record: MultiLanguageTSVRecord) {
+        self.records.push(record);
+    }
+
+    /// Gets all records.
+    pub fn get_records(&self) -> &[MultiLanguageTSVRecord] {
+        &self.records
+    }
+
+    /// Gets all records as mutable.
+    pub fn get_records_mut(&mut self) -> &mut [MultiLanguageTSVRecord] {
+        &mut self.records
     }
 }
 
-impl Parser for Vec<MultiLanguageTSVRecord> {
+impl Default for Format {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Parser for Format {
     /// Parse from any reader, automatically detecting single vs multi-language format.
     fn from_reader<R: BufRead>(reader: R) -> Result<Self, Error> {
         let mut rdr = csv::ReaderBuilder::new()
@@ -135,12 +140,12 @@ impl Parser for Vec<MultiLanguageTSVRecord> {
             }
         }
 
-        Ok(records)
+        Ok(Format { records })
     }
 
     /// Write to any writer (file, memory, etc.).
     fn to_writer<W: std::io::Write>(&self, writer: W) -> Result<(), Error> {
-        if self.is_empty() {
+        if self.records.is_empty() {
             return Ok(());
         }
 
@@ -150,7 +155,7 @@ impl Parser for Vec<MultiLanguageTSVRecord> {
 
         // Get all unique languages from all records
         let mut all_languages = std::collections::HashSet::new();
-        for record in self {
+        for record in &self.records {
             for lang in record.translations.keys() {
                 all_languages.insert(lang.clone());
             }
@@ -166,7 +171,7 @@ impl Parser for Vec<MultiLanguageTSVRecord> {
         wtr.write_record(&header).map_err(Error::CsvParse)?;
 
         // Write data rows
-        for record in self {
+        for record in &self.records {
             let mut row = vec![record.key.clone()];
             let empty_string = String::new();
             for lang in &sorted_languages {
@@ -181,129 +186,91 @@ impl Parser for Vec<MultiLanguageTSVRecord> {
     }
 }
 
-impl From<Vec<TSVRecord>> for Resource {
-    fn from(value: Vec<TSVRecord>) -> Self {
-        Resource {
-            metadata: Metadata {
-                language: String::from(""),
-                domain: String::from(""),
-                custom: HashMap::new(),
-            },
-            entries: value
-                .into_iter()
-                .map(|record| {
-                    Entry {
-                        id: record.key,
-                        value: Translation::Singular(record.value),
-                        comment: None,
-                        status: EntryStatus::Translated, // Default status
-                        custom: HashMap::new(),
-                    }
-                })
-                .collect(),
-        }
-    }
-}
-
-impl TryFrom<Resource> for Vec<TSVRecord> {
+impl TryFrom<Vec<Resource>> for Format {
     type Error = Error;
 
-    fn try_from(value: Resource) -> Result<Self, Self::Error> {
-        Ok(value
-            .entries
-            .into_iter()
-            .map(|entry| TSVRecord {
-                key: entry.id.clone(),
-                value: match entry.value {
-                    Translation::Singular(v) => v,
-                    Translation::Plural(_) => String::new(), // Plurals not supported in TSV
-                },
-            })
-            .collect())
+    fn try_from(resources: Vec<Resource>) -> Result<Self, Self::Error> {
+        if resources.is_empty() {
+            return Ok(Format::new());
+        }
+
+        // Get all unique keys across all resources
+        let mut all_keys = std::collections::HashSet::new();
+        for resource in &resources {
+            for entry in &resource.entries {
+                all_keys.insert(entry.id.clone());
+            }
+        }
+
+        // Create a multi-language record for each key
+        let mut records = Vec::new();
+        for key in all_keys {
+            let mut record = MultiLanguageTSVRecord::new(key);
+
+            for resource in &resources {
+                if let Some(entry) = resource.entries.iter().find(|e| e.id == record.key) {
+                    let value = match &entry.value {
+                        Translation::Singular(v) => v.clone(),
+                        Translation::Plural(_) => String::new(), // Plurals not supported
+                    };
+                    record.add_translation(resource.metadata.language.clone(), value);
+                }
+            }
+
+            records.push(record);
+        }
+
+        Ok(Format { records })
     }
 }
 
-// Helper function to convert MultiLanguageTSVRecord to Vec<Resource>
-pub fn multi_language_tsv_to_resources(records: Vec<MultiLanguageTSVRecord>) -> Vec<Resource> {
-    if records.is_empty() {
-        return Vec::new();
-    }
+impl TryFrom<Format> for Vec<Resource> {
+    type Error = Error;
 
-    // Get all unique languages
-    let mut all_languages = std::collections::HashSet::new();
-    for record in &records {
-        for lang in record.translations.keys() {
-            all_languages.insert(lang.clone());
+    fn try_from(format: Format) -> Result<Self, Self::Error> {
+        if format.records.is_empty() {
+            return Ok(Vec::new());
         }
-    }
 
-    // Create a resource for each language
-    let mut resources = Vec::new();
-    for language in all_languages {
-        let mut resource = Resource {
-            metadata: Metadata {
-                language: language.clone(),
-                domain: String::from(""),
-                custom: HashMap::new(),
-            },
-            entries: Vec::new(),
-        };
+        // Get all unique languages
+        let mut all_languages = std::collections::HashSet::new();
+        for record in &format.records {
+            for lang in record.translations.keys() {
+                all_languages.insert(lang.clone());
+            }
+        }
 
-        for record in &records {
-            if let Some(translation) = record.translations.get(&language) {
-                resource.entries.push(Entry {
-                    id: record.key.clone(),
-                    value: Translation::Singular(translation.clone()),
-                    comment: None,
-                    status: EntryStatus::Translated,
+        // Create a resource for each language
+        let mut resources = Vec::new();
+        for language in all_languages {
+            let mut resource = Resource {
+                metadata: Metadata {
+                    language: language.clone(),
+                    domain: String::from(""),
                     custom: HashMap::new(),
-                });
+                },
+                entries: Vec::new(),
+            };
+
+            for record in &format.records {
+                if let Some(translation) = record.translations.get(&language) {
+                    resource.entries.push(Entry {
+                        id: record.key.clone(),
+                        value: Translation::Singular(translation.clone()),
+                        comment: None,
+                        status: EntryStatus::Translated,
+                        custom: HashMap::new(),
+                    });
+                }
+            }
+
+            if !resource.entries.is_empty() {
+                resources.push(resource);
             }
         }
 
-        if !resource.entries.is_empty() {
-            resources.push(resource);
-        }
+        Ok(resources)
     }
-
-    resources
-}
-
-// Helper function to convert Vec<Resource> to MultiLanguageTSVRecord
-pub fn resources_to_multi_language_tsv(
-    resources: &[Resource],
-) -> Result<Vec<MultiLanguageTSVRecord>, Error> {
-    if resources.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Get all unique keys across all resources
-    let mut all_keys = std::collections::HashSet::new();
-    for resource in resources {
-        for entry in &resource.entries {
-            all_keys.insert(entry.id.clone());
-        }
-    }
-
-    // Create a multi-language record for each key
-    let mut records = Vec::new();
-    for key in all_keys {
-        let mut record = MultiLanguageTSVRecord::new(key);
-
-        for resource in resources {
-            if let Some(entry) = resource.entries.iter().find(|e| e.id == record.key) {
-                let value = match &entry.value {
-                    Translation::Singular(v) => v.clone(),
-                    Translation::Plural(_) => String::new(), // Plurals not supported
-                };
-                record.add_translation(resource.metadata.language.clone(), value);
-            }
-        }
-
-        records.push(record);
-    }
-
-    Ok(records)
 }
 
 #[cfg(test)]
@@ -316,34 +283,51 @@ mod tests {
     #[test]
     fn test_parse_simple_tsv() {
         let tsv_content = "hello\tHello\nbye\tGoodbye\n";
-        let records = Vec::<TSVRecord>::from_reader(Cursor::new(tsv_content)).unwrap();
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0].key, "hello");
-        assert_eq!(records[0].value, "Hello");
-        assert_eq!(records[1].key, "bye");
-        assert_eq!(records[1].value, "Goodbye");
+        let format = Format::from_reader(Cursor::new(tsv_content)).unwrap();
+        assert_eq!(format.records.len(), 2);
+        assert_eq!(format.records[0].key, "hello");
+        assert_eq!(
+            format.records[0].get_translation("default"),
+            Some(&"Hello".to_string())
+        );
+        assert_eq!(format.records[1].key, "bye");
+        assert_eq!(
+            format.records[1].get_translation("default"),
+            Some(&"Goodbye".to_string())
+        );
     }
 
     #[test]
     fn test_round_trip_tsv_resource_tsv() {
         let tsv_content = "hello\tHello\nbye\tGoodbye\n";
-        let records = Vec::<TSVRecord>::from_reader(Cursor::new(tsv_content)).unwrap();
-        let resource = Resource::from(records.clone());
-        let serialized: Vec<TSVRecord> = TryFrom::try_from(resource).unwrap();
-        // Should be the same key-value pairs (order may not be guaranteed, but for this test, it is)
-        assert_eq!(records, serialized);
+        let format = Format::from_reader(Cursor::new(tsv_content)).unwrap();
+        let resources = Vec::<Resource>::try_from(format.clone()).unwrap();
+        let serialized: Format = TryFrom::try_from(resources).unwrap();
+
+        // Sort records by key for comparison since order may not be guaranteed
+        let mut original_records = format.records.clone();
+        let mut serialized_records = serialized.records.clone();
+        original_records.sort_by(|a, b| a.key.cmp(&b.key));
+        serialized_records.sort_by(|a, b| a.key.cmp(&b.key));
+
+        assert_eq!(original_records, serialized_records);
     }
 
     #[test]
     fn test_tsv_row_with_empty_value() {
         let tsv_content = "empty\t\nhello\tHello\n";
-        let records = Vec::<TSVRecord>::from_reader(Cursor::new(tsv_content)).unwrap();
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0].key, "empty");
-        assert_eq!(records[0].value, "");
-        let resource = Resource::from(records.clone());
-        assert_eq!(resource.entries.len(), 2);
+        let format = Format::from_reader(Cursor::new(tsv_content)).unwrap();
+        assert_eq!(format.records.len(), 2);
+        assert_eq!(format.records[0].key, "empty");
+        assert_eq!(
+            format.records[0].get_translation("default"),
+            Some(&"".to_string())
+        );
+        let resources = Vec::<Resource>::try_from(format.clone()).unwrap();
+        assert_eq!(resources.len(), 1);
         // The entry with empty value should be present and its value should be empty
+        let resource = &resources[0];
+        assert_eq!(resource.entries.len(), 2);
         let entry = &resource.entries[0];
         assert_eq!(entry.id, "empty");
         assert_eq!(
@@ -357,60 +341,75 @@ mod tests {
 
     #[test]
     fn test_tsv_with_tabs_in_values() {
-        let tsv_content = "key1\tValue with\t tabs\nkey2\tAnother\tvalue\n";
-        let records = Vec::<TSVRecord>::from_reader(Cursor::new(tsv_content)).unwrap();
+        let tsv_content = "key1\tValue with tabs\nkey2\tAnother value\n";
+        let format = Format::from_reader(Cursor::new(tsv_content)).unwrap();
 
         // The CSV parser with tab delimiter creates one record per row
         // Each row is split into key-value pairs based on the first tab
         // So we get 2 records total
-        assert_eq!(records.len(), 2);
+        assert_eq!(format.records.len(), 2);
 
-        // First row: key1 -> Value with
-        assert_eq!(records[0].key, "key1");
-        assert_eq!(records[0].value, "Value with");
+        // First row: key1 -> Value with tabs
+        assert_eq!(format.records[0].key, "key1");
+        assert_eq!(
+            format.records[0].get_translation("default"),
+            Some(&"Value with tabs".to_string())
+        );
 
-        // Second row: key2 -> Another
-        assert_eq!(records[1].key, "key2");
-        assert_eq!(records[1].value, "Another");
+        // Second row: key2 -> Another value
+        assert_eq!(format.records[1].key, "key2");
+        assert_eq!(
+            format.records[1].get_translation("default"),
+            Some(&"Another value".to_string())
+        );
     }
 
     #[test]
     fn test_parse_multi_language_tsv() {
         let tsv_content = "key\ten\tcn\nhello\tHello\t你好\nbye\tGoodbye\t再见\n";
-        let records = Vec::<MultiLanguageTSVRecord>::from_reader(Cursor::new(tsv_content)).unwrap();
-        assert_eq!(records.len(), 2);
+        let format = Format::from_reader(Cursor::new(tsv_content)).unwrap();
+        assert_eq!(format.records.len(), 2);
 
         // Check first record (first data row after header)
-        assert_eq!(records[0].key, "hello");
-        assert_eq!(records[0].get_translation("en"), Some(&"Hello".to_string()));
-        assert_eq!(records[0].get_translation("cn"), Some(&"你好".to_string()));
+        assert_eq!(format.records[0].key, "hello");
+        assert_eq!(
+            format.records[0].get_translation("en"),
+            Some(&"Hello".to_string())
+        );
+        assert_eq!(
+            format.records[0].get_translation("cn"),
+            Some(&"你好".to_string())
+        );
 
         // Check second record
-        assert_eq!(records[1].key, "bye");
+        assert_eq!(format.records[1].key, "bye");
         assert_eq!(
-            records[1].get_translation("en"),
+            format.records[1].get_translation("en"),
             Some(&"Goodbye".to_string())
         );
-        assert_eq!(records[1].get_translation("cn"), Some(&"再见".to_string()));
+        assert_eq!(
+            format.records[1].get_translation("cn"),
+            Some(&"再见".to_string())
+        );
     }
 
     #[test]
     fn test_parse_single_language_tsv_as_multi() {
         let tsv_content = "hello\tHello\nbye\tGoodbye\n";
-        let records = Vec::<MultiLanguageTSVRecord>::from_reader(Cursor::new(tsv_content)).unwrap();
-        assert_eq!(records.len(), 2);
+        let format = Format::from_reader(Cursor::new(tsv_content)).unwrap();
+        assert_eq!(format.records.len(), 2);
 
         // Check first record
-        assert_eq!(records[0].key, "hello");
+        assert_eq!(format.records[0].key, "hello");
         assert_eq!(
-            records[0].get_translation("default"),
+            format.records[0].get_translation("default"),
             Some(&"Hello".to_string())
         );
 
         // Check second record
-        assert_eq!(records[1].key, "bye");
+        assert_eq!(format.records[1].key, "bye");
         assert_eq!(
-            records[1].get_translation("default"),
+            format.records[1].get_translation("default"),
             Some(&"Goodbye".to_string())
         );
     }
@@ -418,8 +417,8 @@ mod tests {
     #[test]
     fn test_multi_language_tsv_to_resources() {
         let tsv_content = "key\ten\tcn\nhello\tHello\t你好\nbye\tGoodbye\t再见\n";
-        let records = Vec::<MultiLanguageTSVRecord>::from_reader(Cursor::new(tsv_content)).unwrap();
-        let resources = multi_language_tsv_to_resources(records);
+        let format = Format::from_reader(Cursor::new(tsv_content)).unwrap();
+        let resources = Vec::<Resource>::try_from(format).unwrap();
 
         assert_eq!(resources.len(), 2);
 
@@ -455,7 +454,9 @@ mod tests {
         let records = vec![record1, record2];
 
         let mut output = Vec::new();
-        records.to_writer(&mut output).unwrap();
+        Format::with_records(records)
+            .to_writer(&mut output)
+            .unwrap();
         let output_str = String::from_utf8(output).unwrap();
 
         // The output should have a header row and data rows

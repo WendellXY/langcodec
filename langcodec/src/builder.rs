@@ -16,7 +16,7 @@
 ///     .build();
 /// # Ok::<(), langcodec::Error>(())
 /// ```
-use crate::formats::{CSVRecord, MultiLanguageCSVRecord, MultiLanguageTSVRecord, TSVRecord};
+use crate::formats::{CSVFormat, TSVFormat};
 use crate::{error::Error, formats::*, traits::Parser, types::Resource};
 use std::path::Path;
 
@@ -69,30 +69,14 @@ impl CodecBuilder {
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
             FormatType::CSV(_) => {
-                // Try multi-language CSV first, fall back to single language if it fails
-                match Vec::<MultiLanguageCSVRecord>::read_from(path) {
-                    Ok(multi_records) => {
-                        use crate::formats::csv::multi_language_csv_to_resources;
-                        multi_language_csv_to_resources(multi_records)
-                    }
-                    Err(_) => {
-                        // Fall back to single language CSV
-                        vec![Resource::from(Vec::<CSVRecord>::read_from(path)?)]
-                    }
-                }
+                // Parse CSV format and convert to resources
+                let csv_format = CSVFormat::read_from(path)?;
+                Vec::<Resource>::try_from(csv_format)?
             }
             FormatType::TSV(_) => {
-                // Try multi-language TSV first, fall back to single language if it fails
-                match Vec::<MultiLanguageTSVRecord>::read_from(path) {
-                    Ok(multi_records) => {
-                        use crate::formats::tsv::multi_language_tsv_to_resources;
-                        multi_language_tsv_to_resources(multi_records)
-                    }
-                    Err(_) => {
-                        // Fall back to single language TSV
-                        vec![Resource::from(Vec::<TSVRecord>::read_from(path)?)]
-                    }
-                }
+                // Parse TSV format and convert to resources
+                let tsv_format = TSVFormat::read_from(path)?;
+                Vec::<Resource>::try_from(tsv_format)?
             }
         };
 
@@ -147,30 +131,14 @@ impl CodecBuilder {
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
             FormatType::CSV(_) => {
-                // Try multi-language CSV first, fall back to single language if it fails
-                match Vec::<MultiLanguageCSVRecord>::read_from(path) {
-                    Ok(multi_records) => {
-                        use crate::formats::csv::multi_language_csv_to_resources;
-                        multi_language_csv_to_resources(multi_records)
-                    }
-                    Err(_) => {
-                        // Fall back to single language CSV
-                        vec![Resource::from(Vec::<CSVRecord>::read_from(path)?)]
-                    }
-                }
+                // Parse CSV format and convert to resources
+                let csv_format = CSVFormat::read_from(path)?;
+                Vec::<Resource>::try_from(csv_format)?
             }
             FormatType::TSV(_) => {
-                // Try multi-language TSV first, fall back to single language if it fails
-                match Vec::<MultiLanguageTSVRecord>::read_from(path) {
-                    Ok(multi_records) => {
-                        use crate::formats::tsv::multi_language_tsv_to_resources;
-                        multi_language_tsv_to_resources(multi_records)
-                    }
-                    Err(_) => {
-                        // Fall back to single language TSV
-                        vec![Resource::from(Vec::<TSVRecord>::read_from(path)?)]
-                    }
-                }
+                // Parse TSV format and convert to resources
+                let tsv_format = TSVFormat::read_from(path)?;
+                Vec::<Resource>::try_from(tsv_format)?
             }
         };
 
