@@ -383,8 +383,8 @@ fn try_explicit_format_conversion(
         "strings" => langcodec::formats::FormatType::Strings(None),
         "android" | "androidstrings" => langcodec::formats::FormatType::AndroidStrings(None),
         "xcstrings" => langcodec::formats::FormatType::Xcstrings,
-        "csv" => langcodec::formats::FormatType::CSV(None),
-        "tsv" => langcodec::formats::FormatType::TSV(None),
+        "csv" => langcodec::formats::FormatType::CSV,
+        "tsv" => langcodec::formats::FormatType::TSV,
         _ => return Err(format!("Unsupported input format: {}", input_format)),
     };
 
@@ -393,8 +393,8 @@ fn try_explicit_format_conversion(
         "strings" => langcodec::formats::FormatType::Strings(None),
         "android" | "androidstrings" => langcodec::formats::FormatType::AndroidStrings(None),
         "xcstrings" => langcodec::formats::FormatType::Xcstrings,
-        "csv" => langcodec::formats::FormatType::CSV(None),
-        "tsv" => langcodec::formats::FormatType::TSV(None),
+        "csv" => langcodec::formats::FormatType::CSV,
+        "tsv" => langcodec::formats::FormatType::TSV,
         _ => return Err(format!("Unsupported output format: {}", output_format)),
     };
 

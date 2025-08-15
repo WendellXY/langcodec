@@ -1085,42 +1085,12 @@ pub fn infer_language_from_path<P: AsRef<Path>>(
             Ok(Some(processed_lang))
         }
         FormatType::CSV => {
-            // CSV format doesn't have language parameter, infer from path or use default
-            let processed_lang = path
-                .as_ref()
-                .components()
-                .rev()
-                .find_map(|c| {
-                    let component = c.as_os_str().to_str()?;
-                    if component.ends_with(".lproj") {
-                        Some(component.trim_end_matches(".lproj").to_string())
-                    } else if component.starts_with("values-") {
-                        Some(component.trim_start_matches("values-").to_string())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_else(|| "en".to_string());
-            Ok(Some(processed_lang))
+            // CSV format handles languages internally from headers, don't infer from path
+            Ok(None)
         }
         FormatType::TSV => {
-            // TSV format doesn't have language parameter, infer from path or use default
-            let processed_lang = path
-                .as_ref()
-                .components()
-                .rev()
-                .find_map(|c| {
-                    let component = c.as_os_str().to_str()?;
-                    if component.ends_with(".lproj") {
-                        Some(component.trim_end_matches(".lproj").to_string())
-                    } else if component.starts_with("values-") {
-                        Some(component.trim_start_matches("values-").to_string())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_else(|| "en".to_string());
-            Ok(Some(processed_lang))
+            // TSV format handles languages internally from headers, don't infer from path
+            Ok(None)
         }
         _ => Ok(None),
     }
