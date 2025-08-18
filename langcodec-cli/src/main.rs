@@ -14,6 +14,8 @@ use crate::view::print_view;
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
 use langcodec::{Codec, convert_auto, formats::FormatType};
+use std::fs::File;
+use std::io::BufWriter;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -224,6 +226,26 @@ fn run_unified_convert_command(
     );
     progress_bar.set_message("Detecting input format...");
 
+    // If the desired output is .langcodec, handle via resource serialization
+    if output.ends_with(".langcodec") {
+        progress_bar.set_message("Converting input to .langcodec (Resource JSON array)...");
+        match read_resources_from_any_input(&input, input_format.as_ref())
+            .and_then(|resources| write_resources_as_langcodec(&resources, &output))
+        {
+            Ok(()) => {
+                progress_bar.finish_with_message(
+                    "✅ Successfully converted to .langcodec (Resource JSON array)",
+                );
+                return;
+            }
+            Err(e) => {
+                progress_bar.finish_with_message("❌ Conversion to .langcodec failed");
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     // Strategy 1: Try standard lib crate conversion first
     progress_bar.set_message("Trying standard format detection...");
     if let Ok(()) = convert_auto(&input, &output) {
@@ -308,6 +330,12 @@ fn try_custom_format_conversion(
     // Convert custom format to Resource
     let resources = custom_format_to_resource(input.to_string(), custom_format)?;
 
+    // If output is .langcodec, serialize resources as JSON array
+    if output.ends_with(".langcodec") {
+        write_resources_as_langcodec(&resources, output)?;
+        return Ok(());
+    }
+
     // Get output format type
     let output_format_type = langcodec::infer_format_from_extension(output)
         .ok_or_else(|| format!("Cannot infer output format from extension: {}", output))?;
@@ -340,6 +368,7 @@ fn print_conversion_error(input: &str, output: &str) {
     eprintln!("- .xcstrings (Apple xcstrings files)");
     eprintln!("- .csv (CSV files)");
     eprintln!("- .tsv (TSV files)");
+    eprintln!("- .langcodec (Resource JSON array)");
     eprintln!("- .json (JSON key-value pairs or Resource format)");
     eprintln!("- .yaml/.yml (YAML language map format)");
     eprintln!("- .langcodec (JSON array of langcodec::Resource objects)");
@@ -393,19 +422,29 @@ fn try_explicit_format_conversion(
         _ => return Err(format!("Unsupported input format: {}", input_format)),
     };
 
-    // Parse output format
-    let output_format_type = match output_format.to_lowercase().as_str() {
-        "strings" => langcodec::formats::FormatType::Strings(None),
-        "android" | "androidstrings" => langcodec::formats::FormatType::AndroidStrings(None),
-        "xcstrings" => langcodec::formats::FormatType::Xcstrings,
-        "csv" => langcodec::formats::FormatType::CSV,
-        "tsv" => langcodec::formats::FormatType::TSV,
-        _ => return Err(format!("Unsupported output format: {}", output_format)),
-    };
+    // Handle .langcodec output specially by reading resources then serializing
+    if output_format.to_lowercase().as_str() == "langcodec" || output.ends_with(".langcodec") {
+        // Read resources using explicit input format
+        let mut codec = Codec::new();
+        codec
+            .read_file_by_type(input, input_format_type)
+            .map_err(|e| format!("Failed to read input with explicit format: {}", e))?;
+        write_resources_as_langcodec(&codec.resources, output)
+    } else {
+        // Parse output format
+        let output_format_type = match output_format.to_lowercase().as_str() {
+            "strings" => langcodec::formats::FormatType::Strings(None),
+            "android" | "androidstrings" => langcodec::formats::FormatType::AndroidStrings(None),
+            "xcstrings" => langcodec::formats::FormatType::Xcstrings,
+            "csv" => langcodec::formats::FormatType::CSV,
+            "tsv" => langcodec::formats::FormatType::TSV,
+            _ => return Err(format!("Unsupported output format: {}", output_format)),
+        };
 
-    // Use the lib crate's convert function
-    langcodec::convert(input, input_format_type, output, output_format_type)
-        .map_err(|e| format!("Conversion error: {}", e))
+        // Use the lib crate's convert function
+        langcodec::convert(input, input_format_type, output, output_format_type)
+            .map_err(|e| format!("Conversion error: {}", e))
+    }
 }
 
 /// Try to read a custom format file and add it to the codec for view
@@ -433,4 +472,145 @@ fn try_custom_format_view(
     }
 
     Ok(())
+}
+
+/// Serialize resources as a .langcodec (Resource JSON array) file
+fn write_resources_as_langcodec(
+    resources: &Vec<langcodec::Resource>,
+    output: &str,
+) -> Result<(), String> {
+    let file = File::create(output).map_err(|e| format!("Failed to create {}: {}", output, e))?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, resources)
+        .map_err(|e| format!("Failed to write .langcodec JSON: {}", e))
+}
+
+/// Read resources from any supported input (standard or custom formats)
+fn read_resources_from_any_input(
+    input: &str,
+    input_format_hint: Option<&String>,
+) -> Result<Vec<langcodec::Resource>, String> {
+    // First: if explicit input format is provided and is a standard format, use it
+    if let Some(fmt) = input_format_hint {
+        let fmt_lower = fmt.to_lowercase();
+        let maybe_std = match fmt_lower.as_str() {
+            "strings" => Some(langcodec::formats::FormatType::Strings(None)),
+            "android" | "androidstrings" => {
+                Some(langcodec::formats::FormatType::AndroidStrings(None))
+            }
+            "xcstrings" => Some(langcodec::formats::FormatType::Xcstrings),
+            "csv" => Some(langcodec::formats::FormatType::CSV),
+            "tsv" => Some(langcodec::formats::FormatType::TSV),
+            _ => None,
+        };
+        if let Some(std_fmt) = maybe_std {
+            // Try using the builder pattern which might handle language inference better
+            match Codec::builder().add_file(input) {
+                Ok(codec) => return Ok(codec.build().resources),
+                Err(e) => {
+                    // Fall back to manual approach with language inference
+                    let lang_from_filename = input
+                        .split('/')
+                        .last()
+                        .and_then(|name| name.split('.').next())
+                        .and_then(|name| {
+                            if name.len() == 2 && name.chars().all(|c| c.is_ascii_lowercase()) {
+                                Some(name.to_string())
+                            } else if name.contains('_') {
+                                // Handle cases like "sample_en"
+                                name.split('_').last().map(|s| s.to_string())
+                            } else {
+                                None
+                            }
+                        });
+
+                    if let Some(lang) = lang_from_filename {
+                        let lang_clone = lang.clone();
+                        let mut codec = Codec::new();
+                        codec
+                            .read_file_by_type(input, std_fmt.with_language(Some(lang)))
+                            .map_err(|e2| {
+                                format!(
+                                    "Failed to read input with language '{}': {}",
+                                    lang_clone, e2
+                                )
+                            })?;
+                        return Ok(codec.resources);
+                    } else {
+                        return Err(format!("Failed to read input: {}", e));
+                    }
+                }
+            }
+        }
+    }
+
+    // Second: try reading as a standard file by extension using builder pattern
+    match Codec::builder().add_file(input) {
+        Ok(codec) => return Ok(codec.build().resources),
+        Err(e) => {
+            // Try manual language inference and format detection
+            let lang_from_filename = input
+                .split('/')
+                .last()
+                .and_then(|name| name.split('.').next())
+                .and_then(|name| {
+                    if name.len() == 2 && name.chars().all(|c| c.is_ascii_lowercase()) {
+                        Some(name.to_string())
+                    } else if name.contains('_') {
+                        // Handle cases like "sample_en"
+                        name.split('_').last().map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                });
+
+            if let Some(lang) = lang_from_filename {
+                // Try with explicit format and language
+                let format_type = if input.ends_with(".strings") {
+                    langcodec::formats::FormatType::Strings(Some(lang.clone()))
+                } else if input.ends_with(".xml") {
+                    langcodec::formats::FormatType::AndroidStrings(Some(lang.clone()))
+                } else if input.ends_with(".xcstrings") {
+                    langcodec::formats::FormatType::Xcstrings
+                } else if input.ends_with(".csv") {
+                    langcodec::formats::FormatType::CSV
+                } else if input.ends_with(".tsv") {
+                    langcodec::formats::FormatType::TSV
+                } else {
+                    return Err(format!("Unsupported file extension for input: {}", input));
+                };
+
+                let mut codec = Codec::new();
+                codec.read_file_by_type(input, format_type).map_err(|e2| {
+                    format!("Failed to read input with language '{}': {}", lang, e2)
+                })?;
+                return Ok(codec.resources);
+            } else {
+                eprintln!("Standard format detection failed: {}", e);
+            }
+        }
+    }
+
+    // Third: try custom formats (json, yaml, langcodec)
+    if input.ends_with(".json")
+        || input.ends_with(".yaml")
+        || input.ends_with(".yml")
+        || input.ends_with(".langcodec")
+    {
+        // Validate custom format file
+        validate_custom_format_file(input)?;
+
+        // Auto-detect format based on file content
+        let file_content = std::fs::read_to_string(input)
+            .map_err(|e| format!("Error reading file {}: {}", input, e))?;
+
+        // Validate file content
+        let custom_format = formats::validate_custom_format_content(input, &file_content)?;
+
+        // Convert custom format to Resource
+        let resources = custom_format_to_resource(input.to_string(), custom_format)?;
+        return Ok(resources);
+    }
+
+    Err("Unsupported input format or file extension".to_string())
 }
