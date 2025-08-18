@@ -1,0 +1,56 @@
+[
+  {
+    "metadata": {
+      "language": "en",
+      "domain": "MyApp",
+      "custom": {}
+    },
+    "entries": [
+      {
+        "id": "hello_world",
+        "value": {
+          "Singular": "Hello, World!"
+        },
+        "comment": "Welcome message",
+        "status": "translated",
+        "custom": {}
+      },
+      {
+        "id": "welcome_message",
+        "value": {
+          "Singular": "Welcome to our app!"
+        },
+        "comment": "App welcome message",
+        "status": "translated",
+        "custom": {}
+      }
+    ]
+  },
+  {
+    "metadata": {
+      "language": "fr",
+      "domain": "MyApp",
+      "custom": {}
+    },
+    "entries": [
+      {
+        "id": "hello_world",
+        "value": {
+          "Singular": "Bonjour, le monde!"
+        },
+        "comment": "Welcome message",
+        "status": "translated",
+        "custom": {}
+      },
+      {
+        "id": "welcome_message",
+        "value": {
+          "Singular": "Bienvenue dans notre application!"
+        },
+        "comment": "App welcome message",
+        "status": "translated",
+        "custom": {}
+      }
+    ]
+  }
+]

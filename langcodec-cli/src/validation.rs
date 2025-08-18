@@ -214,9 +214,13 @@ pub fn validate_custom_format_file(input: &str) -> Result<(), String> {
             // Validate YAML file exists and is readable
             validate_file_path(input)?;
         }
+        "langcodec" => {
+            // Validate langcodec file exists and is readable
+            validate_file_path(input)?;
+        }
         _ => {
             return Err(format!(
-                "Unsupported file extension for custom format: {}. Expected: json, yaml, yml",
+                "Unsupported file extension for custom format: {}. Expected: json, yaml, yml, langcodec",
                 input_ext
             ));
         }

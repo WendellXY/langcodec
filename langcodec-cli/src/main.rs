@@ -144,8 +144,9 @@ fn main() {
             } else if input.ends_with(".json")
                 || input.ends_with(".yaml")
                 || input.ends_with(".yml")
+                || input.ends_with(".langcodec")
             {
-                // Try custom format for JSON/YAML files
+                // Try custom format for JSON/YAML/langcodec files
                 if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
                     eprintln!("Failed to read file: {}", e);
                     std::process::exit(1);
@@ -231,8 +232,12 @@ fn run_unified_convert_command(
         return;
     }
 
-    // Strategy 2: Try custom formats for JSON/YAML files only
-    if input.ends_with(".json") || input.ends_with(".yaml") || input.ends_with(".yml") {
+    // Strategy 2: Try custom formats for JSON/YAML/langcodec files
+    if input.ends_with(".json")
+        || input.ends_with(".yaml")
+        || input.ends_with(".yml")
+        || input.ends_with(".langcodec")
+    {
         // For JSON files without explicit format, try standard format detection first
         if input.ends_with(".json") && input_format.is_none() {
             progress_bar.set_message("Trying standard JSON format detection...");
@@ -251,7 +256,7 @@ fn run_unified_convert_command(
                 std::process::exit(1);
             }
         } else {
-            // For YAML files, try custom formats directly
+            // For YAML and langcodec files, try custom formats directly
             progress_bar.set_message("Converting using custom format...");
             if let Err(e) = try_custom_format_conversion(&input, &output, &input_format) {
                 progress_bar.finish_with_message("❌ Custom format conversion failed");
@@ -325,6 +330,9 @@ fn print_conversion_error(input: &str, output: &str) {
     if input.ends_with(".yaml") || input.ends_with(".yml") {
         eprintln!("2. Custom YAML format conversion");
     }
+    if input.ends_with(".langcodec") {
+        eprintln!("2. Custom langcodec Resource array format conversion");
+    }
     eprintln!();
     eprintln!("Supported input formats:");
     eprintln!("- .strings (Apple strings files)");
@@ -334,6 +342,7 @@ fn print_conversion_error(input: &str, output: &str) {
     eprintln!("- .tsv (TSV files)");
     eprintln!("- .json (JSON key-value pairs or Resource format)");
     eprintln!("- .yaml/.yml (YAML language map format)");
+    eprintln!("- .langcodec (JSON array of langcodec::Resource objects)");
     eprintln!();
     eprintln!("Supported output formats:");
     eprintln!("- .strings (Apple strings files)");
@@ -413,11 +422,10 @@ fn try_custom_format_view(
         .map_err(|e| format!("Error reading file {}: {}", input, e))?;
 
     // Validate file content
-    formats::validate_custom_format_content(input, &file_content)?;
+    let custom_format = formats::validate_custom_format_content(input, &file_content)?;
 
     // Convert custom format to Resource
-    let resources =
-        custom_format_to_resource(input.to_string(), parse_custom_format("json-language-map")?)?;
+    let resources = custom_format_to_resource(input.to_string(), custom_format)?;
 
     // Add resources to codec
     for resource in resources {

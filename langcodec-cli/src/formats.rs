@@ -48,6 +48,42 @@ pub enum CustomFormat {
     /// ]
     /// ```
     JSONArrayLanguageMap,
+
+    /// A JSON file which contains an array of langcodec::Resource objects.
+    ///
+    /// Each object is a complete Resource with metadata and entries:
+    ///
+    /// ```json
+    /// [
+    ///     {
+    ///         "metadata": {
+    ///             "language": "en",
+    ///             "domain": "MyApp"
+    ///         },
+    ///         "entries": [
+    ///             {
+    ///                 "id": "hello_world",
+    ///                 "value": "Hello, World!",
+    ///                 "comment": "Welcome message"
+    ///             }
+    ///         ]
+    ///     },
+    ///     {
+    ///         "metadata": {
+    ///             "language": "fr",
+    ///             "domain": "MyApp"
+    ///         },
+    ///         "entries": [
+    ///             {
+    ///                 "id": "hello_world",
+    ///                 "value": "Bonjour, le monde!",
+    ///                 "comment": "Welcome message"
+    ///             }
+    ///         ]
+    ///     }
+    /// ]
+    /// ```
+    LangcodecResourceArray,
 }
 
 impl FromStr for CustomFormat {
@@ -60,9 +96,10 @@ impl FromStr for CustomFormat {
             "jsonlanguagemap" => Ok(CustomFormat::JSONLanguageMap),
             "jsonarraylanguagemap" => Ok(CustomFormat::JSONArrayLanguageMap),
             "yamllanguagemap" => Ok(CustomFormat::YAMLLanguageMap),
+            "langcodecresourcearray" => Ok(CustomFormat::LangcodecResourceArray),
             // "csvlanguages" => Ok(CustomFormat::CSVLanguages),
             _ => Err(format!(
-                "Unknown custom format: '{}'. Supported formats: json-language-map, json-array-language-map, yaml-language-map",
+                "Unknown custom format: '{}'. Supported formats: json-language-map, json-array-language-map, yaml-language-map, langcodec-resource-array",
                 s
             )),
         }
@@ -85,6 +122,24 @@ pub fn detect_custom_format(file_path: &str, file_content: &str) -> Option<Custo
         .to_lowercase();
 
     match extension.as_str() {
+        "langcodec" => {
+            // Try to parse as JSON array of Resource objects
+            if serde_json::from_str::<Vec<serde_json::Value>>(file_content).is_ok() {
+                // Check if it looks like an array of Resource objects
+                if let Ok(array) = serde_json::from_str::<Vec<serde_json::Value>>(file_content) {
+                    if !array.is_empty() {
+                        // Check if the first element has the expected Resource structure
+                        if let Some(first) = array.first() {
+                            if let Some(obj) = first.as_object() {
+                                if obj.contains_key("metadata") && obj.contains_key("entries") {
+                                    return Some(CustomFormat::LangcodecResourceArray);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         "json" => {
             // Try to parse as JSON object first (JSONLanguageMap)
             if serde_json::from_str::<serde_json::Value>(file_content).is_ok() {
@@ -136,5 +191,5 @@ pub fn validate_custom_format_content(
 
 /// Get a list of all supported custom formats for help messages.
 pub fn get_supported_custom_formats() -> &'static str {
-    "json-language-map, json-array-language-map, yaml-language-map"
+    "json-language-map, json-array-language-map, yaml-language-map, langcodec-resource-array"
 }
