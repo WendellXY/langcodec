@@ -46,6 +46,12 @@ enum Commands {
         /// Optional output format hint (e.g., "xcstrings", "strings", "android")
         #[arg(long)]
         output_format: Option<String>,
+        /// Language codes to exclude from output (e.g., "en", "fr"). Can be specified multiple times.
+        #[arg(long, value_name = "LANG")]
+        exclude_lang: Vec<String>,
+        /// Language codes to include in output (e.g., "en", "fr"). Can be specified multiple times. If specified, only these languages will be included.
+        #[arg(long, value_name = "LANG")]
+        include_lang: Vec<String>,
     },
 
     /// View localization files.
@@ -102,6 +108,8 @@ fn main() {
             output,
             input_format,
             output_format,
+            exclude_lang,
+            include_lang,
         } => {
             // Create validation context
             let mut context = ValidationContext::new()
@@ -121,7 +129,14 @@ fn main() {
                 std::process::exit(1);
             }
 
-            run_unified_convert_command(input, output, input_format, output_format);
+            run_unified_convert_command(
+                input,
+                output,
+                input_format,
+                output_format,
+                exclude_lang,
+                include_lang,
+            );
         }
         Commands::View { input, lang, full } => {
             // Create validation context
@@ -216,6 +231,8 @@ fn run_unified_convert_command(
     output: String,
     input_format: Option<String>,
     output_format: Option<String>,
+    exclude_lang: Vec<String>,
+    include_lang: Vec<String>,
 ) {
     // Create progress bar
     let progress_bar = ProgressBar::new_spinner();
@@ -229,9 +246,29 @@ fn run_unified_convert_command(
     // If the desired output is .langcodec, handle via resource serialization
     if output.ends_with(".langcodec") {
         progress_bar.set_message("Converting input to .langcodec (Resource JSON array)...");
-        match read_resources_from_any_input(&input, input_format.as_ref())
-            .and_then(|resources| write_resources_as_langcodec(&resources, &output))
-        {
+        match read_resources_from_any_input(&input, input_format.as_ref()).and_then(|resources| {
+            // Apply language filtering
+            let filtered_resources = resources
+                .into_iter()
+                .filter(|resource| {
+                    let lang = &resource.metadata.language;
+
+                    // If include_lang is specified, only include those languages
+                    if !include_lang.is_empty() && !include_lang.contains(lang) {
+                        return false;
+                    }
+
+                    // If exclude_lang is specified, exclude those languages
+                    if !exclude_lang.is_empty() && exclude_lang.contains(lang) {
+                        return false;
+                    }
+
+                    true
+                })
+                .collect();
+
+            write_resources_as_langcodec(&filtered_resources, &output)
+        }) {
             Ok(()) => {
                 progress_bar.finish_with_message(
                     "✅ Successfully converted to .langcodec (Resource JSON array)",
@@ -511,14 +548,14 @@ fn read_resources_from_any_input(
                     // Fall back to manual approach with language inference
                     let lang_from_filename = input
                         .split('/')
-                        .last()
+                        .next_back()
                         .and_then(|name| name.split('.').next())
                         .and_then(|name| {
                             if name.len() == 2 && name.chars().all(|c| c.is_ascii_lowercase()) {
                                 Some(name.to_string())
                             } else if name.contains('_') {
                                 // Handle cases like "sample_en"
-                                name.split('_').last().map(|s| s.to_string())
+                                name.split('_').next_back().map(|s| s.to_string())
                             } else {
                                 None
                             }
@@ -551,14 +588,14 @@ fn read_resources_from_any_input(
             // Try manual language inference and format detection
             let lang_from_filename = input
                 .split('/')
-                .last()
+                .next_back()
                 .and_then(|name| name.split('.').next())
                 .and_then(|name| {
                     if name.len() == 2 && name.chars().all(|c| c.is_ascii_lowercase()) {
                         Some(name.to_string())
                     } else if name.contains('_') {
                         // Handle cases like "sample_en"
-                        name.split('_').last().map(|s| s.to_string())
+                        name.split('_').next_back().map(|s| s.to_string())
                     } else {
                         None
                     }
