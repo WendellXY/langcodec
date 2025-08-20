@@ -1,6 +1,6 @@
 [package]
 name = "langcodec-cli"
-version = "0.3.2"
+version = "0.3.3"
 edition = "2024"
 description = "A universal CLI tool for converting and inspecting localization files (Apple, Android, CSV, etc.)"
 license = "MIT"
@@ -19,7 +19,6 @@ crossterm = "0.29.0"
 atty = "0.2.14"
 serde_json = "1.0"
 serde_yaml = "0.9"
-
 unic-langid = "0.9.6"
 
 [dev-dependencies]
