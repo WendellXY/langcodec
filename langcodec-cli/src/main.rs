@@ -46,11 +46,11 @@ enum Commands {
         /// Optional output format hint (e.g., "xcstrings", "strings", "android")
         #[arg(long)]
         output_format: Option<String>,
-        /// Language codes to exclude from output (e.g., "en", "fr"). Can be specified multiple times.
-        #[arg(long, value_name = "LANG")]
+        /// Language codes to exclude from output (e.g., "en", "fr"). Can be specified multiple times or as comma-separated values (e.g., "--exclude-lang en,fr,zh-hans").
+        #[arg(long, value_name = "LANG", value_delimiter = ',')]
         exclude_lang: Vec<String>,
-        /// Language codes to include in output (e.g., "en", "fr"). Can be specified multiple times. If specified, only these languages will be included.
-        #[arg(long, value_name = "LANG")]
+        /// Language codes to include in output (e.g., "en", "fr"). Can be specified multiple times or as comma-separated values (e.g., "--include-lang en,fr,zh-hans").
+        #[arg(long, value_name = "LANG", value_delimiter = ',')]
         include_lang: Vec<String>,
     },
 
