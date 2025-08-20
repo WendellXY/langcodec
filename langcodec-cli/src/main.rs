@@ -12,7 +12,7 @@ use crate::transformers::custom_format_to_resource;
 use crate::validation::{ValidationContext, validate_context, validate_custom_format_file};
 use crate::view::print_view;
 use clap::{Parser, Subcommand};
-use indicatif::{ProgressBar, ProgressStyle};
+
 use langcodec::{Codec, convert_auto, formats::FormatType};
 use std::fs::File;
 use std::io::BufWriter;
@@ -234,15 +234,6 @@ fn run_unified_convert_command(
     exclude_lang: Vec<String>,
     include_lang: Vec<String>,
 ) {
-    // Create progress bar
-    let progress_bar = ProgressBar::new_spinner();
-    progress_bar.set_style(
-        ProgressStyle::default_spinner()
-            .template("{spinner:.green} {wide_msg}")
-            .unwrap(),
-    );
-    progress_bar.set_message("Detecting input format...");
-
     // If the desired output is .langcodec, handle via resource serialization
     if output.ends_with(".langcodec") {
         let filter_msg = if !include_lang.is_empty() || !exclude_lang.is_empty() {
@@ -258,10 +249,10 @@ fn run_unified_convert_command(
             String::new()
         };
 
-        progress_bar.set_message(format!(
+        println!(
             "Converting input to .langcodec (Resource JSON array){}...",
             filter_msg
-        ));
+        );
         match read_resources_from_any_input(&input, input_format.as_ref()).and_then(|resources| {
             // Apply language filtering
             let filtered_resources = resources
@@ -299,10 +290,10 @@ fn run_unified_convert_command(
                     String::new()
                 };
 
-                progress_bar.finish_with_message(format!(
+                println!(
                     "✅ Successfully converted to .langcodec (Resource JSON array){}",
                     filter_msg
-                ));
+                );
                 return;
             }
             Err(e) => {
@@ -319,10 +310,7 @@ fn run_unified_convert_command(
                     String::new()
                 };
 
-                progress_bar.finish_with_message(format!(
-                    "❌ Conversion to .langcodec failed{}",
-                    filter_msg
-                ));
+                println!("❌ Conversion to .langcodec failed{}", filter_msg);
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -330,10 +318,9 @@ fn run_unified_convert_command(
     }
 
     // Strategy 1: Try standard lib crate conversion first
-    progress_bar.set_message("Trying standard format detection from file extensions...");
+    println!("Trying standard format detection from file extensions...");
     if let Ok(()) = convert_auto(&input, &output) {
-        progress_bar
-            .finish_with_message("✅ Successfully converted using standard format detection");
+        println!("✅ Successfully converted using standard format detection");
         return;
     }
 
@@ -345,48 +332,47 @@ fn run_unified_convert_command(
     {
         // For JSON files without explicit format, try standard format detection first
         if input.ends_with(".json") && input_format.is_none() {
-            progress_bar.set_message("Trying standard JSON format detection...");
+            println!("Trying standard JSON format detection...");
             // Try to use the standard format detection which will show proper JSON parsing errors
             if let Err(e) = convert_auto(&input, &output) {
-                progress_bar.set_message("Trying custom JSON format conversion...");
+                println!("Trying custom JSON format conversion...");
                 // If standard detection fails, try custom formats
                 if let Ok(()) = try_custom_format_conversion(&input, &output, &input_format) {
-                    progress_bar
-                        .finish_with_message("✅ Successfully converted using custom JSON format");
+                    println!("✅ Successfully converted using custom JSON format");
                     return;
                 }
                 // If both fail, show the standard error message
-                progress_bar.finish_with_message("❌ Conversion failed");
+                println!("❌ Conversion failed");
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         } else {
             // For YAML and langcodec files, try custom formats directly
-            progress_bar.set_message("Converting using custom format...");
+            println!("Converting using custom format...");
             if let Err(e) = try_custom_format_conversion(&input, &output, &input_format) {
-                progress_bar.finish_with_message("❌ Custom format conversion failed");
+                println!("❌ Custom format conversion failed");
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
-            progress_bar.finish_with_message("✅ Successfully converted using custom format");
+            println!("✅ Successfully converted using custom format");
             return;
         }
     }
 
     // Strategy 3: If we have format hints, try with explicit formats
     if let (Some(input_fmt), Some(output_fmt)) = (input_format, output_format) {
-        progress_bar.set_message("Converting with explicit format hints...");
+        println!("Converting with explicit format hints...");
         if let Err(e) = try_explicit_format_conversion(&input, &output, &input_fmt, &output_fmt) {
-            progress_bar.finish_with_message("❌ Explicit format conversion failed");
+            println!("❌ Explicit format conversion failed");
             eprintln!("Error: {}", e);
             std::process::exit(1);
         }
-        progress_bar.finish_with_message("✅ Successfully converted with explicit formats");
+        println!("✅ Successfully converted with explicit formats");
         return;
     }
 
     // If all strategies failed, provide helpful error message
-    progress_bar.finish_with_message("❌ All conversion strategies failed");
+    println!("❌ All conversion strategies failed");
     print_conversion_error(&input, &output);
     std::process::exit(1);
 }
