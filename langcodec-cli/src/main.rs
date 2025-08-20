@@ -46,10 +46,10 @@ enum Commands {
         /// Optional output format hint (e.g., "xcstrings", "strings", "android")
         #[arg(long)]
         output_format: Option<String>,
-        /// Language codes to exclude from output (e.g., "en", "fr"). Can be specified multiple times or as comma-separated values (e.g., "--exclude-lang en,fr,zh-hans").
+        /// Language codes to exclude from output (e.g., "en", "fr"). Can be specified multiple times or as comma-separated values (e.g., "--exclude-lang en,fr,zh-hans"). Only affects .langcodec output format.
         #[arg(long, value_name = "LANG", value_delimiter = ',')]
         exclude_lang: Vec<String>,
-        /// Language codes to include in output (e.g., "en", "fr"). Can be specified multiple times or as comma-separated values (e.g., "--include-lang en,fr,zh-hans").
+        /// Language codes to include in output (e.g., "en", "fr"). Can be specified multiple times or as comma-separated values (e.g., "--include-lang en,fr,zh-hans"). If specified, only these languages will be included. Only affects .langcodec output format.
         #[arg(long, value_name = "LANG", value_delimiter = ',')]
         include_lang: Vec<String>,
     },
@@ -245,7 +245,23 @@ fn run_unified_convert_command(
 
     // If the desired output is .langcodec, handle via resource serialization
     if output.ends_with(".langcodec") {
-        progress_bar.set_message("Converting input to .langcodec (Resource JSON array)...");
+        let filter_msg = if !include_lang.is_empty() || !exclude_lang.is_empty() {
+            let mut parts = Vec::new();
+            if !include_lang.is_empty() {
+                parts.push(format!("including: {}", include_lang.join(", ")));
+            }
+            if !exclude_lang.is_empty() {
+                parts.push(format!("excluding: {}", exclude_lang.join(", ")));
+            }
+            format!(" with language filtering ({})", parts.join(", "))
+        } else {
+            String::new()
+        };
+
+        progress_bar.set_message(format!(
+            "Converting input to .langcodec (Resource JSON array){}...",
+            filter_msg
+        ));
         match read_resources_from_any_input(&input, input_format.as_ref()).and_then(|resources| {
             // Apply language filtering
             let filtered_resources = resources
@@ -270,13 +286,43 @@ fn run_unified_convert_command(
             write_resources_as_langcodec(&filtered_resources, &output)
         }) {
             Ok(()) => {
-                progress_bar.finish_with_message(
-                    "✅ Successfully converted to .langcodec (Resource JSON array)",
-                );
+                let filter_msg = if !include_lang.is_empty() || !exclude_lang.is_empty() {
+                    let mut parts = Vec::new();
+                    if !include_lang.is_empty() {
+                        parts.push(format!("including: {}", include_lang.join(", ")));
+                    }
+                    if !exclude_lang.is_empty() {
+                        parts.push(format!("excluding: {}", exclude_lang.join(", ")));
+                    }
+                    format!(" with language filtering ({})", parts.join(", "))
+                } else {
+                    String::new()
+                };
+
+                progress_bar.finish_with_message(format!(
+                    "✅ Successfully converted to .langcodec (Resource JSON array){}",
+                    filter_msg
+                ));
                 return;
             }
             Err(e) => {
-                progress_bar.finish_with_message("❌ Conversion to .langcodec failed");
+                let filter_msg = if !include_lang.is_empty() || !exclude_lang.is_empty() {
+                    let mut parts = Vec::new();
+                    if !include_lang.is_empty() {
+                        parts.push(format!("including: {}", include_lang.join(", ")));
+                    }
+                    if !exclude_lang.is_empty() {
+                        parts.push(format!("excluding: {}", exclude_lang.join(", ")));
+                    }
+                    format!(" with language filtering ({})", parts.join(", "))
+                } else {
+                    String::new()
+                };
+
+                progress_bar.finish_with_message(format!(
+                    "❌ Conversion to .langcodec failed{}",
+                    filter_msg
+                ));
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -284,7 +330,7 @@ fn run_unified_convert_command(
     }
 
     // Strategy 1: Try standard lib crate conversion first
-    progress_bar.set_message("Trying standard format detection...");
+    progress_bar.set_message("Trying standard format detection from file extensions...");
     if let Ok(()) = convert_auto(&input, &output) {
         progress_bar
             .finish_with_message("✅ Successfully converted using standard format detection");
@@ -385,7 +431,7 @@ fn try_custom_format_conversion(
 }
 
 fn print_conversion_error(input: &str, output: &str) {
-    eprintln!("Error: Could not convert {} to {}", input, output);
+    eprintln!("Error: Could not convert '{}' to '{}'", input, output);
     eprintln!();
     eprintln!("Tried the following strategies:");
     eprintln!("1. Standard format detection from file extensions");
@@ -408,7 +454,6 @@ fn print_conversion_error(input: &str, output: &str) {
     eprintln!("- .langcodec (Resource JSON array)");
     eprintln!("- .json (JSON key-value pairs or Resource format)");
     eprintln!("- .yaml/.yml (YAML language map format)");
-    eprintln!("- .langcodec (JSON array of langcodec::Resource objects)");
     eprintln!();
     eprintln!("Supported output formats:");
     eprintln!("- .strings (Apple strings files)");
@@ -416,6 +461,7 @@ fn print_conversion_error(input: &str, output: &str) {
     eprintln!("- .xcstrings (Apple xcstrings files)");
     eprintln!("- .csv (CSV files)");
     eprintln!("- .tsv (TSV files)");
+    eprintln!("- .langcodec (Resource JSON array)");
     eprintln!();
     eprintln!(
         "For JSON files, the command will try both standard Resource format and key-value pairs."
@@ -456,7 +502,12 @@ fn try_explicit_format_conversion(
         "xcstrings" => langcodec::formats::FormatType::Xcstrings,
         "csv" => langcodec::formats::FormatType::CSV,
         "tsv" => langcodec::formats::FormatType::TSV,
-        _ => return Err(format!("Unsupported input format: {}", input_format)),
+        _ => {
+            return Err(format!(
+                "Unsupported input format: '{}'. Supported formats: strings, android, xcstrings, csv, tsv",
+                input_format
+            ));
+        }
     };
 
     // Handle .langcodec output specially by reading resources then serializing
@@ -475,7 +526,12 @@ fn try_explicit_format_conversion(
             "xcstrings" => langcodec::formats::FormatType::Xcstrings,
             "csv" => langcodec::formats::FormatType::CSV,
             "tsv" => langcodec::formats::FormatType::TSV,
-            _ => return Err(format!("Unsupported output format: {}", output_format)),
+            _ => {
+                return Err(format!(
+                    "Unsupported output format: '{}'. Supported formats: strings, android, xcstrings, csv, tsv",
+                    output_format
+                ));
+            }
         };
 
         // Use the lib crate's convert function
@@ -649,5 +705,8 @@ fn read_resources_from_any_input(
         return Ok(resources);
     }
 
-    Err("Unsupported input format or file extension".to_string())
+    Err(format!(
+        "Unsupported input format or file extension: '{}'. Supported formats: .strings, .xml, .xcstrings, .csv, .tsv, .json, .yaml, .yml, .langcodec",
+        input
+    ))
 }
