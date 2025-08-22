@@ -59,22 +59,18 @@ pub fn run_merge_command(
         ConflictStrategy::Skip => langcodec::types::ConflictStrategy::Skip,
     };
 
-    let merged_resource = match langcodec::merge_resources(&codec.resources, &conflict_strategy) {
-        Ok(resource) => resource,
-        Err(e) => {
-            println!("❌ Error merging resources");
-            eprintln!("Error: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let merge_count = codec.merge_resources(&conflict_strategy);
+    println!("Merged {} language groups", merge_count);
 
     // Write merged resource to output file using the new lib crate method
     println!("Writing merged output...");
-    if let Err(e) = Codec::write_resource_to_file(&merged_resource, &output) {
-        println!("❌ Error writing output file");
-        eprintln!("Error writing to {}: {}", output, e);
-        std::process::exit(1);
-    }
+    codec.resources.iter().for_each(|resource| {
+        if let Err(e) = Codec::write_resource_to_file(resource, &output) {
+            println!("❌ Error writing output file");
+            eprintln!("Error writing to {}: {}", output, e);
+            std::process::exit(1);
+        }
+    });
 
     println!(
         "✅ Successfully merged {} files into {}",

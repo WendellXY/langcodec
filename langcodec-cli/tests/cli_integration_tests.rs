@@ -546,3 +546,180 @@ fn test_convert_command_output_to_android() {
     assert!(output.status.success());
     assert!(output_file.exists());
 }
+
+#[test]
+fn test_merge_command_updated_behavior() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file1 = temp_dir.path().join("file1.strings");
+    let input_file2 = temp_dir.path().join("file2.strings");
+    let output_file = temp_dir.path().join("merged.strings");
+
+    // Create two .strings files with the same language but different keys
+    let strings_content1 = r#"/* Greeting */
+"hello" = "Hello";"#;
+
+    let strings_content2 = r#"/* Farewell */
+"goodbye" = "Goodbye";"#;
+
+    fs::write(&input_file1, strings_content1).unwrap();
+    fs::write(&input_file2, strings_content2).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "merge",
+            "-i",
+            input_file1.to_str().unwrap(),
+            "-i",
+            input_file2.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--strategy",
+            "last",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output_file.exists());
+
+    // Verify the output contains the expected merge count message
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Merged 1 language groups"),
+        "Expected merge count message, got: {}",
+        stdout
+    );
+
+    // Verify the output contains the success message
+    assert!(
+        stdout.contains("✅ Successfully merged 2 files into"),
+        "Expected success message, got: {}",
+        stdout
+    );
+
+    // Verify the merged file contains both entries
+    let merged_content = fs::read_to_string(&output_file).unwrap();
+    assert!(merged_content.contains("hello"));
+    assert!(merged_content.contains("goodbye"));
+}
+
+#[test]
+fn test_merge_command_with_language_override() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file1 = temp_dir.path().join("file1.strings");
+    let input_file2 = temp_dir.path().join("file2.strings");
+    let output_file = temp_dir.path().join("merged.strings");
+
+    // Create two .strings files with different content
+    let strings_content1 = r#"/* Greeting */
+"hello" = "Hello";"#;
+
+    let strings_content2 = r#"/* Farewell */
+"goodbye" = "Goodbye";"#;
+
+    fs::write(&input_file1, strings_content1).unwrap();
+    fs::write(&input_file2, strings_content2).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "merge",
+            "-i",
+            input_file1.to_str().unwrap(),
+            "-i",
+            input_file2.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "-l",
+            "en",
+            "--strategy",
+            "first",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output_file.exists());
+
+    // Verify the output contains the expected merge count message
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Merged 1 language groups"),
+        "Expected merge count message, got: {}",
+        stdout
+    );
+
+    // Verify the output contains the success message
+    assert!(
+        stdout.contains("✅ Successfully merged 2 files into"),
+        "Expected success message, got: {}",
+        stdout
+    );
+
+    // Verify the merged file contains both entries
+    let merged_content = fs::read_to_string(&output_file).unwrap();
+    assert!(merged_content.contains("hello"));
+    assert!(merged_content.contains("goodbye"));
+}
+
+#[test]
+fn test_merge_command_multiple_languages_no_merges() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file1 = temp_dir.path().join("file1.strings");
+    let input_file2 = temp_dir.path().join("file2.strings");
+    let output_file = temp_dir.path().join("merged.strings");
+
+    // Create two .strings files with different keys (no conflicts)
+    let content1 = r#"/* Greeting */
+"hello" = "Hello";"#;
+
+    let content2 = r#"/* Farewell */
+"goodbye" = "Goodbye";"#;
+
+    fs::write(&input_file1, content1).unwrap();
+    fs::write(&input_file2, content2).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "merge",
+            "-i",
+            input_file1.to_str().unwrap(),
+            "-i",
+            input_file2.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--strategy",
+            "last",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output_file.exists());
+
+    // Since both files have the same language (empty, inferred from path), they should merge
+    // Verify the output contains the expected merge count message (1 merge since same language)
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Merged 1 language groups"),
+        "Expected 1 merge count message, got: {}",
+        stdout
+    );
+
+    // Verify the output contains the success message
+    assert!(
+        stdout.contains("✅ Successfully merged 2 files into"),
+        "Expected success message, got: {}",
+        stdout
+    );
+
+    // Verify the merged file contains both entries
+    let merged_content = fs::read_to_string(&output_file).unwrap();
+    assert!(merged_content.contains("hello"));
+    assert!(merged_content.contains("goodbye"));
+}
