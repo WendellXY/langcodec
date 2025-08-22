@@ -59,7 +59,7 @@ pub fn run_merge_command(
         ConflictStrategy::Skip => langcodec::types::ConflictStrategy::Skip,
     };
 
-    let merged_resource = match Codec::merge_resources(&codec.resources, conflict_strategy) {
+    let merged_resource = match langcodec::merge_resources(&codec.resources, &conflict_strategy) {
         Ok(resource) => resource,
         Err(e) => {
             println!("❌ Error merging resources");

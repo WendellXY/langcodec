@@ -465,7 +465,7 @@ fn convert_resources_to_format(
     output: &str,
     output_format: FormatType,
 ) -> Result<(), langcodec::Error> {
-    langcodec::Codec::convert_resources_to_format(resources, output, output_format)
+    langcodec::converter::convert_resources_to_format(resources, output, output_format)
 }
 
 /// Try explicit format conversion with specified input and output formats

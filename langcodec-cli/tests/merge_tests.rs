@@ -1,5 +1,5 @@
+use langcodec::converter;
 use langcodec::types::{ConflictStrategy, Entry, EntryStatus, Metadata, Resource, Translation};
-use langcodec_cli::Codec;
 use std::collections::HashMap;
 use std::fs;
 use tempfile::TempDir;
@@ -36,7 +36,8 @@ fn test_merge_basic_resources() {
         }],
     };
 
-    let merged = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::Last).unwrap();
+    let merged =
+        langcodec::merge_resources(&[resource1, resource2], &ConflictStrategy::Last).unwrap();
     assert_eq!(merged.entries.len(), 2);
     assert!(merged.entries.iter().any(|e| e.id == "hello"));
     assert!(merged.entries.iter().any(|e| e.id == "goodbye"));
@@ -74,7 +75,8 @@ fn test_merge_with_conflicts_first_strategy() {
         }],
     };
 
-    let merged = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::First).unwrap();
+    let merged =
+        langcodec::merge_resources(&[resource1, resource2], &ConflictStrategy::First).unwrap();
     assert_eq!(merged.entries.len(), 1);
     let entry = &merged.entries[0];
     assert_eq!(entry.id, "hello");
@@ -113,7 +115,8 @@ fn test_merge_with_conflicts_last_strategy() {
         }],
     };
 
-    let merged = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::Last).unwrap();
+    let merged =
+        langcodec::merge_resources(&[resource1, resource2], &ConflictStrategy::Last).unwrap();
     assert_eq!(merged.entries.len(), 1);
     let entry = &merged.entries[0];
     assert_eq!(entry.id, "hello");
@@ -152,7 +155,8 @@ fn test_merge_with_conflicts_skip_strategy() {
         }],
     };
 
-    let merged = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::Skip).unwrap();
+    let merged =
+        converter::merge_resources(&[resource1, resource2], &ConflictStrategy::Skip).unwrap();
     assert_eq!(merged.entries.len(), 0); // Both conflicting entries are skipped
 }
 
@@ -176,7 +180,8 @@ fn test_merge_empty_resources() {
         entries: vec![],
     };
 
-    let merged = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::Last).unwrap();
+    let merged =
+        converter::merge_resources(&[resource1, resource2], &ConflictStrategy::Last).unwrap();
     assert_eq!(merged.entries.len(), 0);
     assert_eq!(merged.metadata.language, "en");
 }
@@ -198,7 +203,7 @@ fn test_merge_single_resource() {
         }],
     };
 
-    let merged = Codec::merge_resources(&[resource], ConflictStrategy::Last).unwrap();
+    let merged = converter::merge_resources(&[resource], &ConflictStrategy::Last).unwrap();
     assert_eq!(merged.entries.len(), 1);
     assert_eq!(merged.entries[0].id, "hello");
 }
@@ -253,7 +258,8 @@ fn test_merge_multiple_conflicts() {
         ],
     };
 
-    let merged = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::Last).unwrap();
+    let merged =
+        converter::merge_resources(&[resource1, resource2], &ConflictStrategy::Last).unwrap();
     assert_eq!(merged.entries.len(), 2);
 
     let hello_entry = merged.entries.iter().find(|e| e.id == "hello").unwrap();
@@ -295,7 +301,8 @@ fn test_merge_with_comments() {
         }],
     };
 
-    let merged = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::Last).unwrap();
+    let merged =
+        converter::merge_resources(&[resource1, resource2], &ConflictStrategy::Last).unwrap();
     assert_eq!(merged.entries.len(), 1);
     let entry = &merged.entries[0];
     assert_eq!(entry.comment.as_ref().unwrap(), "Informal greeting");
@@ -333,7 +340,8 @@ fn test_merge_with_different_statuses() {
         }],
     };
 
-    let merged = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::Last).unwrap();
+    let merged =
+        converter::merge_resources(&[resource1, resource2], &ConflictStrategy::Last).unwrap();
     assert_eq!(merged.entries.len(), 1);
     let entry = &merged.entries[0];
     assert_eq!(entry.status, EntryStatus::NeedsReview);
@@ -378,7 +386,8 @@ fn test_merge_with_custom_fields() {
         }],
     };
 
-    let merged = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::Last).unwrap();
+    let merged =
+        converter::merge_resources(&[resource1, resource2], &ConflictStrategy::Last).unwrap();
     assert_eq!(merged.entries.len(), 1);
     let entry = &merged.entries[0];
     assert_eq!(entry.custom.get("priority").unwrap(), "low");
@@ -434,7 +443,8 @@ fn test_merge_plurals() {
         }],
     };
 
-    let merged = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::Last).unwrap();
+    let merged =
+        converter::merge_resources(&[resource1, resource2], &ConflictStrategy::Last).unwrap();
     assert_eq!(merged.entries.len(), 2); // Same language, different IDs, no conflict
 }
 
@@ -471,7 +481,7 @@ fn test_merge_different_languages_error() {
     };
 
     // Should fail because resources have different languages
-    let result = Codec::merge_resources(&[resource1, resource2], ConflictStrategy::Last);
+    let result = converter::merge_resources(&[resource1, resource2], &ConflictStrategy::Last);
     assert!(result.is_err());
 
     let error = result.unwrap_err();
