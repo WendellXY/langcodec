@@ -151,7 +151,7 @@ pub use crate::{
     codec::Codec,
     converter::{
         convert, convert_auto, convert_resources_to_format, infer_format_from_extension,
-        infer_format_from_path, infer_language_from_path,
+        infer_format_from_path, infer_language_from_path, merge_resources,
     },
     error::Error,
     formats::FormatType,
