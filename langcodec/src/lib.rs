@@ -139,6 +139,7 @@
 
 pub mod builder;
 pub mod codec;
+pub mod converter;
 pub mod error;
 pub mod formats;
 pub mod traits;
@@ -147,7 +148,11 @@ pub mod types;
 // Re-export most used types for easy consumption
 pub use crate::{
     builder::CodecBuilder,
-    codec::{Codec, convert, convert_auto, infer_format_from_extension},
+    codec::Codec,
+    converter::{
+        convert, convert_auto, convert_resources_to_format, infer_format_from_extension,
+        infer_format_from_path, infer_language_from_path,
+    },
     error::Error,
     formats::FormatType,
     types::{

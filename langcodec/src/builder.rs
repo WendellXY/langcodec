@@ -46,14 +46,14 @@ impl CodecBuilder {
     /// Returns `self` for method chaining, or an `Error` if the file cannot be read.
     pub fn add_file<P: AsRef<Path>>(mut self, path: P) -> Result<Self, Error> {
         let path = path.as_ref();
-        let format_type = super::codec::infer_format_from_path(path).ok_or_else(|| {
+        let format_type = super::converter::infer_format_from_path(path).ok_or_else(|| {
             Error::UnknownFormat(format!(
                 "Cannot infer format from file extension: {:?}",
                 path.extension()
             ))
         })?;
 
-        let language = super::codec::infer_language_from_path(&path, &format_type)?;
+        let language = super::converter::infer_language_from_path(&path, &format_type)?;
         let domain = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -113,7 +113,9 @@ impl CodecBuilder {
         path: P,
         format_type: FormatType,
     ) -> Result<Self, Error> {
-        let language = super::codec::infer_language_from_path(&path, &format_type)?;
+        let language = format_type.language().cloned().or_else(|| {
+            super::converter::infer_language_from_path(&path, &format_type).ok().flatten()
+        });
         let domain = path
             .as_ref()
             .file_stem()

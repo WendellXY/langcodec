@@ -1,0 +1,465 @@
+//! Format conversion utilities for langcodec.
+//!
+//! This module provides functions for converting between different localization file formats,
+//! format inference, and utility functions for working with resources.
+
+use crate::{
+    error::Error,
+    formats::{
+        AndroidStringsFormat, CSVFormat, FormatType, StringsFormat, TSVFormat, XcstringsFormat,
+    },
+    traits::Parser,
+    types::Resource,
+};
+use std::path::Path;
+
+/// Convert a vector of resources to a specific output format.
+///
+/// # Arguments
+///
+/// * `resources` - The resources to convert
+/// * `output_path` - The output file path
+/// * `output_format` - The target format
+///
+/// # Returns
+///
+/// `Ok(())` on success, `Err(Error)` on failure.
+///
+/// # Example
+///
+/// ```rust, no_run
+/// use langcodec::{types::{Resource, Metadata, Entry, Translation, EntryStatus}, formats::FormatType, converter::convert_resources_to_format};
+///
+/// let resources = vec![Resource {
+///     metadata: Metadata {
+///         language: "en".to_string(),
+///         domain: "domain".to_string(),
+///         custom: std::collections::HashMap::new(),
+///     },
+///     entries: vec![],
+/// }];
+/// convert_resources_to_format(
+///     resources,
+///     "output.strings",
+///     FormatType::Strings(None)
+/// )?;
+/// # Ok::<(), langcodec::Error>(())
+/// ```
+pub fn convert_resources_to_format(
+    resources: Vec<Resource>,
+    output_path: &str,
+    output_format: FormatType,
+) -> Result<(), Error> {
+    match output_format {
+        FormatType::AndroidStrings(_) => {
+            if let Some(resource) = resources.first() {
+                AndroidStringsFormat::from(resource.clone())
+                    .write_to(Path::new(output_path))
+                    .map_err(|e| {
+                        Error::conversion_error(
+                            format!("Error writing AndroidStrings output: {}", e),
+                            None,
+                        )
+                    })
+            } else {
+                Err(Error::InvalidResource(
+                    "No resources to convert".to_string(),
+                ))
+            }
+        }
+        FormatType::Strings(_) => {
+            if let Some(resource) = resources.first() {
+                StringsFormat::try_from(resource.clone())
+                    .and_then(|f| f.write_to(Path::new(output_path)))
+                    .map_err(|e| {
+                        Error::conversion_error(
+                            format!("Error writing Strings output: {}", e),
+                            None,
+                        )
+                    })
+            } else {
+                Err(Error::InvalidResource(
+                    "No resources to convert".to_string(),
+                ))
+            }
+        }
+        FormatType::Xcstrings => XcstringsFormat::try_from(resources)
+            .and_then(|f| f.write_to(Path::new(output_path)))
+            .map_err(|e| {
+                Error::conversion_error(format!("Error writing Xcstrings output: {}", e), None)
+            }),
+        FormatType::CSV => {
+            if let Some(resource) = resources.first() {
+                CSVFormat::try_from(vec![resource.clone()])
+                    .and_then(|f| f.write_to(Path::new(output_path)))
+                    .map_err(|e| {
+                        Error::conversion_error(format!("Error writing CSV output: {}", e), None)
+                    })
+            } else {
+                Err(Error::InvalidResource(
+                    "No resources to convert".to_string(),
+                ))
+            }
+        }
+        FormatType::TSV => {
+            if let Some(resource) = resources.first() {
+                TSVFormat::try_from(vec![resource.clone()])
+                    .and_then(|f| f.write_to(Path::new(output_path)))
+                    .map_err(|e| {
+                        Error::conversion_error(format!("Error writing TSV output: {}", e), None)
+                    })
+            } else {
+                Err(Error::InvalidResource(
+                    "No resources to convert".to_string(),
+                ))
+            }
+        }
+    }
+}
+
+/// Convert a localization file from one format to another.
+///
+/// # Arguments
+///
+/// * `input` - The input file path.
+/// * `input_format` - The format of the input file.
+/// * `output` - The output file path.
+/// * `output_format` - The format of the output file.
+///
+/// # Errors
+///
+/// Returns an `Error` if reading, parsing, converting, or writing fails.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use langcodec::{converter::convert, formats::FormatType};
+/// convert(
+///     "Localizable.strings",
+///     FormatType::Strings(None),
+///     "strings.xml",
+///     FormatType::AndroidStrings(None),
+/// )?;
+/// # Ok::<(), langcodec::Error>(())
+/// ```
+pub fn convert<P: AsRef<Path>>(
+    input: P,
+    input_format: FormatType,
+    output: P,
+    output_format: FormatType,
+) -> Result<(), Error> {
+    // Propagate language code from input to output format if not specified
+    let output_format = if let Some(lang) = input_format.language() {
+        output_format.with_language(Some(lang.clone()))
+    } else {
+        output_format
+    };
+
+    if !input_format.matches_language_of(&output_format) {
+        return Err(Error::InvalidResource(
+            "Input and output formats must match in language.".to_string(),
+        ));
+    }
+
+    // Read input as resources
+    let resources = match input_format {
+        FormatType::AndroidStrings(_) => vec![AndroidStringsFormat::read_from(&input)?.into()],
+        FormatType::Strings(_) => vec![StringsFormat::read_from(&input)?.into()],
+        FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(&input)?)?,
+        FormatType::CSV => Vec::<Resource>::try_from(CSVFormat::read_from(&input)?)?,
+        FormatType::TSV => Vec::<Resource>::try_from(TSVFormat::read_from(&input)?)?,
+    };
+
+    // Helper to extract resource by language if present, or first one
+    let pick_resource = |lang: Option<String>| -> Option<Resource> {
+        match lang {
+            Some(l) => resources.iter().find(|r| r.metadata.language == l).cloned(),
+            None => resources.first().cloned(),
+        }
+    };
+
+    match output_format {
+        FormatType::AndroidStrings(lang) => {
+            let resource = pick_resource(lang);
+            if let Some(res) = resource {
+                AndroidStringsFormat::from(res).write_to(&output)
+            } else {
+                Err(Error::InvalidResource(
+                    "No matching resource for output language.".to_string(),
+                ))
+            }
+        }
+        FormatType::Strings(lang) => {
+            let resource = pick_resource(lang);
+            if let Some(res) = resource {
+                StringsFormat::try_from(res)?.write_to(&output)
+            } else {
+                Err(Error::InvalidResource(
+                    "No matching resource for output language.".to_string(),
+                ))
+            }
+        }
+        FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(&output),
+        FormatType::CSV => {
+            let resource = pick_resource(None);
+            if let Some(res) = resource {
+                CSVFormat::try_from(vec![res])?.write_to(&output)
+            } else {
+                Err(Error::InvalidResource(
+                    "No matching resource for output language.".to_string(),
+                ))
+            }
+        }
+        FormatType::TSV => {
+            let resource = pick_resource(None);
+            if let Some(res) = resource {
+                TSVFormat::try_from(vec![res])?.write_to(&output)
+            } else {
+                Err(Error::InvalidResource(
+                    "No matching resource for output language.".to_string(),
+                ))
+            }
+        }
+    }
+}
+
+/// Convert a localization file from one format to another, inferring formats from file extensions.
+///
+/// This function attempts to infer the input and output formats from their file extensions.
+/// Returns an error if either format cannot be inferred.
+///
+/// # Arguments
+///
+/// * `input` - The input file path.
+/// * `output` - The output file path.
+///
+/// # Errors
+///
+/// Returns an `Error` if the format cannot be inferred, or if conversion fails.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use langcodec::converter::convert_auto;
+/// convert_auto("Localizable.strings", "strings.xml")?;
+/// # Ok::<(), langcodec::Error>(())
+/// ```
+pub fn convert_auto<P: AsRef<Path>>(input: P, output: P) -> Result<(), Error> {
+    let input_format = infer_format_from_path(&input).ok_or_else(|| {
+        Error::UnknownFormat(format!(
+            "Cannot infer input format from extension: {:?}",
+            input.as_ref().extension()
+        ))
+    })?;
+    let output_format = infer_format_from_path(&output).ok_or_else(|| {
+        Error::UnknownFormat(format!(
+            "Cannot infer output format from extension: {:?}",
+            output.as_ref().extension()
+        ))
+    })?;
+    convert(input, input_format, output, output_format)
+}
+
+/// Infers a [`FormatType`] from a file path's extension.
+///
+/// Returns `Some(FormatType)` if the extension matches a known format, otherwise `None`.
+///
+/// # Example
+/// ```rust
+/// use langcodec::formats::FormatType;
+/// use langcodec::converter::infer_format_from_extension;
+///
+/// assert_eq!(
+///     infer_format_from_extension("Localizable.strings"),
+///     Some(FormatType::Strings(None))
+/// );
+/// assert_eq!(
+///     infer_format_from_extension("strings.xml"),
+///     Some(FormatType::AndroidStrings(None))
+/// );
+/// assert_eq!(
+///     infer_format_from_extension("Localizable.xcstrings"),
+///     Some(FormatType::Xcstrings)
+/// );
+/// assert_eq!(
+///     infer_format_from_extension("translations.csv"),
+///     Some(FormatType::CSV)
+/// );
+/// assert_eq!(
+///     infer_format_from_extension("data.tsv"),
+///     Some(FormatType::TSV)
+/// );
+/// assert_eq!(
+///     infer_format_from_extension("unknown.xyz"),
+///     None
+/// );
+/// ```
+pub fn infer_format_from_extension<P: AsRef<Path>>(path: P) -> Option<FormatType> {
+    let path = path.as_ref();
+    let extension = path.extension()?.to_str()?;
+
+    match extension.to_lowercase().as_str() {
+        "strings" => Some(FormatType::Strings(None)),
+        "xml" => Some(FormatType::AndroidStrings(None)),
+        "xcstrings" => Some(FormatType::Xcstrings),
+        "csv" => Some(FormatType::CSV),
+        "tsv" => Some(FormatType::TSV),
+        _ => None,
+    }
+}
+
+/// Infers a [`FormatType`] from a file path, including language detection.
+///
+/// This function combines extension-based format detection with language inference
+/// from the path structure (e.g., `values-es/strings.xml` → Spanish Android strings).
+///
+/// # Example
+/// ```rust
+/// use langcodec::formats::FormatType;
+/// use langcodec::converter::infer_format_from_path;
+///
+/// assert_eq!(
+///     infer_format_from_path("en.lproj/Localizable.strings"),
+///     Some(FormatType::Strings(Some("en".to_string())))
+/// );
+/// assert_eq!(
+///     infer_format_from_path("values-es/strings.xml"),
+///     Some(FormatType::AndroidStrings(Some("es".to_string())))
+/// );
+/// assert_eq!(
+///     infer_format_from_path("values/strings.xml"),
+///     Some(FormatType::AndroidStrings(None))
+/// );
+/// assert_eq!(
+///     infer_format_from_path("Localizable.xcstrings"),
+///     Some(FormatType::Xcstrings)
+/// );
+/// ```
+pub fn infer_format_from_path<P: AsRef<Path>>(path: P) -> Option<FormatType> {
+    match infer_format_from_extension(&path) {
+        Some(format) => match format {
+            FormatType::Xcstrings => Some(format),
+            FormatType::CSV | FormatType::TSV => Some(format), // Multi-language formats, no language inference needed
+            FormatType::AndroidStrings(_) | FormatType::Strings(_) => {
+                let lang = infer_language_from_path(&path, &format).ok().flatten();
+                Some(format.with_language(lang))
+            }
+        },
+        None => None,
+    }
+}
+
+/// Infers the language code from a file path based on its format and structure.
+///
+/// This function analyzes the path to extract language information based on common
+/// localization file naming conventions.
+///
+/// # Arguments
+///
+/// * `path` - The file path to analyze
+/// * `format` - The format type to help with language inference
+///
+/// # Returns
+///
+/// `Ok(Some(language_code))` if a language can be inferred, `Ok(None)` if no language
+/// can be determined, or `Err` if there's an error in the inference process.
+///
+/// # Example
+///
+/// ```rust
+/// use langcodec::{converter::infer_language_from_path, formats::FormatType};
+/// use std::path::Path;
+///
+/// // Apple .strings files
+/// assert_eq!(
+///     infer_language_from_path("en.lproj/Localizable.strings", &FormatType::Strings(None)).unwrap(),
+///     Some("en".to_string())
+/// );
+/// assert_eq!(
+///     infer_language_from_path("fr.lproj/Localizable.strings", &FormatType::Strings(None)).unwrap(),
+///     Some("fr".to_string())
+/// );
+///
+/// // Android strings.xml files
+/// assert_eq!(
+///     infer_language_from_path("values-es/strings.xml", &FormatType::AndroidStrings(None)).unwrap(),
+///     Some("es".to_string())
+/// );
+/// assert_eq!(
+///     infer_language_from_path("values-fr/strings.xml", &FormatType::AndroidStrings(None)).unwrap(),
+///     Some("fr".to_string())
+/// );
+///
+/// // No language in path
+/// assert_eq!(
+///     infer_language_from_path("values/strings.xml", &FormatType::AndroidStrings(None)).unwrap(),
+///     None
+/// );
+/// ```
+pub fn infer_language_from_path<P: AsRef<Path>>(
+    path: P,
+    format: &FormatType,
+) -> Result<Option<String>, Error> {
+    let path = path.as_ref();
+    let path_str = path.to_string_lossy();
+
+    match format {
+        FormatType::Strings(_) => {
+            // Apple .strings files: en.lproj/Localizable.strings
+            if let Some(captures) = regex::Regex::new(r"([a-z]{2}(?:-[A-Z]{2})?)\.lproj")
+                .map_err(|_| Error::InvalidResource("Invalid regex pattern".to_string()))?
+                .captures(&path_str)
+            {
+                if let Some(lang) = captures.get(1) {
+                    return Ok(Some(lang.as_str().to_string()));
+                }
+            }
+        }
+        FormatType::AndroidStrings(_) => {
+            // Android strings.xml files: values-es/strings.xml
+            if let Some(captures) = regex::Regex::new(r"values-([a-z]{2}(?:-[A-Z]{2})?)")
+                .map_err(|_| Error::InvalidResource("Invalid regex pattern".to_string()))?
+                .captures(&path_str)
+            {
+                if let Some(lang) = captures.get(1) {
+                    return Ok(Some(lang.as_str().to_string()));
+                }
+            }
+        }
+        _ => {}
+    }
+
+    Ok(None)
+}
+
+/// Writes resources to a file based on their stored format metadata.
+///
+/// This function determines the output format from the resource metadata and writes
+/// the resources accordingly. Supports formats with single or multiple resources per file.
+///
+/// # Parameters
+/// - `resources`: Slice of resources to write.
+/// - `file_path`: Destination file path.
+///
+/// # Returns
+///
+/// `Ok(())` if writing succeeds, or an `Error` if the format is unsupported or writing fails.
+pub fn write_resources_to_file(resources: &[Resource], file_path: &String) -> Result<(), Error> {
+    let path = Path::new(&file_path);
+
+    if let Some(first) = resources.first() {
+        match first.metadata.custom.get("format").map(String::as_str) {
+            Some("AndroidStrings") => AndroidStringsFormat::from(first.clone()).write_to(path)?,
+            Some("Strings") => StringsFormat::try_from(first.clone())?.write_to(path)?,
+            Some("Xcstrings") => XcstringsFormat::try_from(resources.to_vec())?.write_to(path)?,
+            Some("CSV") => CSVFormat::try_from(vec![first.clone()])?.write_to(path)?,
+            Some("TSV") => TSVFormat::try_from(vec![first.clone()])?.write_to(path)?,
+            _ => Err(Error::UnsupportedFormat(format!(
+                "Unsupported format: {:?}",
+                first.metadata.custom.get("format")
+            )))?,
+        }
+    }
+
+    Ok(())
+}
