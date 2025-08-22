@@ -69,15 +69,26 @@ enum Commands {
         full: bool,
     },
 
-    /// Merge multiple localization files of the same format into one output file.
+    /// Merge multiple localization files into one output file with automatic format detection and conversion.
+    ///
+    /// This command intelligently merges multiple localization files, automatically detecting
+    /// input formats and converting to the output format based on the file extension.
+    /// Supports merging files with the same language and provides conflict resolution strategies.
+    ///
+    /// Features:
+    /// - Automatic format detection from file extensions (.strings, .xml, .csv, .tsv, .xcstrings)
+    /// - Smart language grouping and merging
+    /// - Multiple conflict resolution strategies (first, last, skip)
+    /// - Language override for all input files
+    /// - Automatic output format conversion
     Merge {
-        /// The input files to merge
+        /// The input files to merge (supports multiple formats: .strings, .xml, .csv, .tsv, .xcstrings, .json, .yaml)
         #[arg(short, long, num_args = 1..)]
         inputs: Vec<String>,
-        /// The output file to write the merged results to
+        /// The output file path (format automatically determined from extension)
         #[arg(short, long)]
         output: String,
-        /// Strategy for handling conflicts
+        /// Strategy for handling conflicts when merging entries with the same key
         #[arg(short, long, default_value = "last")]
         strategy: ConflictStrategy,
         /// Language code to use for all input files (e.g., "en", "fr")
