@@ -89,32 +89,12 @@ pub fn convert_resources_to_format(
             .map_err(|e| {
                 Error::conversion_error(format!("Error writing Xcstrings output: {}", e), None)
             }),
-        FormatType::CSV => {
-            if let Some(resource) = resources.first() {
-                CSVFormat::try_from(vec![resource.clone()])
-                    .and_then(|f| f.write_to(Path::new(output_path)))
-                    .map_err(|e| {
-                        Error::conversion_error(format!("Error writing CSV output: {}", e), None)
-                    })
-            } else {
-                Err(Error::InvalidResource(
-                    "No resources to convert".to_string(),
-                ))
-            }
-        }
-        FormatType::TSV => {
-            if let Some(resource) = resources.first() {
-                TSVFormat::try_from(vec![resource.clone()])
-                    .and_then(|f| f.write_to(Path::new(output_path)))
-                    .map_err(|e| {
-                        Error::conversion_error(format!("Error writing TSV output: {}", e), None)
-                    })
-            } else {
-                Err(Error::InvalidResource(
-                    "No resources to convert".to_string(),
-                ))
-            }
-        }
+        FormatType::CSV => CSVFormat::try_from(resources)
+            .and_then(|f| f.write_to(Path::new(output_path)))
+            .map_err(|e| Error::conversion_error(format!("Error writing CSV output: {}", e), None)),
+        FormatType::TSV => TSVFormat::try_from(resources)
+            .and_then(|f| f.write_to(Path::new(output_path)))
+            .map_err(|e| Error::conversion_error(format!("Error writing TSV output: {}", e), None)),
     }
 }
 
@@ -201,26 +181,8 @@ pub fn convert<P: AsRef<Path>>(
             }
         }
         FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(&output),
-        FormatType::CSV => {
-            let resource = pick_resource(None);
-            if let Some(res) = resource {
-                CSVFormat::try_from(vec![res])?.write_to(&output)
-            } else {
-                Err(Error::InvalidResource(
-                    "No matching resource for output language.".to_string(),
-                ))
-            }
-        }
-        FormatType::TSV => {
-            let resource = pick_resource(None);
-            if let Some(res) = resource {
-                TSVFormat::try_from(vec![res])?.write_to(&output)
-            } else {
-                Err(Error::InvalidResource(
-                    "No matching resource for output language.".to_string(),
-                ))
-            }
-        }
+        FormatType::CSV => CSVFormat::try_from(resources)?.write_to(&output),
+        FormatType::TSV => TSVFormat::try_from(resources)?.write_to(&output),
     }
 }
 
@@ -339,8 +301,8 @@ pub fn infer_format_from_extension<P: AsRef<Path>>(path: P) -> Option<FormatType
 pub fn infer_format_from_path<P: AsRef<Path>>(path: P) -> Option<FormatType> {
     match infer_format_from_extension(&path) {
         Some(format) => match format {
-            FormatType::Xcstrings => Some(format),
-            FormatType::CSV | FormatType::TSV => Some(format), // Multi-language formats, no language inference needed
+            // Multi-language formats, no language inference needed
+            FormatType::Xcstrings | FormatType::CSV | FormatType::TSV => Some(format),
             FormatType::AndroidStrings(_) | FormatType::Strings(_) => {
                 let lang = infer_language_from_path(&path, &format).ok().flatten();
                 Some(format.with_language(lang))
@@ -453,8 +415,8 @@ pub fn write_resources_to_file(resources: &[Resource], file_path: &String) -> Re
             Some("AndroidStrings") => AndroidStringsFormat::from(first.clone()).write_to(path)?,
             Some("Strings") => StringsFormat::try_from(first.clone())?.write_to(path)?,
             Some("Xcstrings") => XcstringsFormat::try_from(resources.to_vec())?.write_to(path)?,
-            Some("CSV") => CSVFormat::try_from(vec![first.clone()])?.write_to(path)?,
-            Some("TSV") => TSVFormat::try_from(vec![first.clone()])?.write_to(path)?,
+            Some("CSV") => CSVFormat::try_from(resources.to_vec())?.write_to(path)?,
+            Some("TSV") => TSVFormat::try_from(resources.to_vec())?.write_to(path)?,
             _ => Err(Error::UnsupportedFormat(format!(
                 "Unsupported format: {:?}",
                 first.metadata.custom.get("format")
