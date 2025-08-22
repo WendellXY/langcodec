@@ -66,6 +66,29 @@ pub fn run_merge_command(
     match converter::infer_format_from_path(output.clone()) {
         Some(format) => {
             println!("Converting resources to format: {:?}", format);
+            // Set source_language field in the resources to make sure xcstrings format would not throw an error
+            // First, try to get the source language from the first resource if it exists; otherwise, the first resource's language
+            // would be used as the source language. If the two checks fail, the default value "en" would be used.
+            let source_language = codec
+                .resources
+                .first()
+                .and_then(|r| r.metadata.custom.get("source_language").cloned())
+                .unwrap_or_else(|| {
+                    codec
+                        .resources
+                        .first()
+                        .map(|r| r.metadata.language.clone())
+                        .unwrap_or("en".to_string())
+                });
+
+            println!("Setting metadata.source_language to: {}", source_language);
+
+            codec.iter_mut().for_each(|r| {
+                r.metadata
+                    .custom
+                    .insert("source_language".to_string(), source_language.clone());
+            });
+
             if let Err(e) = converter::convert_resources_to_format(codec.resources, &output, format)
             {
                 println!("❌ Error converting resources to format");
