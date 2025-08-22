@@ -83,10 +83,22 @@ pub fn run_merge_command(
 
             println!("Setting metadata.source_language to: {}", source_language);
 
+            // Set version field in the resources to make sure xcstrings format would not throw an error
+            let version = codec
+                .resources
+                .first()
+                .and_then(|r| r.metadata.custom.get("version").cloned())
+                .unwrap_or_else(|| "1.0".to_string());
+
+            println!("Setting metadata.version to: {}", version);
+
             codec.iter_mut().for_each(|r| {
                 r.metadata
                     .custom
                     .insert("source_language".to_string(), source_language.clone());
+                r.metadata
+                    .custom
+                    .insert("version".to_string(), version.clone());
             });
 
             if let Err(e) = converter::convert_resources_to_format(codec.resources, &output, format)
