@@ -53,7 +53,7 @@ impl CodecBuilder {
             ))
         })?;
 
-        let language = super::converter::infer_language_from_path(&path, &format_type)?;
+        let language = super::converter::infer_language_from_path(path, &format_type)?;
         let domain = path
             .file_stem()
             .and_then(|s| s.to_str())
@@ -114,7 +114,9 @@ impl CodecBuilder {
         format_type: FormatType,
     ) -> Result<Self, Error> {
         let language = format_type.language().cloned().or_else(|| {
-            super::converter::infer_language_from_path(&path, &format_type).ok().flatten()
+            super::converter::infer_language_from_path(&path, &format_type)
+                .ok()
+                .flatten()
         });
         let domain = path
             .as_ref()

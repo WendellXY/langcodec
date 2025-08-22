@@ -244,13 +244,17 @@ impl TryFrom<Format> for Vec<Resource> {
         // Create a resource for each language
         let mut resources = Vec::new();
         let mut custom_metadata = HashMap::new();
-        
+
         // Add required metadata for XCStrings compatibility
         // Use the first language as source language, or "en" as default
-        let source_language = all_languages.iter().next().unwrap_or(&"en".to_string()).clone();
+        let source_language = all_languages
+            .iter()
+            .next()
+            .unwrap_or(&"en".to_string())
+            .clone();
         custom_metadata.insert("source_language".to_string(), source_language);
         custom_metadata.insert("version".to_string(), "1.0".to_string());
-        
+
         for language in all_languages {
             let mut resource = Resource {
                 metadata: Metadata {
