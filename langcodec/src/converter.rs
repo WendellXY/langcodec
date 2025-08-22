@@ -4,6 +4,7 @@
 //! format inference, and utility functions for working with resources.
 
 use crate::{
+    ConflictStrategy,
     error::Error,
     formats::{
         AndroidStringsFormat, CSVFormat, FormatType, StringsFormat, TSVFormat, XcstringsFormat,
@@ -509,13 +510,13 @@ pub fn write_resources_to_file(resources: &[Resource], file_path: &String) -> Re
 ///
 /// let merged = merge_resources(
 ///     &[resource1],
-///     ConflictStrategy::Last
+///     &ConflictStrategy::Last
 /// )?;
 /// # Ok::<(), langcodec::Error>(())
 /// ```
 pub fn merge_resources(
     resources: &[Resource],
-    conflict_strategy: crate::types::ConflictStrategy,
+    conflict_strategy: &ConflictStrategy,
 ) -> Result<Resource, Error> {
     if resources.is_empty() {
         return Err(Error::InvalidResource("No resources to merge".to_string()));

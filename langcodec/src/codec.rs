@@ -8,6 +8,7 @@
 /// or extension, write resources back to files, and cache resources to JSON.
 ///
 use crate::formats::{CSVFormat, TSVFormat};
+use crate::{ConflictStrategy, merge_resources};
 use crate::{
     error::Error,
     formats::*,
@@ -583,6 +584,83 @@ impl Codec {
         Ok(())
     }
 
+    /// Cleans up resources by removing empty resources and entries.
+    pub fn clean_up_resources(&mut self) {
+        self.resources
+            .retain(|resource| !resource.entries.is_empty());
+    }
+
+    /// Merge resources with the same language by the given strategy.
+    ///
+    /// This method groups resources by language and merges multiple resources
+    /// that share the same language into a single resource. Resources with
+    /// unique languages are left unchanged.
+    ///
+    /// # Arguments
+    ///
+    /// * `strategy` - The conflict resolution strategy to use when merging
+    ///   entries with the same ID across multiple resources
+    ///
+    /// # Returns
+    ///
+    /// The number of merge operations performed. A merge operation occurs
+    /// when there are 2 or more resources for the same language.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use langcodec::{Codec, types::ConflictStrategy};
+    ///
+    /// let mut codec = Codec::new();
+    /// // ... add resources with same language ...
+    ///
+    /// let merges_performed = codec.merge_resources(&ConflictStrategy::Last);
+    /// println!("Merged {} language groups", merges_performed);
+    /// ```
+    ///
+    /// # Behavior
+    ///
+    /// - Resources are grouped by language
+    /// - Only languages with multiple resources are merged
+    /// - The merged resource replaces all original resources for that language
+    /// - Resources with unique languages remain unchanged
+    /// - Entries are merged according to the specified conflict strategy
+    pub fn merge_resources(&mut self, strategy: &ConflictStrategy) -> usize {
+        // Group resources by language
+        let mut grouped_resources: std::collections::HashMap<String, Vec<Resource>> =
+            std::collections::HashMap::new();
+        for resource in &self.resources {
+            grouped_resources
+                .entry(resource.metadata.language.clone())
+                .or_default()
+                .push(resource.clone());
+        }
+
+        let mut merge_count = 0;
+
+        // Merge resources by language
+        for (_language, resources) in grouped_resources {
+            if resources.len() > 1 {
+                match merge_resources(&resources, strategy) {
+                    Ok(merged) => {
+                        // Replace the original resources with the merged resource and remove the original resources
+                        self.resources.retain(|r| r.metadata.language != _language);
+                        self.resources.push(merged);
+                        merge_count += 1;
+                    }
+                    Err(e) => {
+                        // Based on the current implementation, the merge_resources should never return an error
+                        // because we are merging resources with the same language
+                        // so we should panic here
+                        panic!("Unexpected error merging resources: {}", e);
+                    }
+                }
+            }
+        }
+
+        merge_count
+    }
+
     /// Writes a resource to a file with automatic format detection.
     ///
     /// # Arguments
@@ -823,6 +901,7 @@ impl Codec {
 mod tests {
     use super::*;
     use crate::types::{Entry, EntryStatus, Metadata, Translation};
+    use std::collections::HashMap;
 
     #[test]
     fn test_builder_pattern() {
@@ -1174,5 +1253,214 @@ mod tests {
         // Clean up
         let _ = std::fs::remove_file(input_file);
         let _ = std::fs::remove_file(output_file);
+    }
+
+    #[test]
+    fn test_merge_resources_method() {
+        use crate::types::{ConflictStrategy, Entry, EntryStatus, Metadata, Translation};
+
+        let mut codec = Codec::new();
+
+        // Create multiple resources for the same language (English)
+        let resource1 = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "domain1".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "hello".to_string(),
+                value: Translation::Singular("Hello".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        let resource2 = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "domain2".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "goodbye".to_string(),
+                value: Translation::Singular("Goodbye".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        let resource3 = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "domain3".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "hello".to_string(), // Conflict with resource1
+                value: Translation::Singular("Hi".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        // Add resources to codec
+        codec.add_resource(resource1);
+        codec.add_resource(resource2);
+        codec.add_resource(resource3);
+
+        // Test merging with Last strategy
+        let merges_performed = codec.merge_resources(&ConflictStrategy::Last);
+        assert_eq!(merges_performed, 1); // Should merge 1 language group
+        assert_eq!(codec.resources.len(), 1); // Should have 1 merged resource
+
+        let merged_resource = &codec.resources[0];
+        assert_eq!(merged_resource.metadata.language, "en");
+        assert_eq!(merged_resource.entries.len(), 2); // hello + goodbye
+
+        // Check that the last entry for "hello" was kept (from resource3)
+        let hello_entry = merged_resource
+            .entries
+            .iter()
+            .find(|e| e.id == "hello")
+            .unwrap();
+        assert_eq!(hello_entry.value.plain_translation_string(), "Hi");
+    }
+
+    #[test]
+    fn test_merge_resources_method_multiple_languages() {
+        use crate::types::{ConflictStrategy, Entry, EntryStatus, Metadata, Translation};
+
+        let mut codec = Codec::new();
+
+        // Create resources for English (multiple)
+        let en_resource1 = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "domain1".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "hello".to_string(),
+                value: Translation::Singular("Hello".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        let en_resource2 = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "domain2".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "goodbye".to_string(),
+                value: Translation::Singular("Goodbye".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        // Create resource for French (single)
+        let fr_resource = Resource {
+            metadata: Metadata {
+                language: "fr".to_string(),
+                domain: "domain1".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "bonjour".to_string(),
+                value: Translation::Singular("Bonjour".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        // Add resources to codec
+        codec.add_resource(en_resource1);
+        codec.add_resource(en_resource2);
+        codec.add_resource(fr_resource);
+
+        // Test merging
+        let merges_performed = codec.merge_resources(&ConflictStrategy::First);
+        assert_eq!(merges_performed, 1); // Should merge 1 language group (English)
+        assert_eq!(codec.resources.len(), 2); // Should have 2 resources (merged English + French)
+
+        // Check English resource was merged
+        let en_resource = codec.get_by_language("en").unwrap();
+        assert_eq!(en_resource.entries.len(), 2);
+
+        // Check French resource was unchanged
+        let fr_resource = codec.get_by_language("fr").unwrap();
+        assert_eq!(fr_resource.entries.len(), 1);
+        assert_eq!(fr_resource.entries[0].id, "bonjour");
+    }
+
+    #[test]
+    fn test_merge_resources_method_no_merges() {
+        use crate::types::{ConflictStrategy, Entry, EntryStatus, Metadata, Translation};
+
+        let mut codec = Codec::new();
+
+        // Create resources for different languages (no conflicts)
+        let en_resource = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "domain1".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "hello".to_string(),
+                value: Translation::Singular("Hello".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        let fr_resource = Resource {
+            metadata: Metadata {
+                language: "fr".to_string(),
+                domain: "domain1".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "bonjour".to_string(),
+                value: Translation::Singular("Bonjour".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        // Add resources to codec
+        codec.add_resource(en_resource);
+        codec.add_resource(fr_resource);
+
+        // Test merging - should perform no merges
+        let merges_performed = codec.merge_resources(&ConflictStrategy::Last);
+        assert_eq!(merges_performed, 0); // Should merge 0 language groups
+        assert_eq!(codec.resources.len(), 2); // Should still have 2 resources
+
+        // Check resources are unchanged
+        assert!(codec.get_by_language("en").is_some());
+        assert!(codec.get_by_language("fr").is_some());
+    }
+
+    #[test]
+    fn test_merge_resources_method_empty_codec() {
+        let mut codec = Codec::new();
+
+        // Test merging empty codec
+        let merges_performed = codec.merge_resources(&ConflictStrategy::Last);
+        assert_eq!(merges_performed, 0);
+        assert_eq!(codec.resources.len(), 0);
     }
 }
