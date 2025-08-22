@@ -11,7 +11,8 @@ use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::transformers::custom_format_to_resource;
 use crate::validation::{ValidationContext, validate_context, validate_custom_format_file};
 use crate::view::print_view;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{Shell, generate};
 
 use langcodec::{Codec, convert_auto, formats::FormatType};
 use std::fs::File;
@@ -107,6 +108,19 @@ enum Commands {
         /// Output file (defaults to stdout)
         #[arg(short, long)]
         output: Option<String>,
+    },
+
+    /// Generate shell completion script and print to stdout.
+    ///
+    /// Examples:
+    /// - langcodec completions bash > /etc/bash_completion.d/langcodec
+    /// - langcodec completions zsh > "${fpath[1]}/_langcodec"
+    /// - langcodec completions fish > ~/.config/fish/completions/langcodec.fish
+    /// - langcodec completions powershell > langcodec.ps1
+    Completions {
+        /// Shell to generate completions for (bash, zsh, fish, powershell, elvish)
+        #[arg(value_enum)]
+        shell: Shell,
     },
 }
 
@@ -233,6 +247,11 @@ fn main() {
             }
 
             run_debug_command(input, lang, output);
+        }
+        Commands::Completions { shell } => {
+            let mut cmd = Args::command();
+            cmd = cmd.bin_name("langcodec");
+            generate(shell, &mut cmd, "langcodec", &mut std::io::stdout());
         }
     }
 }
