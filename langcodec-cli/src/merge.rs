@@ -1,7 +1,7 @@
 use crate::formats::parse_custom_format;
 use crate::transformers::custom_format_to_resource;
 
-use langcodec::Codec;
+use langcodec::{Codec, converter};
 
 /// Strategy for handling conflicts when merging localization files.
 #[derive(Debug, Clone, PartialEq, clap::ValueEnum)]
@@ -62,15 +62,34 @@ pub fn run_merge_command(
     let merge_count = codec.merge_resources(&conflict_strategy);
     println!("Merged {} language groups", merge_count);
 
-    // Write merged resource to output file using the new lib crate method
     println!("Writing merged output...");
-    codec.resources.iter().for_each(|resource| {
-        if let Err(e) = Codec::write_resource_to_file(resource, &output) {
-            println!("❌ Error writing output file");
-            eprintln!("Error writing to {}: {}", output, e);
-            std::process::exit(1);
+    match converter::infer_format_from_path(output.clone()) {
+        Some(format) => {
+            println!("Converting resources to format: {:?}", format);
+            if let Err(e) = converter::convert_resources_to_format(codec.resources, &output, format)
+            {
+                println!("❌ Error converting resources to format");
+                eprintln!("Error converting to {}: {}", output, e);
+                std::process::exit(1);
+            }
         }
-    });
+        None => {
+            if codec.resources.len() == 1 {
+                println!("Writing single resource to output file");
+                if let Some(resource) = codec.resources.first() {
+                    if let Err(e) = Codec::write_resource_to_file(resource, &output) {
+                        println!("❌ Error writing output file");
+                        eprintln!("Error writing to {}: {}", output, e);
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                println!("❌ Error writing output file");
+                eprintln!("Error writing to {}: multiple resources", output);
+                std::process::exit(1);
+            }
+        }
+    }
 
     println!(
         "✅ Successfully merged {} files into {}",

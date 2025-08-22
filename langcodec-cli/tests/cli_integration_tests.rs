@@ -723,3 +723,209 @@ fn test_merge_command_multiple_languages_no_merges() {
     assert!(merged_content.contains("hello"));
     assert!(merged_content.contains("goodbye"));
 }
+
+#[test]
+fn test_merge_command_format_inference_strings() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file1 = temp_dir.path().join("file1.strings");
+    let input_file2 = temp_dir.path().join("file2.strings");
+    let output_file = temp_dir.path().join("merged.strings");
+
+    // Create two .strings files with different keys
+    let content1 = r#"/* Greeting */
+"hello" = "Hello";"#;
+
+    let content2 = r#"/* Farewell */
+"goodbye" = "Goodbye";"#;
+
+    fs::write(&input_file1, content1).unwrap();
+    fs::write(&input_file2, content2).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "merge",
+            "-i",
+            input_file1.to_str().unwrap(),
+            "-i",
+            input_file2.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--strategy",
+            "last",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output_file.exists());
+
+    // Verify the output contains the format inference message
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Converting resources to format:"),
+        "Expected format inference message, got: {}",
+        stdout
+    );
+
+    // Verify the output contains the success message
+    assert!(
+        stdout.contains("✅ Successfully merged 2 files into"),
+        "Expected success message, got: {}",
+        stdout
+    );
+
+    // Verify the merged file contains both entries
+    let merged_content = fs::read_to_string(&output_file).unwrap();
+    assert!(merged_content.contains("hello"));
+    assert!(merged_content.contains("goodbye"));
+}
+
+#[test]
+fn test_merge_command_format_inference_xml() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file1 = temp_dir.path().join("file1.strings");
+    let input_file2 = temp_dir.path().join("file2.strings");
+    let output_file = temp_dir.path().join("merged.xml");
+
+    // Create two .strings files with different keys
+    let content1 = r#"/* Greeting */
+"hello" = "Hello";"#;
+
+    let content2 = r#"/* Farewell */
+"goodbye" = "Goodbye";"#;
+
+    fs::write(&input_file1, content1).unwrap();
+    fs::write(&input_file2, content2).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "merge",
+            "-i",
+            input_file1.to_str().unwrap(),
+            "-i",
+            input_file2.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--strategy",
+            "last",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output_file.exists());
+
+    // Verify the output contains the format inference message
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Converting resources to format:"),
+        "Expected format inference message, got: {}",
+        stdout
+    );
+
+    // Verify the output contains the success message
+    assert!(
+        stdout.contains("✅ Successfully merged 2 files into"),
+        "Expected success message, got: {}",
+        stdout
+    );
+
+    // Verify the merged file contains XML content
+    let merged_content = fs::read_to_string(&output_file).unwrap();
+    assert!(merged_content.contains("<?xml"));
+    assert!(merged_content.contains("<resources>"));
+}
+
+#[test]
+fn test_merge_command_single_resource_fallback() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("file.strings");
+    let output_file = temp_dir.path().join("output.strings");
+
+    // Create a single .strings file
+    let content = r#"/* Greeting */
+"hello" = "Hello";"#;
+
+    fs::write(&input_file, content).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "merge",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--strategy",
+            "last",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output_file.exists());
+
+    // Since .strings extension can be inferred, it should use the format conversion path
+    // Verify the output contains the format inference message
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Converting resources to format:"),
+        "Expected format inference message, got: {}",
+        stdout
+    );
+
+    // Verify the output contains the success message
+    assert!(
+        stdout.contains("✅ Successfully merged 1 files into"),
+        "Expected success message, got: {}",
+        stdout
+    );
+
+    // Verify the output file contains the expected content
+    let output_content = fs::read_to_string(&output_file).unwrap();
+    assert!(output_content.contains("hello"));
+}
+
+#[test]
+fn test_merge_command_actual_fallback_behavior() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("file.strings");
+    let output_file = temp_dir.path().join("output.unknown");
+
+    // Create a single .strings file
+    let content = r#"/* Greeting */
+"hello" = "Hello";"#;
+
+    fs::write(&input_file, content).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "merge",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--strategy",
+            "last",
+        ])
+        .output()
+        .unwrap();
+
+    // This should fail because the format cannot be inferred from .unknown extension
+    // and the fallback also requires a valid extension
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Cannot infer format from output path"),
+        "Expected format inference error, got: {}",
+        stderr
+    );
+}
