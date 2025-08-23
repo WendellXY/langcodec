@@ -10,7 +10,6 @@ pub fn run_debug_command(input: String, lang: Option<String>, output: Option<Str
     // Read the input file
     println!("Reading input file...");
     let mut codec = Codec::new();
-
     // Try standard format first
     if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
         // Standard format succeeded
@@ -23,7 +22,11 @@ pub fn run_debug_command(input: String, lang: Option<String>, output: Option<Str
         }
     } else {
         println!("❌ Error reading input file");
-        eprintln!("Error reading {}: unsupported format", input);
+        // Provide a hint about encoding issues for common Apple .strings files
+        eprintln!(
+            "Error reading {}: unsupported format or invalid text encoding",
+            input
+        );
         std::process::exit(1);
     }
 

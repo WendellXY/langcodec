@@ -3,6 +3,9 @@
 //! Provides parsing, serialization, and conversion to/from the internal `Resource` model.
 
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 
 use indoc::indoc;
 
@@ -191,6 +194,23 @@ impl Parser for Format {
         }
 
         writer.write_all(content.as_bytes()).map_err(Error::Io)
+    }
+
+    /// Override default file reading to support BOM-aware decoding (e.g., UTF-16 Apple .strings)
+    fn read_from<P: AsRef<Path>>(path: P) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        let file = File::open(path).map_err(Error::Io)?;
+        // Auto-detect BOM, decode to UTF-8; passthrough UTF-8
+        let mut decoder = encoding_rs_io::DecodeReaderBytesBuilder::new()
+            .bom_override(true)
+            .build(file);
+
+        let mut decoded = String::new();
+        decoder.read_to_string(&mut decoded).map_err(Error::Io)?;
+
+        Self::from_str(&decoded)
     }
 }
 
