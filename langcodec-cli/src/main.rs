@@ -76,16 +76,9 @@ enum Commands {
     /// This command intelligently merges multiple localization files, automatically detecting
     /// input formats and converting to the output format based on the file extension.
     /// Supports merging files with the same language and provides conflict resolution strategies.
-    ///
-    /// Features:
-    /// - Automatic format detection from file extensions (.strings, .xml, .csv, .tsv, .xcstrings)
-    /// - Smart language grouping and merging
-    /// - Multiple conflict resolution strategies (first, last, skip)
-    /// - Language override for all input files
-    /// - Automatic output format conversion
     Merge {
         /// The input files to merge (supports multiple formats: .strings, .xml, .csv, .tsv, .xcstrings, .json, .yaml)
-        #[arg(short, long, num_args = 1..)]
+        #[arg(short, long, num_args = 1.., help = "Input files. Supports glob patterns. Quote patterns to avoid slow shell-side expansion (e.g., '/path/**/*/strings.xml').")]
         inputs: Vec<String>,
         /// The output file path (format automatically determined from extension)
         #[arg(short, long)]
@@ -208,6 +201,7 @@ fn main() {
             lang,
         } => {
             // Expand any glob patterns in inputs (e.g., *.strings, **/*.xml)
+            println!("Expanding glob patterns in inputs: {:?}", inputs);
             let expanded_inputs = match expand_input_globs(&inputs) {
                 Ok(list) => list,
                 Err(e) => {
@@ -744,44 +738,47 @@ fn read_resources_from_any_input(
 
 /// Expand possible glob patterns in a list of input strings into concrete file paths
 fn expand_input_globs(inputs: &Vec<String>) -> Result<Vec<String>, String> {
-    let mut results: Vec<String> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
+    use rayon::prelude::*;
 
-    for pattern in inputs {
-        // Try treating the input as a glob pattern. If it fails to parse as a glob,
-        // just treat it as a literal path.
-        match glob::glob(pattern) {
-            Ok(paths) => {
-                let mut matched = false;
-                for entry in paths {
-                    match entry {
-                        Ok(path) => {
-                            if path.is_file() {
-                                let s = path.to_string_lossy().to_string();
-                                if seen.insert(s.clone()) {
-                                    results.push(s);
+    // Expand each pattern concurrently, collecting per-pattern results first
+    let expanded: Vec<String> = inputs
+        .par_iter()
+        .map(|pattern| {
+            // Try treating the input as a glob pattern. If it fails to parse as a glob,
+            // just treat it as a literal path.
+            match glob::glob(pattern) {
+                Ok(paths) => {
+                    let mut out: Vec<String> = Vec::new();
+                    let mut matched = false;
+                    for entry in paths {
+                        match entry {
+                            Ok(path) => {
+                                if path.is_file() {
+                                    out.push(path.to_string_lossy().to_string());
+                                    matched = true;
                                 }
-                                matched = true;
+                            }
+                            Err(e) => {
+                                return Err(format!("Glob error for '{}': {}", pattern, e));
                             }
                         }
-                        Err(e) => {
-                            return Err(format!("Glob error for '{}': {}", pattern, e));
-                        }
                     }
+                    if matched { Ok(out) } else { Ok(vec![pattern.clone()]) }
                 }
-                if !matched {
-                    // No matches: preserve original input; later validation will surface errors
-                    if seen.insert(pattern.clone()) {
-                        results.push(pattern.clone());
-                    }
-                }
+                Err(_) => Ok(vec![pattern.clone()]),
             }
-            Err(_) => {
-                // Not a valid glob pattern; treat as literal
-                if seen.insert(pattern.clone()) {
-                    results.push(pattern.clone());
-                }
-            }
+        })
+        .collect::<Result<Vec<Vec<String>>, String>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    // Deduplicate while preserving the first-seen order
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut results: Vec<String> = Vec::with_capacity(expanded.len());
+    for s in expanded {
+        if seen.insert(s.clone()) {
+            results.push(s);
         }
     }
 
