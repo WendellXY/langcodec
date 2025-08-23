@@ -19,7 +19,7 @@ use std::path::Path;
 
 /// Represents a collection of localized resources and provides methods to read,
 /// write, cache, and load these resources.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Codec {
     /// The collection of resources managed by this codec.
     pub resources: Vec<Resource>,
@@ -94,6 +94,35 @@ impl Codec {
     /// Adds a new resource to the collection.
     pub fn add_resource(&mut self, resource: Resource) {
         self.resources.push(resource);
+    }
+
+    /// Appends all resources from another `Codec` into this one.
+    pub fn extend_from(&mut self, mut other: Codec) {
+        self.resources.append(&mut other.resources);
+    }
+
+    /// Constructs a `Codec` from multiple `Codec` instances by concatenating their resources.
+    pub fn from_codecs<I>(codecs: I) -> Self
+    where
+        I: IntoIterator<Item = Codec>,
+    {
+        let mut combined = Codec::new();
+        for mut c in codecs {
+            combined.resources.append(&mut c.resources);
+        }
+        combined
+    }
+
+    /// Merges multiple `Codec` instances into one and merges resources by language using the given strategy.
+    ///
+    /// Returns the merged `Codec` containing resources merged per language group.
+    pub fn merge_codecs<I>(codecs: I, strategy: &ConflictStrategy) -> Self
+    where
+        I: IntoIterator<Item = Codec>,
+    {
+        let mut combined = Codec::from_codecs(codecs);
+        let _ = combined.merge_resources(strategy);
+        combined
     }
 
     // ===== HIGH-LEVEL MODIFICATION METHODS =====
@@ -1462,5 +1491,97 @@ mod tests {
         let merges_performed = codec.merge_resources(&ConflictStrategy::Last);
         assert_eq!(merges_performed, 0);
         assert_eq!(codec.resources.len(), 0);
+    }
+
+    #[test]
+    fn test_extend_from_and_from_codecs() {
+        let mut codec1 = Codec::new();
+        let mut codec2 = Codec::new();
+
+        let en_resource = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "d1".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "hello".to_string(),
+                value: Translation::Singular("Hello".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        let fr_resource = Resource {
+            metadata: Metadata {
+                language: "fr".to_string(),
+                domain: "d2".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "bonjour".to_string(),
+                value: Translation::Singular("Bonjour".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        codec1.add_resource(en_resource);
+        codec2.add_resource(fr_resource);
+
+        // extend_from
+        let mut combined = codec1;
+        combined.extend_from(codec2);
+        assert_eq!(combined.resources.len(), 2);
+
+        // from_codecs
+        let c = Codec::from_codecs(vec![combined.clone()]);
+        assert_eq!(c.resources.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_codecs_across_instances() {
+        use crate::types::ConflictStrategy;
+
+        // Two codecs, both English with different entries -> should merge to one English with two entries
+        let mut c1 = Codec::new();
+        let mut c2 = Codec::new();
+
+        c1.add_resource(Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "d1".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "hello".to_string(),
+                value: Translation::Singular("Hello".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        });
+
+        c2.add_resource(Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "d2".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "goodbye".to_string(),
+                value: Translation::Singular("Goodbye".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        });
+
+        let merged = Codec::merge_codecs(vec![c1, c2], &ConflictStrategy::Last);
+        assert_eq!(merged.resources.len(), 1);
+        assert_eq!(merged.resources[0].metadata.language, "en");
+        assert_eq!(merged.resources[0].entries.len(), 2);
     }
 }
