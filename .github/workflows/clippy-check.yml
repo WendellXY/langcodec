@@ -1,5 +1,7 @@
 on: push
 name: Clippy check
+permissions:
+  contents: read
 
 # Make sure CI fails on all warnings, including Clippy lints
 env:
