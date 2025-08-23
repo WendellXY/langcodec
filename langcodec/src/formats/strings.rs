@@ -131,12 +131,50 @@ impl Parser for Format {
                 }
 
                 let key = parts[0].trim().trim_matches('"').to_string();
-                let mut value = parts[1].trim().trim_matches(';').trim().to_string();
-
-                if value.len() < 2 {
-                    value = String::new(); // If value is too short, treat it as empty
+                // Take the right-hand side up to the terminating semicolon, ignoring any inline comments afterward
+                let rhs = parts[1].trim();
+                let rhs_before_semicolon = if let Some(idx) = rhs.find(';') {
+                    &rhs[..idx]
                 } else {
-                    value = value[1..value.len() - 1].to_string(); // Remove surrounding quotes
+                    rhs
+                };
+                let rhs_trimmed = rhs_before_semicolon.trim();
+
+                // Expect a quoted string value; handle empty string and ignore any trailing inline comments
+                let mut value = String::new();
+                if !rhs_trimmed.is_empty() {
+                    if rhs_trimmed.starts_with('"') {
+                        // Find the last unescaped quote to close the value
+                        let mut last_quote_pos: Option<usize> = None;
+                        let bytes = rhs_trimmed.as_bytes();
+                        let mut i = 1; // start after the first quote
+                        while i < bytes.len() {
+                            if bytes[i] == b'"' {
+                                // count preceding backslashes
+                                let mut backslashes = 0;
+                                let mut j = i;
+                                while j > 0 && bytes[j - 1] == b'\\' {
+                                    backslashes += 1;
+                                    j -= 1;
+                                }
+                                if backslashes % 2 == 0 {
+                                    last_quote_pos = Some(i);
+                                    break;
+                                }
+                            }
+                            i += 1;
+                        }
+                        if let Some(end_pos) = last_quote_pos {
+                            // Safe slicing at UTF-8 boundaries because we only slice on quote bytes
+                            value = rhs_trimmed[1..end_pos].to_string();
+                        } else {
+                            // Malformed line without closing quote; treat as empty
+                            value = String::new();
+                        }
+                    } else {
+                        // Not a quoted value; treat as empty to be permissive
+                        value = String::new();
+                    }
                 }
 
                 let comment = match last_comment {
@@ -455,5 +493,18 @@ mod tests {
         assert!(a.comment.as_ref().unwrap().contains("Comment for A"));
         assert!(b.comment.as_ref().unwrap().contains("Comment for B"));
         assert!(c.comment.as_ref().unwrap().contains("Block comment for C"));
+    }
+
+    #[test]
+    fn test_parse_strings_with_empty_value() {
+        let content = r#"
+        // String
+
+        "PlayConsumed" = "%.2fMB traffic will be consumed if you play it";
+        "Score" = "%@ reviews";
+        "Wan" = "";//英文逻辑不一样，为空就好
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 3);
     }
 }
