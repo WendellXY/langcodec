@@ -372,10 +372,9 @@ pub fn infer_language_from_path<P: AsRef<Path>>(
             if let Some(captures) = regex::Regex::new(r"([a-z]{2}(?:-[A-Z]{2})?)\.lproj")
                 .map_err(|_| Error::InvalidResource("Invalid regex pattern".to_string()))?
                 .captures(&path_str)
+                && let Some(lang) = captures.get(1)
             {
-                if let Some(lang) = captures.get(1) {
-                    return Ok(Some(lang.as_str().to_string()));
-                }
+                return Ok(Some(lang.as_str().to_string()));
             }
         }
         FormatType::AndroidStrings(_) => {
@@ -383,10 +382,9 @@ pub fn infer_language_from_path<P: AsRef<Path>>(
             if let Some(captures) = regex::Regex::new(r"values-([a-z]{2}(?:-[A-Z]{2})?)")
                 .map_err(|_| Error::InvalidResource("Invalid regex pattern".to_string()))?
                 .captures(&path_str)
+                && let Some(lang) = captures.get(1)
             {
-                if let Some(lang) = captures.get(1) {
-                    return Ok(Some(lang.as_str().to_string()));
-                }
+                return Ok(Some(lang.as_str().to_string()));
             }
         }
         _ => {}

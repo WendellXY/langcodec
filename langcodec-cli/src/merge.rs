@@ -37,10 +37,10 @@ pub fn run_merge_command(
         }
 
         // If standard format fails, try custom format for JSON/YAML files
-        if input.ends_with(".json") || input.ends_with(".yaml") || input.ends_with(".yml") {
-            if let Ok(()) = try_custom_format_merge(input, lang.clone(), &mut codec) {
-                continue;
-            }
+        if (input.ends_with(".json") || input.ends_with(".yaml") || input.ends_with(".yml"))
+            && let Ok(()) = try_custom_format_merge(input, lang.clone(), &mut codec)
+        {
+            continue;
         }
 
         // If both fail, show error
@@ -111,12 +111,12 @@ pub fn run_merge_command(
         None => {
             if codec.resources.len() == 1 {
                 println!("Writing single resource to output file");
-                if let Some(resource) = codec.resources.first() {
-                    if let Err(e) = Codec::write_resource_to_file(resource, &output) {
-                        println!("❌ Error writing output file");
-                        eprintln!("Error writing to {}: {}", output, e);
-                        std::process::exit(1);
-                    }
+                if let Some(resource) = codec.resources.first()
+                    && let Err(e) = Codec::write_resource_to_file(resource, &output)
+                {
+                    println!("❌ Error writing output file");
+                    eprintln!("Error writing to {}: {}", output, e);
+                    std::process::exit(1);
                 }
             } else {
                 println!("❌ Error writing output file");

@@ -68,12 +68,12 @@ impl Codec {
     }
 
     /// Returns an iterator over all resources.
-    pub fn iter(&self) -> std::slice::Iter<Resource> {
+    pub fn iter(&self) -> std::slice::Iter<'_, Resource> {
         self.resources.iter()
     }
 
     /// Returns a mutable iterator over all resources.
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<Resource> {
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Resource> {
         self.resources.iter_mut()
     }
 

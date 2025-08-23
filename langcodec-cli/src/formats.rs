@@ -126,16 +126,16 @@ pub fn detect_custom_format(file_path: &str, file_content: &str) -> Option<Custo
             // Try to parse as JSON array of Resource objects
             if serde_json::from_str::<Vec<serde_json::Value>>(file_content).is_ok() {
                 // Check if it looks like an array of Resource objects
-                if let Ok(array) = serde_json::from_str::<Vec<serde_json::Value>>(file_content) {
-                    if !array.is_empty() {
-                        // Check if the first element has the expected Resource structure
-                        if let Some(first) = array.first() {
-                            if let Some(obj) = first.as_object() {
-                                if obj.contains_key("metadata") && obj.contains_key("entries") {
-                                    return Some(CustomFormat::LangcodecResourceArray);
-                                }
-                            }
-                        }
+                if let Ok(array) = serde_json::from_str::<Vec<serde_json::Value>>(file_content)
+                    && !array.is_empty()
+                {
+                    // Check if the first element has the expected Resource structure
+                    if let Some(first) = array.first()
+                        && let Some(obj) = first.as_object()
+                        && obj.contains_key("metadata")
+                        && obj.contains_key("entries")
+                    {
+                        return Some(CustomFormat::LangcodecResourceArray);
                     }
                 }
             }
@@ -147,10 +147,9 @@ pub fn detect_custom_format(file_path: &str, file_content: &str) -> Option<Custo
                 if let Ok(obj) = serde_json::from_str::<
                     std::collections::HashMap<String, serde_json::Value>,
                 >(file_content)
+                    && !obj.is_empty()
                 {
-                    if !obj.is_empty() {
-                        return Some(CustomFormat::JSONLanguageMap);
-                    }
+                    return Some(CustomFormat::JSONLanguageMap);
                 }
                 // Check if it's an array (JSONArrayLanguageMap)
                 if serde_json::from_str::<Vec<serde_json::Value>>(file_content).is_ok() {

@@ -77,12 +77,12 @@ pub fn validate_file_path(path: &str) -> Result<(), String> {
 pub fn validate_output_path(path: &str) -> Result<(), String> {
     let path_obj = Path::new(path);
 
-    if let Some(parent) = path_obj.parent() {
-        if !parent.exists() {
-            // Try to create the directory
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                return Err(format!("Cannot create output directory: {}", e));
-            }
+    if let Some(parent) = path_obj.parent()
+        && !parent.exists()
+    {
+        // Try to create the directory
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            return Err(format!("Cannot create output directory: {}", e));
         }
     }
 

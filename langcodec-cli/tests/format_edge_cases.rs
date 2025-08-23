@@ -69,12 +69,10 @@ fn test_json_with_null_values() {
         CustomFormat::JSONLanguageMap,
     );
 
-    // Should handle null values gracefully
-    if result.is_ok() {
-        let resources = result.unwrap();
-        let fr_resource = resources.iter().find(|r| r.metadata.language == "fr");
-        assert!(fr_resource.is_none() || fr_resource.unwrap().entries.is_empty());
-    }
+    // Should fail because null values are not supported
+    assert!(result.is_err());
+    let error = result.unwrap_err();
+    assert!(error.contains("Error parsing JSON") || error.contains("Invalid format"));
 }
 
 #[test]
@@ -96,8 +94,7 @@ fn test_json_with_boolean_values() {
     );
 
     // Should convert booleans to strings
-    if result.is_ok() {
-        let resources = result.unwrap();
+    if let Ok(resources) = result {
         let en_resource = resources
             .iter()
             .find(|r| r.metadata.language == "en")
@@ -128,8 +125,7 @@ fn test_json_with_numbers() {
     );
 
     // Should convert numbers to strings
-    if result.is_ok() {
-        let resources = result.unwrap();
+    if let Ok(resources) = result {
         let en_resource = resources
             .iter()
             .find(|r| r.metadata.language == "en")
@@ -206,8 +202,7 @@ fn test_json_array_with_missing_keys() {
     );
 
     // Should handle missing keys gracefully
-    if result.is_ok() {
-        let resources = result.unwrap();
+    if let Ok(resources) = result {
         assert_eq!(resources.len(), 2); // en and fr
     }
 }
@@ -238,8 +233,7 @@ fn test_json_array_with_duplicate_keys() {
     );
 
     // Should handle duplicate keys (last one wins)
-    if result.is_ok() {
-        let resources = result.unwrap();
+    if let Ok(resources) = result {
         let en_resource = resources
             .iter()
             .find(|r| r.metadata.language == "en")
