@@ -286,6 +286,10 @@ pub fn infer_format_from_extension<P: AsRef<Path>>(path: P) -> Option<FormatType
 ///     Some(FormatType::Strings(Some("en".to_string())))
 /// );
 /// assert_eq!(
+///     infer_format_from_path("zh-Hans.lproj/Localizable.strings"),
+///     Some(FormatType::Strings(Some("zh-Hans".to_string())))
+/// );
+/// assert_eq!(
 ///     infer_format_from_path("values-es/strings.xml"),
 ///     Some(FormatType::AndroidStrings(Some("es".to_string())))
 /// );
@@ -342,6 +346,10 @@ pub fn infer_format_from_path<P: AsRef<Path>>(path: P) -> Option<FormatType> {
 ///     infer_language_from_path("fr.lproj/Localizable.strings", &FormatType::Strings(None)).unwrap(),
 ///     Some("fr".to_string())
 /// );
+/// assert_eq!(
+///     infer_language_from_path("zh-Hans.lproj/Localizable.strings", &FormatType::Strings(None)).unwrap(),
+///     Some("zh-Hans".to_string())
+/// );
 ///
 /// // Android strings.xml files
 /// assert_eq!(
@@ -363,31 +371,95 @@ pub fn infer_language_from_path<P: AsRef<Path>>(
     path: P,
     format: &FormatType,
 ) -> Result<Option<String>, Error> {
-    let path = path.as_ref();
-    let path_str = path.to_string_lossy();
+    use std::str::FromStr;
+    use unic_langid::LanguageIdentifier;
 
-    match format {
-        FormatType::Strings(_) => {
-            // Apple .strings files: en.lproj/Localizable.strings
-            if let Some(captures) = regex::Regex::new(r"([a-z]{2}(?:-[A-Z]{2})?)\.lproj")
-                .map_err(|_| Error::InvalidResource("Invalid regex pattern".to_string()))?
-                .captures(&path_str)
-                && let Some(lang) = captures.get(1)
-            {
-                return Ok(Some(lang.as_str().to_string()));
+    let path = path.as_ref();
+
+    // Helper: validate and normalize a language candidate (accepts underscores, normalizes to hyphens)
+    fn normalize_lang(candidate: &str) -> Option<String> {
+        let canonical = candidate.replace('_', "-");
+        LanguageIdentifier::from_str(&canonical).ok()?;
+        Some(canonical)
+    }
+
+    // Helper: parse Android values- qualifiers into BCP-47 if possible
+    fn parse_android_values_lang(values_component: &str) -> Option<String> {
+        // values-zh-rCN → zh-CN; values-es → es; values-b+zh+Hans+CN → zh-Hans-CN
+        if let Some(rest) = values_component.strip_prefix("values-") {
+            if rest.is_empty() {
+                return None;
+            }
+            if let Some(b_rest) = rest.strip_prefix("b+") {
+                // BCP-47 style encoded in plus-separated tags
+                let parts: Vec<&str> = b_rest.split('+').collect();
+                if parts.is_empty() {
+                    return None;
+                }
+                let lang = parts.join("-");
+                return normalize_lang(&lang);
+            }
+            // Legacy qualifiers: lang[-rREGION][-SCRIPT]...
+            let mut lang: Option<String> = None;
+            let mut region: Option<String> = None;
+            for token in rest.split('-') {
+                if token.is_empty() {
+                    continue;
+                }
+                if let Some(r) = token.strip_prefix('r') {
+                    if !r.is_empty() {
+                        region = Some(r.to_string());
+                    }
+                } else if lang.is_none() {
+                    lang = Some(token.to_string());
+                }
+            }
+            if let Some(l) = lang {
+                let mut tag = l;
+                if let Some(r) = region {
+                    tag = format!("{}-{}", tag, r);
+                }
+                return normalize_lang(&tag);
             }
         }
-        FormatType::AndroidStrings(_) => {
-            // Android strings.xml files: values-es/strings.xml
-            if let Some(captures) = regex::Regex::new(r"values-([a-z]{2}(?:-[A-Z]{2})?)")
-                .map_err(|_| Error::InvalidResource("Invalid regex pattern".to_string()))?
-                .captures(&path_str)
-                && let Some(lang) = captures.get(1)
-            {
-                return Ok(Some(lang.as_str().to_string()));
+        None
+    }
+
+    // Iterate from the filename upward until a language is found
+    let mut components: Vec<String> = path
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    components.reverse();
+
+    for comp in components {
+        match format {
+            FormatType::Strings(_) => {
+                // Apple: directory like zh-Hans.lproj, or filename like en.strings
+                if let Some(lang_dir) = comp.strip_suffix(".lproj")
+                    && let Some(lang) = normalize_lang(lang_dir)
+                {
+                    return Ok(Some(lang));
+                }
+                if comp.ends_with(".strings")
+                    && let Some(stem) = Path::new(&comp).file_stem().and_then(|s| s.to_str())
+                {
+                    let looks_like_lang = (stem.len() == 2
+                        && stem.chars().all(|c| c.is_ascii_lowercase()))
+                        || stem.contains('-');
+                    if looks_like_lang && let Some(lang) = normalize_lang(stem) {
+                        return Ok(Some(lang));
+                    }
+                }
             }
+            FormatType::AndroidStrings(_) => {
+                // Android: values-xx, values-xx-rYY, values-b+zh+Hans+CN, etc.
+                if let Some(lang) = parse_android_values_lang(&comp) {
+                    return Ok(Some(lang));
+                }
+            }
+            _ => {}
         }
-        _ => {}
     }
 
     Ok(None)
