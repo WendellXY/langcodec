@@ -1,6 +1,7 @@
 mod debug;
 mod formats;
 mod merge;
+mod path_glob;
 mod transformers;
 mod validation;
 mod view;
@@ -15,7 +16,6 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 
 use langcodec::{Codec, convert_auto, formats::FormatType};
-use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufWriter;
 
@@ -202,7 +202,7 @@ fn main() {
         } => {
             // Expand any glob patterns in inputs (e.g., *.strings, **/*.xml)
             println!("Expanding glob patterns in inputs: {:?}", inputs);
-            let expanded_inputs = match expand_input_globs(&inputs) {
+            let expanded_inputs = match path_glob::expand_input_globs(&inputs) {
                 Ok(list) => list,
                 Err(e) => {
                     eprintln!("❌ Failed to expand input patterns: {}", e);
@@ -736,51 +736,4 @@ fn read_resources_from_any_input(
     ))
 }
 
-/// Expand possible glob patterns in a list of input strings into concrete file paths
-fn expand_input_globs(inputs: &Vec<String>) -> Result<Vec<String>, String> {
-    use rayon::prelude::*;
-
-    // Expand each pattern concurrently, collecting per-pattern results first
-    let expanded: Vec<String> = inputs
-        .par_iter()
-        .map(|pattern| {
-            // Try treating the input as a glob pattern. If it fails to parse as a glob,
-            // just treat it as a literal path.
-            match glob::glob(pattern) {
-                Ok(paths) => {
-                    let mut out: Vec<String> = Vec::new();
-                    let mut matched = false;
-                    for entry in paths {
-                        match entry {
-                            Ok(path) => {
-                                if path.is_file() {
-                                    out.push(path.to_string_lossy().to_string());
-                                    matched = true;
-                                }
-                            }
-                            Err(e) => {
-                                return Err(format!("Glob error for '{}': {}", pattern, e));
-                            }
-                        }
-                    }
-                    if matched { Ok(out) } else { Ok(vec![pattern.clone()]) }
-                }
-                Err(_) => Ok(vec![pattern.clone()]),
-            }
-        })
-        .collect::<Result<Vec<Vec<String>>, String>>()?
-        .into_iter()
-        .flatten()
-        .collect();
-
-    // Deduplicate while preserving the first-seen order
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut results: Vec<String> = Vec::with_capacity(expanded.len());
-    for s in expanded {
-        if seen.insert(s.clone()) {
-            results.push(s);
-        }
-    }
-
-    Ok(results)
-}
+// Path glob expansion is implemented in path_glob.rs
