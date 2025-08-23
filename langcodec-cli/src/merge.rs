@@ -2,6 +2,7 @@ use crate::formats::parse_custom_format;
 use crate::transformers::custom_format_to_resource;
 
 use langcodec::{Codec, converter};
+use rayon::prelude::*;
 
 /// Strategy for handling conflicts when merging localization files.
 #[derive(Debug, Clone, PartialEq, clap::ValueEnum)]
@@ -26,28 +27,27 @@ pub fn run_merge_command(
         std::process::exit(1);
     }
 
-    // Read all input files into a single codec
-    let mut codec = Codec::new();
-    for (i, input) in inputs.iter().enumerate() {
-        println!("Reading file {}/{}: {}", i + 1, inputs.len(), input);
+    // Read all input files concurrently into Codecs, then combine and merge
+    println!("Reading {} input files...", inputs.len());
+    let read_results: Vec<Result<Codec, String>> = inputs
+        .par_iter()
+        .map(|input| read_input_to_codec(input, lang.clone()))
+        .collect();
 
-        // Try standard format first
-        if let Ok(()) = codec.read_file_by_extension(input, lang.clone()) {
-            continue;
+    let mut input_codecs: Vec<Codec> = Vec::with_capacity(read_results.len());
+    for (idx, res) in read_results.into_iter().enumerate() {
+        match res {
+            Ok(c) => input_codecs.push(c),
+            Err(e) => {
+                println!("❌ Error reading input file {}/{}", idx + 1, inputs.len());
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
         }
-
-        // If standard format fails, try custom format for JSON/YAML files
-        if (input.ends_with(".json") || input.ends_with(".yaml") || input.ends_with(".yml"))
-            && let Ok(()) = try_custom_format_merge(input, lang.clone(), &mut codec)
-        {
-            continue;
-        }
-
-        // If both fail, show error
-        println!("❌ Error reading input file");
-        eprintln!("Error reading {}: unsupported format", input);
-        std::process::exit(1);
     }
+
+    // Combine all input codecs first, then merge by language
+    let mut codec = Codec::from_codecs(input_codecs);
 
     // Skip validation for merge operations since we expect multiple resources with potentially duplicate languages
 
@@ -133,30 +133,49 @@ pub fn run_merge_command(
     );
 }
 
-/// Try to read a custom format file and add it to the codec
-fn try_custom_format_merge(
+/// Read a single input file into a vector of Resources, supporting both standard and custom formats
+fn read_input_to_resources(
     input: &str,
-    _lang: Option<String>,
-    codec: &mut Codec,
-) -> Result<(), String> {
-    // Validate custom format file
-    crate::validation::validate_custom_format_file(input)?;
-
-    // Auto-detect format based on file content
-    let file_content = std::fs::read_to_string(input)
-        .map_err(|e| format!("Error reading file {}: {}", input, e))?;
-
-    // Validate file content
-    crate::formats::validate_custom_format_content(input, &file_content)?;
-
-    // Convert custom format to Resource
-    let resources =
-        custom_format_to_resource(input.to_string(), parse_custom_format("json-language-map")?)?;
-
-    // Add resources to codec
-    for resource in resources {
-        codec.add_resource(resource);
+    lang: Option<String>,
+) -> Result<Vec<langcodec::Resource>, String> {
+    // Try standard format via lib crate (uses extension + language inference)
+    {
+        let mut local_codec = Codec::new();
+        if let Ok(()) = local_codec.read_file_by_extension(input, lang.clone()) {
+            return Ok(local_codec.resources);
+        }
     }
 
-    Ok(())
+    // Try custom JSON/YAML formats (for merge, we follow the existing JSON-language-map behavior)
+    if input.ends_with(".json") || input.ends_with(".yaml") || input.ends_with(".yml") {
+        // Validate custom format file
+        crate::validation::validate_custom_format_file(input)
+            .map_err(|e| format!("Failed to validate {}: {}", input, e))?;
+
+        // Auto-detect format based on file content
+        let file_content = std::fs::read_to_string(input)
+            .map_err(|e| format!("Error reading file {}: {}", input, e))?;
+
+        // Validate file content (ignore returned format; keep parity with existing merge behavior)
+        crate::formats::validate_custom_format_content(input, &file_content)
+            .map_err(|e| format!("Invalid custom format {}: {}", input, e))?;
+
+        // Convert custom format to Resource using JSON language map to match current merge behavior
+        let resources = custom_format_to_resource(
+            input.to_string(),
+            parse_custom_format("json-language-map")
+                .map_err(|e| format!("Failed to parse custom format: {}", e))?,
+        )
+        .map_err(|e| format!("Failed to convert custom format {}: {}", input, e))?;
+
+        return Ok(resources);
+    }
+
+    Err(format!("Error reading {}: unsupported format", input))
+}
+
+/// Read a single input into a Codec (wrapper over read_input_to_resources)
+fn read_input_to_codec(input: &str, lang: Option<String>) -> Result<Codec, String> {
+    let resources = read_input_to_resources(input, lang)?;
+    Ok(Codec { resources })
 }
