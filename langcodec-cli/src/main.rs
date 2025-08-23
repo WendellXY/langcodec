@@ -15,6 +15,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 
 use langcodec::{Codec, convert_auto, formats::FormatType};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufWriter;
 
@@ -206,10 +207,24 @@ fn main() {
             strategy,
             lang,
         } => {
+            // Expand any glob patterns in inputs (e.g., *.strings, **/*.xml)
+            let expanded_inputs = match expand_input_globs(&inputs) {
+                Ok(list) => list,
+                Err(e) => {
+                    eprintln!("❌ Failed to expand input patterns: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            if expanded_inputs.is_empty() {
+                eprintln!("❌ No input files matched the provided patterns");
+                std::process::exit(1);
+            }
+
             // Create validation context
             let mut context = ValidationContext::new().with_output_file(output.clone());
 
-            for input in &inputs {
+            for input in &expanded_inputs {
                 context = context.with_input_file(input.clone());
             }
 
@@ -223,7 +238,7 @@ fn main() {
                 std::process::exit(1);
             }
 
-            run_merge_command(inputs, output, strategy, lang);
+            run_merge_command(expanded_inputs, output, strategy, lang);
         }
         Commands::Debug {
             input,
@@ -725,4 +740,50 @@ fn read_resources_from_any_input(
         "Unsupported input format or file extension: '{}'. Supported formats: .strings, .xml, .xcstrings, .csv, .tsv, .json, .yaml, .yml, .langcodec",
         input
     ))
+}
+
+/// Expand possible glob patterns in a list of input strings into concrete file paths
+fn expand_input_globs(inputs: &Vec<String>) -> Result<Vec<String>, String> {
+    let mut results: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for pattern in inputs {
+        // Try treating the input as a glob pattern. If it fails to parse as a glob,
+        // just treat it as a literal path.
+        match glob::glob(pattern) {
+            Ok(paths) => {
+                let mut matched = false;
+                for entry in paths {
+                    match entry {
+                        Ok(path) => {
+                            if path.is_file() {
+                                let s = path.to_string_lossy().to_string();
+                                if seen.insert(s.clone()) {
+                                    results.push(s);
+                                }
+                                matched = true;
+                            }
+                        }
+                        Err(e) => {
+                            return Err(format!("Glob error for '{}': {}", pattern, e));
+                        }
+                    }
+                }
+                if !matched {
+                    // No matches: preserve original input; later validation will surface errors
+                    if seen.insert(pattern.clone()) {
+                        results.push(pattern.clone());
+                    }
+                }
+            }
+            Err(_) => {
+                // Not a valid glob pattern; treat as literal
+                if seen.insert(pattern.clone()) {
+                    results.push(pattern.clone());
+                }
+            }
+        }
+    }
+
+    Ok(results)
 }

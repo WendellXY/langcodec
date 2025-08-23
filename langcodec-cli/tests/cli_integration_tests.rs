@@ -226,6 +226,103 @@ fn test_merge_command_basic() {
 }
 
 #[test]
+fn test_merge_command_with_glob_pattern() {
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path();
+
+    // Create multiple .strings files that the glob should match
+    let input_file1 = dir.join("a.strings");
+    let input_file2 = dir.join("b.strings");
+    let output_file = dir.join("merged.strings");
+
+    let strings_content1 = r#"/* Greeting */
+"hello" = "Hello";"#;
+    let strings_content2 = r#"/* Farewell */
+"goodbye" = "Goodbye";"#;
+
+    fs::write(&input_file1, strings_content1).unwrap();
+    fs::write(&input_file2, strings_content2).unwrap();
+
+    // Use a glob pattern for inputs
+    let pattern = format!("{}/*.strings", dir.to_string_lossy());
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "merge",
+            "-i",
+            &pattern,
+            "-o",
+            output_file.to_str().unwrap(),
+            "--strategy",
+            "last",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output_file.exists());
+    let merged_content = fs::read_to_string(&output_file).unwrap();
+    assert!(merged_content.contains("hello"));
+    assert!(merged_content.contains("goodbye"));
+}
+
+#[test]
+fn test_merge_command_with_recursive_glob_pattern() {
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path();
+
+    // Create nested directories with .strings files
+    let nested = dir.join("nested");
+    fs::create_dir_all(&nested).unwrap();
+
+    let input_file1 = dir.join("root.strings");
+    let input_file2 = nested.join("nested.strings");
+    let output_file = dir.join("merged.strings");
+
+    let strings_content1 = r#"/* Greeting */
+"hello" = "Hello";"#;
+    let strings_content2 = r#"/* Welcome */
+"welcome" = "Welcome";"#;
+
+    fs::write(&input_file1, strings_content1).unwrap();
+    fs::write(&input_file2, strings_content2).unwrap();
+
+    // Use a recursive glob pattern for inputs
+    let pattern = format!("{}/**/*.strings", dir.to_string_lossy());
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "merge",
+            "-i",
+            &pattern,
+            "-o",
+            output_file.to_str().unwrap(),
+            "--strategy",
+            "last",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output_file.exists());
+    let merged_content = fs::read_to_string(&output_file).unwrap();
+    assert!(merged_content.contains("hello"));
+    assert!(merged_content.contains("welcome"));
+}
+
+#[test]
 fn test_merge_command_with_conflict_strategy() {
     let temp_dir = TempDir::new().unwrap();
     let input_file1 = temp_dir.path().join("file1.json");
