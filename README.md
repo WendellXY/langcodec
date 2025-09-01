@@ -8,7 +8,7 @@
 
 ## Status
 
-This is a `0.3.1` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, the API may evolve as development continues. The library is functional and well-tested, but breaking changes may occur in future releases. Contributions and feedback are very welcome to help shape the future of this project!
+This is a `0.4.0` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, the API may evolve as development continues. The library is functional and well-tested, but breaking changes may occur in future releases. Contributions and feedback are very welcome to help shape the future of this project!
 
 ---
 
@@ -28,7 +28,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-langcodec = "0.3.1"
+langcodec = "0.4.0"
 ```
 
 ---
@@ -52,12 +52,11 @@ langcodec = "0.3.1"
 |-----------------------|:-----:|:-----:|:-------:|:-----:|:----------------:|----------|
 | Apple `.strings`      |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No             |  ✔️      |
 | Apple `.xcstrings`    |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   Yes<sup>*</sup>|  ✔️      |
-| Android `strings.xml` |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No<sup>*</sup> |  ✔️      |
+| Android `strings.xml` |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   Yes            |  ✔️      |
 | CSV                   |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No             |  –       |
 | TSV                   |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No             |  –       |
 
-<sup>* Plural support for `.xcstrings` is not under beta testing, and may not be fully implemented yet.</sup>
-<sup>* Plural support for Android may be added in the future.</sup>
+<sup>* `.xcstrings` plural support is implemented via CLDR categories.</sup>
 
 <!-- markdownlint-enable no-inline-html no-space-in-emphasis -->
 
@@ -71,7 +70,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-langcodec = "0.2.0"
+langcodec = "0.4.0"
 ```
 
 #### Example: Read, Manipulate, and Write
@@ -158,16 +157,23 @@ cargo install --path langcodec-cli
   ```sh
   langcodec view -i input.strings --lang en
   langcodec view -i input.tsv --lang en
+  langcodec view -i strings.xml --full   # Displays "Type: Plural" for Android plurals
   ```
 
 #### Notes
 
-- For CSV files, the language code (`--lang`) is required for most operations.
+- For CSV/TSV single-language files, the language code (`--lang`) may be required.
 - All commands support Apple `.strings`, `.xcstrings`, Android `strings.xml`, and CSV.
 - The convert command also supports JSON files with key-value pairs.
 - The CLI will error if you try to merge files of different formats.
 - Android path inference: `values/strings.xml` (no qualifier) defaults to English (`en`).
 - When converting to `.xcstrings`, if `source_language` or `version` metadata is missing, the CLI defaults them to `en` and `1.0` respectively (overridable via flags).
+
+#### Plurals
+
+- Android `<plurals>` are fully supported. They convert to the internal `Translation::Plural` representation and back to `<plurals>` with quantities `zero/one/two/few/many/other`.
+- `.xcstrings` plural variations convert to Android `<plurals>` when targeting Android output.
+- The `view` command prints plural entries with a "Type: Plural" header and each category/value.
 
 #### Custom Formats
 
