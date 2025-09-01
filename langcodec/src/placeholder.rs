@@ -114,8 +114,6 @@ pub fn signature(input: &str) -> Vec<String> {
         .collect()
 }
 
-fn canonical_kind(raw: &str) -> char { canonical_kind_char(raw.chars().next().unwrap_or('s')) }
-
 fn canonical_kind_char(ch: char) -> char {
     match ch {
         '@' => 's',

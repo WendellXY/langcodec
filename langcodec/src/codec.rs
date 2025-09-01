@@ -655,11 +655,7 @@ impl Codec {
                 let sigs: Vec<Vec<String>> = match &entry.value {
                     Translation::Singular(v) => vec![signature(v)],
                     Translation::Plural(p) => {
-                        let mut all = Vec::new();
-                        for (_cat, v) in &p.forms {
-                            all.push(signature(v));
-                        }
-                        all
+                        p.forms.values().map(|v| signature(v)).collect()
                     }
                 };
                 map.entry(entry.id.clone())
@@ -727,11 +723,7 @@ impl Codec {
             for entry in &res.entries {
                 let sigs: Vec<Vec<String>> = match &entry.value {
                     Translation::Singular(v) => vec![signature(v)],
-                    Translation::Plural(p) => p
-                        .forms
-                        .iter()
-                        .map(|(_c, v)| signature(v))
-                        .collect(),
+                    Translation::Plural(p) => p.forms.values().map(|v| signature(v)).collect(),
                 };
                 map.entry(entry.id.clone())
                     .or_default()
@@ -795,7 +787,7 @@ impl Codec {
                         *v = nv;
                     }
                     Translation::Plural(p) => {
-                        for (_c, v) in p.forms.iter_mut() {
+                        for v in p.forms.values_mut() {
                             let nv = normalize_placeholders(v);
                             *v = nv;
                         }

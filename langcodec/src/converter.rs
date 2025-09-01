@@ -145,11 +145,11 @@ pub fn convert<P: AsRef<Path>>(
 
     // Read input as resources
     let mut resources = match input_format {
-        FormatType::AndroidStrings(_) => vec![AndroidStringsFormat::read_from(&input)?.into()],
-        FormatType::Strings(_) => vec![StringsFormat::read_from(&input)?.into()],
-        FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(&input)?)?,
-        FormatType::CSV => Vec::<Resource>::try_from(CSVFormat::read_from(&input)?)?,
-        FormatType::TSV => Vec::<Resource>::try_from(TSVFormat::read_from(&input)?)?,
+        FormatType::AndroidStrings(_) => vec![AndroidStringsFormat::read_from(input)?.into()],
+        FormatType::Strings(_) => vec![StringsFormat::read_from(input)?.into()],
+        FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(input)?)?,
+        FormatType::CSV => Vec::<Resource>::try_from(CSVFormat::read_from(input)?)?,
+        FormatType::TSV => Vec::<Resource>::try_from(TSVFormat::read_from(input)?)?,
     };
 
     // Ensure language is set for single-language inputs if provided on input_format
@@ -173,7 +173,7 @@ pub fn convert<P: AsRef<Path>>(
         FormatType::AndroidStrings(lang) => {
             let resource = pick_resource(lang);
             if let Some(res) = resource {
-                AndroidStringsFormat::from(res).write_to(&output)
+                AndroidStringsFormat::from(res).write_to(output)
             } else {
                 Err(Error::InvalidResource(
                     "No matching resource for output language.".to_string(),
@@ -183,16 +183,16 @@ pub fn convert<P: AsRef<Path>>(
         FormatType::Strings(lang) => {
             let resource = pick_resource(lang);
             if let Some(res) = resource {
-                StringsFormat::try_from(res)?.write_to(&output)
+                StringsFormat::try_from(res)?.write_to(output)
             } else {
                 Err(Error::InvalidResource(
                     "No matching resource for output language.".to_string(),
                 ))
             }
         }
-        FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(&output),
-        FormatType::CSV => CSVFormat::try_from(resources)?.write_to(&output),
-        FormatType::TSV => TSVFormat::try_from(resources)?.write_to(&output),
+        FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(output),
+        FormatType::CSV => CSVFormat::try_from(resources)?.write_to(output),
+        FormatType::TSV => TSVFormat::try_from(resources)?.write_to(output),
     }
 }
 
@@ -222,8 +222,8 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
     output_format: FormatType,
     normalize: bool,
 ) -> Result<(), Error> {
-    let mut input = input.as_ref().to_path_buf();
-    let mut output = output.as_ref().to_path_buf();
+    let input = input.as_ref();
+    let output = output.as_ref();
 
     // Carry language between single-language formats
     let output_format = if let Some(lang) = input_format.language() {
@@ -240,11 +240,11 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
 
     // Read input as resources
     let mut resources = match input_format {
-        FormatType::AndroidStrings(_) => vec![AndroidStringsFormat::read_from(&input)?.into()],
-        FormatType::Strings(_) => vec![StringsFormat::read_from(&input)?.into()],
-        FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(&input)?)?,
-        FormatType::CSV => Vec::<Resource>::try_from(CSVFormat::read_from(&input)?)?,
-        FormatType::TSV => Vec::<Resource>::try_from(TSVFormat::read_from(&input)?)?,
+        FormatType::AndroidStrings(_) => vec![AndroidStringsFormat::read_from(input)?.into()],
+        FormatType::Strings(_) => vec![StringsFormat::read_from(input)?.into()],
+        FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(input)?)?,
+        FormatType::CSV => Vec::<Resource>::try_from(CSVFormat::read_from(input)?)?,
+        FormatType::TSV => Vec::<Resource>::try_from(TSVFormat::read_from(input)?)?,
     };
 
     // Ensure language is set for single-language inputs if provided on input_format
@@ -261,7 +261,7 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
             for entry in &mut res.entries {
                 match &mut entry.value {
                     crate::types::Translation::Singular(v) => {
-                        *v = normalize_placeholders(v).into();
+                        *v = normalize_placeholders(v);
                     }
                     crate::types::Translation::Plural(p) => {
                         for (_c, v) in p.forms.iter_mut() {
@@ -285,7 +285,7 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
         FormatType::AndroidStrings(lang) => {
             let resource = pick_resource(lang);
             if let Some(res) = resource {
-                AndroidStringsFormat::from(res).write_to(&output)
+                AndroidStringsFormat::from(res).write_to(output)
             } else {
                 Err(Error::InvalidResource(
                     "No matching resource for output language.".to_string(),
@@ -295,16 +295,16 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
         FormatType::Strings(lang) => {
             let resource = pick_resource(lang);
             if let Some(res) = resource {
-                StringsFormat::try_from(res)?.write_to(&output)
+                StringsFormat::try_from(res)?.write_to(output)
             } else {
                 Err(Error::InvalidResource(
                     "No matching resource for output language.".to_string(),
                 ))
             }
         }
-        FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(&output),
-        FormatType::CSV => CSVFormat::try_from(resources)?.write_to(&output),
-        FormatType::TSV => TSVFormat::try_from(resources)?.write_to(&output),
+        FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(output),
+        FormatType::CSV => CSVFormat::try_from(resources)?.write_to(output),
+        FormatType::TSV => TSVFormat::try_from(resources)?.write_to(output),
     }
 }
 
