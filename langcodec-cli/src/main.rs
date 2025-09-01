@@ -6,6 +6,7 @@ mod path_glob;
 mod transformers;
 mod validation;
 mod view;
+mod stats;
 
 use crate::convert::{ConvertOptions, run_unified_convert_command, try_custom_format_view};
 use crate::debug::run_debug_command;
@@ -99,6 +100,19 @@ enum Commands {
         /// For xcstrings output: override version (default: 1.0)
         #[arg(long)]
         version: Option<String>,
+    },
+
+    /// Show translation coverage and per-status counts.
+    Stats {
+        /// The input file to analyze
+        #[arg(short, long)]
+        input: String,
+        /// Optional language code to filter by
+        #[arg(short, long)]
+        lang: Option<String>,
+        /// Output JSON instead of human-readable text
+        #[arg(long)]
+        json: bool,
     },
 
     /// Debug: Read a localization file and output as JSON.
@@ -286,6 +300,35 @@ fn main() {
             let mut cmd = Args::command();
             cmd = cmd.bin_name("langcodec");
             generate(shell, &mut cmd, "langcodec", &mut std::io::stdout());
+        }
+        Commands::Stats { input, lang, json } => {
+            // Validate
+            let mut context = ValidationContext::new().with_input_file(input.clone());
+            if let Some(l) = &lang { context = context.with_language_code(l.clone()); }
+            if let Err(e) = validate_context(&context) {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+
+            // Load file using the same logic as view
+            let mut codec = Codec::new();
+            if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
+                // ok
+            } else if input.ends_with(".json")
+                || input.ends_with(".yaml")
+                || input.ends_with(".yml")
+                || input.ends_with(".langcodec")
+            {
+                if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
+                    eprintln!("Failed to read file: {}", e);
+                    std::process::exit(1);
+                }
+            } else {
+                eprintln!("Failed to read file: unsupported format");
+                std::process::exit(1);
+            }
+
+            stats::print_stats(&codec, &lang, json);
         }
     }
 }

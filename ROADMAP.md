@@ -11,6 +11,7 @@ Legend: [ ] todo, [x] done, [~] in progress
 - [x] Symmetric language matching for multi‑language formats (`xcstrings`, `csv`, `tsv`)
 - [x] CLI view prints “Type: Plural” and plural categories
 - [x] Conversion tests: CSV→Android, XCStrings→Android (with plurals)
+- [x] CLI `stats` subcommand (per-language counts, completion %, JSON output)
 
 ---
 
@@ -59,8 +60,10 @@ For each new format:
 - [ ] `diff` subcommand
   - [ ] Compare two files; output added/removed/changed keys by language
   - [ ] Machine‑readable JSON output and pretty mode
-- [ ] `stats` subcommand
-  - [ ] Per‑language counts by `EntryStatus`, completion %, missing plurals
+- [x] `stats` subcommand
+  - [x] Per‑language counts by `EntryStatus`
+  - [x] Completion percent (excludes DoNotTranslate)
+  - [ ] Missing plurals (depends on plural rules engine in M1)
 - [ ] `normalize` subcommand
   - [ ] Canonicalize whitespace, escapes, key casing; optional rules
 - [ ] Filters and export
