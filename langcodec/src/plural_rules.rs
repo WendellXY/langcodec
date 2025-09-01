@@ -192,15 +192,17 @@ pub fn autofix_fill_missing_from_other_resource(resource: &mut Resource) -> usiz
             }
             // Need an 'other' form to duplicate
             if let Some(other_val) = plural.forms.get(&PluralCategory::Other).cloned() {
+                let mut added_here = 0usize;
                 for cat in missing {
                     // Insert only if still missing (avoid race with duplicates)
                     if let std::collections::btree_map::Entry::Vacant(e) = plural.forms.entry(cat) {
                         e.insert(other_val.clone());
                         added += 1;
+                        added_here += 1;
                     }
                 }
                 // Mark as needs review if anything was added
-                if added > 0 && !matches!(entry.status, EntryStatus::NeedsReview) {
+                if added_here > 0 && !matches!(entry.status, EntryStatus::NeedsReview) {
                     entry.status = EntryStatus::NeedsReview;
                 }
             }
