@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use unic_langid::LanguageIdentifier;
 
@@ -7,124 +7,89 @@ use crate::{
     types::{Plural, PluralCategory, Resource, Translation},
 };
 
+use lazy_static::lazy_static;
+
+lazy_static! {
+    /// Static mapping from base language subtag → required plural categories (CLDR‑style, cardinals).
+    static ref CATEGORY_TABLE: BTreeMap<&'static str, BTreeSet<PluralCategory>> = {
+        use PluralCategory::*;
+        let mut m: BTreeMap<&'static str, BTreeSet<PluralCategory>> = BTreeMap::new();
+
+        // Helper to build a set from a slice
+        fn s(items: &[PluralCategory]) -> BTreeSet<PluralCategory> {
+            items.iter().cloned().collect()
+        }
+
+        // One/Other (most Indo‑European languages without complex plural rules)
+        for code in [
+            "en","de","nl","sv","da","nb","nn","no","is","fi","et","fa","hi","bn","gu",
+            "ta","te","kn","ml","mr","it","es","pt","mk","el","eu","gl","af","sw","ur",
+            "fil","tl","tr","id","ms","fr","hy","kab"
+        ] {
+            m.insert(code, s(&[One, Other]));
+        }
+
+        // Only Other (East/Southeast Asian common cases)
+        for code in ["ja","zh","ko","th","vi","km","lo","my","yue"] {
+            m.insert(code, s(&[Other]));
+        }
+
+        // Slavic (Russian group): one, few, many, other
+        for code in ["ru","uk","be","sr","hr","bs","sh"] {
+            m.insert(code, s(&[One, Few, Many, Other]));
+        }
+
+        // Polish
+        m.insert("pl", s(&[One, Few, Many, Other]));
+
+        // Czech/Slovak
+        for code in ["cs","sk"] {
+            m.insert(code, s(&[One, Few, Other]));
+        }
+
+        // Slovenian
+        m.insert("sl", s(&[One, Two, Few, Other]));
+
+        // Lithuanian
+        m.insert("lt", s(&[One, Few, Other]));
+
+        // Latvian
+        m.insert("lv", s(&[Zero, One, Other]));
+
+        // Irish Gaelic
+        m.insert("ga", s(&[One, Two, Few, Many, Other]));
+
+        // Romanian
+        m.insert("ro", s(&[One, Few, Other]));
+
+        // Arabic
+        m.insert("ar", s(&[Zero, One, Two, Few, Many, Other]));
+
+        // Hebrew (legacy code iw also maps here)
+        for code in ["he","iw"] {
+            m.insert(code, s(&[One, Two, Many, Other]));
+        }
+
+        m
+    };
+}
+
 /// Returns the required CLDR plural categories for a given language identifier.
 ///
 /// This is a curated subset of CLDR rules covering common locales. For unknown
 /// or unsupported locales, falls back to {Other} to avoid false positives.
 pub fn required_categories_for(lang: &LanguageIdentifier) -> BTreeSet<PluralCategory> {
-    let mut set: BTreeSet<PluralCategory> = BTreeSet::new();
-
     // Base language subtag only for rule selection
     let lang_str = lang.language.as_str();
-
-    match lang_str {
-        // One/Other languages (most European languages)
-        "en" | "de" | "nl" | "sv" | "da" | "nb" | "nn" | "no" | "is" | "fi" | "et"
-        | "fa" | "hi" | "bn" | "gu" | "ta" | "te" | "kn" | "ml" | "mr" | "it"
-        | "es" | "pt" | "pt_br" | "pt_pt" | "mk" | "el" | "eu" | "gl" | "af" | "sw"
-        | "ur" | "fil" | "tl" | "tr" | "id" | "ms" => {
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Only Other (East Asian languages and some SE Asian)
-        "ja" | "zh" | "ko" | "th" | "vi" | "km" | "lo" | "my" | "yue" | "zh_hant"
-        | "zh_hans" => {
-            set.insert(PluralCategory::Other);
-        }
-
-        // French-like (CLDR: one/other)
-        "fr" | "hy" | "kab" => {
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Slavic (Russian group): one, few, many, other
-        "ru" | "uk" | "be" | "sr" | "hr" | "bs" | "sh" => {
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Few);
-            set.insert(PluralCategory::Many);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Polish: one, few, many, other
-        "pl" => {
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Few);
-            set.insert(PluralCategory::Many);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Czech/Slovak: one, few, other
-        "cs" | "sk" => {
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Few);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Slovenian: one, two, few, other
-        "sl" => {
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Two);
-            set.insert(PluralCategory::Few);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Lithuanian: one, few, other
-        "lt" => {
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Few);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Latvian: zero, one, other
-        "lv" => {
-            set.insert(PluralCategory::Zero);
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Irish Gaelic: one, two, few, many, other
-        "ga" => {
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Two);
-            set.insert(PluralCategory::Few);
-            set.insert(PluralCategory::Many);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Romanian: one, few, other
-        "ro" => {
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Few);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Arabic: zero, one, two, few, many, other
-        "ar" => {
-            set.insert(PluralCategory::Zero);
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Two);
-            set.insert(PluralCategory::Few);
-            set.insert(PluralCategory::Many);
-            set.insert(PluralCategory::Other);
-        }
-
-        // Hebrew (cardinals) commonly use one, two, many, other in CLDR
-        "iw" /* legacy */ | "he" => {
-            set.insert(PluralCategory::One);
-            set.insert(PluralCategory::Two);
-            set.insert(PluralCategory::Many);
-            set.insert(PluralCategory::Other);
-        }
-
-        _ => {
+    CATEGORY_TABLE
+        .get(lang_str)
+        .cloned()
+        .unwrap_or_else(|| {
             // Conservative default to avoid noisy validation for unknown locales
-            set.insert(PluralCategory::Other);
-        }
-    }
-
-    set
+            let mut s = BTreeSet::new();
+            s.insert(PluralCategory::Other);
+            s
+        })
 }
 
 /// Helper for string language codes (accepts underscores, normalizes to hyphen).
