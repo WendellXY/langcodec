@@ -13,7 +13,7 @@ Universal localization file toolkit for Rust. Parse, write, convert, merge.
 langcodec = "0.4.0"
 ```
 
-Docs: https://docs.rs/langcodec
+Docs: <https://docs.rs/langcodec>
 
 ## Quick Start
 

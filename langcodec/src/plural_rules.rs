@@ -7,8 +7,8 @@ use crate::{
     types::{EntryStatus, Plural, PluralCategory, Resource, Translation},
 };
 
-use serde::Serialize;
 use lazy_static::lazy_static;
+use serde::Serialize;
 
 lazy_static! {
     /// Static mapping from base language subtag → required plural categories (CLDR‑style, cardinals).
@@ -91,21 +91,20 @@ pub struct PluralValidationReport {
 pub fn required_categories_for(lang: &LanguageIdentifier) -> BTreeSet<PluralCategory> {
     // Base language subtag only for rule selection
     let lang_str = lang.language.as_str();
-    CATEGORY_TABLE
-        .get(lang_str)
-        .cloned()
-        .unwrap_or_else(|| {
-            // Conservative default to avoid noisy validation for unknown locales
-            let mut s = BTreeSet::new();
-            s.insert(PluralCategory::Other);
-            s
-        })
+    CATEGORY_TABLE.get(lang_str).cloned().unwrap_or_else(|| {
+        // Conservative default to avoid noisy validation for unknown locales
+        let mut s = BTreeSet::new();
+        s.insert(PluralCategory::Other);
+        s
+    })
 }
 
 /// Helper for string language codes (accepts underscores, normalizes to hyphen).
 pub fn required_categories_for_str(lang: &str) -> BTreeSet<PluralCategory> {
     let normalized = lang.replace('_', "-");
-    let parsed: LanguageIdentifier = normalized.parse().unwrap_or_else(|_| "und".parse().unwrap());
+    let parsed: LanguageIdentifier = normalized
+        .parse()
+        .unwrap_or_else(|_| "und".parse().unwrap());
     required_categories_for(&parsed)
 }
 
@@ -177,7 +176,9 @@ pub fn validate_resource_plurals(resource: &Resource) -> Result<(), Error> {
 ///
 /// Returns the number of categories added across the resource.
 pub fn autofix_fill_missing_from_other_resource(resource: &mut Resource) -> usize {
-    let Some(lang_id) = resource.parse_language_identifier() else { return 0; };
+    let Some(lang_id) = resource.parse_language_identifier() else {
+        return 0;
+    };
     let mut added = 0usize;
     for entry in &mut resource.entries {
         // Skip entries that shouldn't be translated
@@ -193,8 +194,8 @@ pub fn autofix_fill_missing_from_other_resource(resource: &mut Resource) -> usiz
             if let Some(other_val) = plural.forms.get(&PluralCategory::Other).cloned() {
                 for cat in missing {
                     // Insert only if still missing (avoid race with duplicates)
-                    if !plural.forms.contains_key(&cat) {
-                        plural.forms.insert(cat, other_val.clone());
+                    if let std::collections::btree_map::Entry::Vacant(e) = plural.forms.entry(cat) {
+                        e.insert(other_val.clone());
                         added += 1;
                     }
                 }
@@ -247,11 +248,13 @@ mod tests {
             },
             entries: vec![Entry {
                 id: "apples".into(),
-                value: Translation::Plural(Plural::new(
-                    "apples",
-                    vec![(PluralCategory::Other, "%d apples".to_string())].into_iter(),
-                )
-                .unwrap()),
+                value: Translation::Plural(
+                    Plural::new(
+                        "apples",
+                        vec![(PluralCategory::Other, "%d apples".to_string())].into_iter(),
+                    )
+                    .unwrap(),
+                ),
                 comment: None,
                 status: EntryStatus::Translated,
                 custom: Default::default(),
@@ -273,11 +276,13 @@ mod tests {
             },
             entries: vec![Entry {
                 id: "apples".into(),
-                value: Translation::Plural(Plural::new(
-                    "apples",
-                    vec![(PluralCategory::Other, "%d apples".to_string())].into_iter(),
-                )
-                .unwrap()),
+                value: Translation::Plural(
+                    Plural::new(
+                        "apples",
+                        vec![(PluralCategory::Other, "%d apples".to_string())].into_iter(),
+                    )
+                    .unwrap(),
+                ),
                 comment: None,
                 status: EntryStatus::Translated,
                 custom: Default::default(),
@@ -304,11 +309,13 @@ mod tests {
             },
             entries: vec![Entry {
                 id: "apples".into(),
-                value: Translation::Plural(Plural::new(
-                    "apples",
-                    vec![(PluralCategory::Other, "%d apples".to_string())].into_iter(),
-                )
-                .unwrap()),
+                value: Translation::Plural(
+                    Plural::new(
+                        "apples",
+                        vec![(PluralCategory::Other, "%d apples".to_string())].into_iter(),
+                    )
+                    .unwrap(),
+                ),
                 comment: None,
                 status: EntryStatus::Translated,
                 custom: Default::default(),

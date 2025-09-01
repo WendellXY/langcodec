@@ -1,4 +1,4 @@
-use langcodec::{collect_resource_plural_issues, Codec, types::EntryStatus};
+use langcodec::{Codec, collect_resource_plural_issues, types::EntryStatus};
 use serde_json::json;
 use std::collections::HashMap;
 

@@ -38,7 +38,11 @@ fn test_cli_view_check_plurals_fails_on_missing() {
         String::from_utf8_lossy(&output.stdout)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Plural validation failed"), "stderr: {}", stderr);
+    assert!(
+        stderr.contains("Plural validation failed"),
+        "stderr: {}",
+        stderr
+    );
 }
 
 #[test]

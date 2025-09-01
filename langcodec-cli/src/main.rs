@@ -191,7 +191,12 @@ fn main() {
                 },
             );
         }
-        Commands::View { input, lang, full, check_plurals } => {
+        Commands::View {
+            input,
+            lang,
+            full,
+            check_plurals,
+        } => {
             // Create validation context
             let mut context = ValidationContext::new().with_input_file(input.clone());
 

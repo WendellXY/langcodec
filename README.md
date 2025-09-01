@@ -61,6 +61,7 @@ This is a `0.4.0` release available on [crates.io](https://crates.io/crates/lang
 - Stats (JSON): `langcodec stats -i Localizable.xcstrings --json`
   - See full options: langcodec-cli/README.md#stats
   - Example output:
+  
     ```json
     {
       "summary": { "languages": 1, "unique_keys": 42 },
