@@ -160,8 +160,8 @@ pub use crate::{
     formats::FormatType,
     placeholder::{extract_placeholders, normalize_placeholders, signature},
     plural_rules::{
-        collect_resource_plural_issues, required_categories_for_str, validate_resource_plurals,
-        PluralValidationReport,
+        autofix_fill_missing_from_other_resource, collect_resource_plural_issues,
+        required_categories_for_str, validate_resource_plurals, PluralValidationReport,
     },
     types::{
         ConflictStrategy, Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource,

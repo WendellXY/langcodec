@@ -4,7 +4,7 @@ use unic_langid::LanguageIdentifier;
 
 use crate::{
     error::Error,
-    types::{Plural, PluralCategory, Resource, Translation},
+    types::{EntryStatus, Plural, PluralCategory, Resource, Translation},
 };
 
 use serde::Serialize;
@@ -172,6 +172,42 @@ pub fn validate_resource_plurals(resource: &Resource) -> Result<(), Error> {
     )))
 }
 
+/// Autofix: for each plural entry, fill missing categories using the 'other' value if available.
+/// Marks the entry status as NeedsReview when any categories are added. Skips DoNotTranslate.
+///
+/// Returns the number of categories added across the resource.
+pub fn autofix_fill_missing_from_other_resource(resource: &mut Resource) -> usize {
+    let Some(lang_id) = resource.parse_language_identifier() else { return 0; };
+    let mut added = 0usize;
+    for entry in &mut resource.entries {
+        // Skip entries that shouldn't be translated
+        if matches!(entry.status, EntryStatus::DoNotTranslate) {
+            continue;
+        }
+        if let Translation::Plural(plural) = &mut entry.value {
+            let missing = missing_categories_for_plural(&lang_id, plural);
+            if missing.is_empty() {
+                continue;
+            }
+            // Need an 'other' form to duplicate
+            if let Some(other_val) = plural.forms.get(&PluralCategory::Other).cloned() {
+                for cat in missing {
+                    // Insert only if still missing (avoid race with duplicates)
+                    if !plural.forms.contains_key(&cat) {
+                        plural.forms.insert(cat, other_val.clone());
+                        added += 1;
+                    }
+                }
+                // Mark as needs review if anything was added
+                if added > 0 && !matches!(entry.status, EntryStatus::NeedsReview) {
+                    entry.status = EntryStatus::NeedsReview;
+                }
+            }
+        }
+    }
+    added
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,5 +291,43 @@ mod tests {
         assert_eq!(r.key, "apples");
         assert!(r.missing.contains(&PluralCategory::One));
         assert!(r.have.contains(&PluralCategory::Other));
+    }
+
+    #[test]
+    fn test_autofix_fill_missing_from_other_resource() {
+        // English requires one/other; provide only other and autofix should add one
+        let mut resource = Resource {
+            metadata: Metadata {
+                language: "en".into(),
+                domain: String::new(),
+                custom: Default::default(),
+            },
+            entries: vec![Entry {
+                id: "apples".into(),
+                value: Translation::Plural(Plural::new(
+                    "apples",
+                    vec![(PluralCategory::Other, "%d apples".to_string())].into_iter(),
+                )
+                .unwrap()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: Default::default(),
+            }],
+        };
+
+        let added = autofix_fill_missing_from_other_resource(&mut resource);
+        assert!(added >= 1);
+        let entry = &resource.entries[0];
+        // Should now contain One and Other
+        if let Translation::Plural(p) = &entry.value {
+            assert!(p.forms.contains_key(&PluralCategory::One));
+            assert_eq!(
+                p.forms.get(&PluralCategory::One).unwrap(),
+                p.forms.get(&PluralCategory::Other).unwrap()
+            );
+        } else {
+            panic!("expected plural");
+        }
+        assert!(matches!(entry.status, EntryStatus::NeedsReview));
     }
 }

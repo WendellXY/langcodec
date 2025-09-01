@@ -656,6 +656,17 @@ impl Codec {
         reports
     }
 
+    /// Autofix: fill missing plural categories using 'other' and mark entries as NeedsReview.
+    /// Returns total categories added across all resources.
+    pub fn autofix_fill_missing_from_other(&mut self) -> usize {
+        use crate::plural_rules::autofix_fill_missing_from_other_resource;
+        let mut total = 0usize;
+        for res in &mut self.resources {
+            total += autofix_fill_missing_from_other_resource(res);
+        }
+        total
+    }
+
     /// Cleans up resources by removing empty resources and entries.
     pub fn clean_up_resources(&mut self) {
         self.resources
