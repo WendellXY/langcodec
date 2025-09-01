@@ -160,9 +160,10 @@ impl FormatType {
     ///
     pub fn matches_language_of(&self, other: &FormatType) -> bool {
         match (self, other) {
-            (FormatType::Xcstrings, _) => true, // Xcstrings can match any other format
-            (FormatType::CSV, _) | (_, FormatType::CSV) => true, // CSV has multi-language support built-in, so it matches any other format
-            (FormatType::TSV, _) | (_, FormatType::TSV) => true, // TSV has multi-language support built-in, so it matches any other format
+            // Multi-language containers match anything (both directions)
+            (FormatType::Xcstrings, _) | (_, FormatType::Xcstrings) => true,
+            (FormatType::CSV, _) | (_, FormatType::CSV) => true,
+            (FormatType::TSV, _) | (_, FormatType::TSV) => true,
             _ => self.language() == other.language(),
         }
     }
@@ -302,7 +303,9 @@ mod tests {
         // CSV and TSV are multi-language formats that can match any other format
         assert!(format1.matches_language_of(&format3));
         assert!(format1.matches_language_of(&format4));
-        assert!(!format1.matches_language_of(&FormatType::Xcstrings));
+        // Xcstrings is also multi-language and should match in either direction
+        assert!(format1.matches_language_of(&FormatType::Xcstrings));
+        assert!(FormatType::Xcstrings.matches_language_of(&format1));
     }
 
     #[test]

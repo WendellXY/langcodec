@@ -368,9 +368,27 @@ impl Pair {
     }
 }
 
+// Escape a .strings token for safe emission inside quotes
+fn escape_strings_token(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 impl std::fmt::Display for Pair {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut result = format!("\"{}\" = \"{}\";", self.key, self.value);
+        let key = escape_strings_token(&self.key);
+        let value = escape_strings_token(&self.value);
+        let mut result = format!("\"{}\" = \"{}\";", key, value);
         if let Some(comment) = &self.comment {
             result.insert_str(0, &format!("{}\n", comment));
         }
@@ -419,6 +437,24 @@ mod tests {
             assert_eq!(orig.key, new.key);
             assert_eq!(orig.value, new.value);
         }
+    }
+
+    #[test]
+    fn test_strings_writer_escapes_quotes_backslashes_and_newlines() {
+        let format = Format {
+            language: String::new(),
+            pairs: vec![Pair {
+                key: "greet\"key\\with\nline".to_string(),
+                value: "He said: \"hi\"\\and newline\n".to_string(),
+                comment: None,
+            }],
+        };
+        let mut out = Vec::new();
+        format.to_writer(&mut out).unwrap();
+        let out_str = String::from_utf8(out).unwrap();
+        // Ensure escapes are present
+        assert!(out_str.contains("\"greet\\\"key\\\\with\\nline\""));
+        assert!(out_str.contains("\"He said: \\\"hi\\\"\\\\and newline\\n\""));
     }
 
     #[test]
