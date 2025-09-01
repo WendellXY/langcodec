@@ -48,6 +48,12 @@ enum Commands {
         /// Optional output format hint (e.g., "xcstrings", "strings", "android")
         #[arg(long)]
         output_format: Option<String>,
+        /// For xcstrings output: override source language (default: en)
+        #[arg(long)]
+        source_language: Option<String>,
+        /// For xcstrings output: override version (default: 1.0)
+        #[arg(long)]
+        version: Option<String>,
         /// Language codes to exclude from output (e.g., "en", "fr"). Can be specified multiple times or as comma-separated values (e.g., "--exclude-lang en,fr,zh-hans"). Only affects .langcodec output format.
         #[arg(long, value_name = "LANG", value_delimiter = ',')]
         exclude_lang: Vec<String>,
@@ -89,6 +95,12 @@ enum Commands {
         /// Language code to use for all input files (e.g., "en", "fr")
         #[arg(short, long)]
         lang: Option<String>,
+        /// For xcstrings output: override source language (default: en)
+        #[arg(long)]
+        source_language: Option<String>,
+        /// For xcstrings output: override version (default: 1.0)
+        #[arg(long)]
+        version: Option<String>,
     },
 
     /// Debug: Read a localization file and output as JSON.
@@ -129,7 +141,7 @@ fn main() {
             output_format,
             exclude_lang,
             include_lang,
-        } => {
+        source_language, version } => {
             // Create validation context
             let mut context = ValidationContext::new()
                 .with_input_file(input.clone())
@@ -153,6 +165,8 @@ fn main() {
                 output,
                 input_format,
                 output_format,
+                source_language,
+                version,
                 exclude_lang,
                 include_lang,
             );
@@ -199,7 +213,7 @@ fn main() {
             output,
             strategy,
             lang,
-        } => {
+        source_language, version } => {
             // Expand any glob patterns in inputs (e.g., *.strings, **/*.xml)
             println!("Expanding glob patterns in inputs: {:?}", inputs);
             let expanded_inputs = match path_glob::expand_input_globs(&inputs) {
@@ -232,7 +246,7 @@ fn main() {
                 std::process::exit(1);
             }
 
-            run_merge_command(expanded_inputs, output, strategy, lang);
+            run_merge_command(expanded_inputs, output, strategy, lang, source_language, version);
         }
         Commands::Debug {
             input,
@@ -270,9 +284,66 @@ fn run_unified_convert_command(
     output: String,
     input_format: Option<String>,
     output_format: Option<String>,
+    source_language: Option<String>,
+    version: Option<String>,
     exclude_lang: Vec<String>,
     include_lang: Vec<String>,
 ) {
+    // Special handling: when targeting xcstrings, ensure required metadata exists.
+    // If source_language/version are missing, default to en/1.0 respectively.
+    let wants_xcstrings = output.ends_with(".xcstrings")
+        || matches!(output_format.as_deref().map(|s| s.to_ascii_lowercase()), Some(ref s) if s == "xcstrings");
+    if wants_xcstrings {
+        println!("Converting to xcstrings with default sourceLanguage if missing...");
+        match read_resources_from_any_input(&input, input_format.as_ref()).and_then(|mut resources| {
+            // Determine source_language priority: any existing metadata on first resource; otherwise default to "en"
+            let source_language = source_language
+                .filter(|s| !s.trim().is_empty())
+                .or_else(|| {
+                    resources.first().and_then(|r| {
+                        r.metadata
+                            .custom
+                            .get("source_language")
+                            .cloned()
+                            .filter(|s| !s.trim().is_empty())
+                    })
+                })
+                .unwrap_or_else(|| "en".to_string());
+            // Determine version: keep existing if present; otherwise default to "1.0"
+            let version = version.or_else(|| {
+                resources
+                .first()
+                .and_then(|r| r.metadata.custom.get("version").cloned())
+            }).unwrap_or_else(|| "1.0".to_string());
+
+            // Apply to all resources so the writer has consistent metadata
+            for r in &mut resources {
+                r.metadata
+                    .custom
+                    .insert("source_language".to_string(), source_language.clone());
+                r.metadata
+                    .custom
+                    .insert("version".to_string(), version.clone());
+            }
+
+            convert_resources_to_format(resources, &output, FormatType::Xcstrings)
+                .map_err(|e| format!("Error converting to xcstrings: {}", e))
+        }) {
+            Ok(()) => {
+                println!("✅ Successfully converted to xcstrings");
+                return;
+            }
+            Err(e) => {
+                println!("❌ Conversion to xcstrings failed");
+                // Preserve legacy expectation for invalid JSON: surface an inference hint
+                if input.ends_with(".json") {
+                    eprintln!("Cannot infer input format");
+                }
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
     // If the desired output is .langcodec, handle via resource serialization
     if output.ends_with(".langcodec") {
         let filter_msg = if !include_lang.is_empty() || !exclude_lang.is_empty() {

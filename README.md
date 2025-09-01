@@ -122,6 +122,8 @@ cargo install --path langcodec-cli
   langcodec convert -i input.csv -o output.strings
   langcodec convert -i input.tsv -o output.xcstrings
   langcodec convert -i input.json -o output.xcstrings
+  # Override xcstrings metadata
+  langcodec convert -i input.json -o output.xcstrings --source-language en-GB --version 2.0
   ```
 
   The convert command automatically detects input and output formats from file extensions.
@@ -139,6 +141,9 @@ cargo install --path langcodec-cli
 
   - `--strategy` can be `last` (default), `first`, or `error` (fail on conflict).
   - `--lang` is required for formats that need a language code (e.g., CSV, .strings).
+  - For `.xcstrings` output, you can override metadata:
+    - `--source-language` (default: `en`)
+    - `--version` (default: `1.0`)
 
 - **Debug**: Output a file's parsed representation as JSON:
 
@@ -161,6 +166,8 @@ cargo install --path langcodec-cli
 - All commands support Apple `.strings`, `.xcstrings`, Android `strings.xml`, and CSV.
 - The convert command also supports JSON files with key-value pairs.
 - The CLI will error if you try to merge files of different formats.
+- Android path inference: `values/strings.xml` (no qualifier) defaults to English (`en`).
+- When converting to `.xcstrings`, if `source_language` or `version` metadata is missing, the CLI defaults them to `en` and `1.0` respectively (overridable via flags).
 
 #### Custom Formats
 

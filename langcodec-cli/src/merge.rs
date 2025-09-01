@@ -21,6 +21,8 @@ pub fn run_merge_command(
     output: String,
     strategy: ConflictStrategy,
     lang: Option<String>,
+    source_language_override: Option<String>,
+    version_override: Option<String>,
 ) {
     if inputs.is_empty() {
         eprintln!("Error: At least one input file is required.");
@@ -69,26 +71,38 @@ pub fn run_merge_command(
             // Set source_language field in the resources to make sure xcstrings format would not throw an error
             // First, try to get the source language from the first resource if it exists; otherwise, the first resource's language
             // would be used as the source language. If the two checks fail, the default value "en" would be used.
-            let source_language = codec
-                .resources
-                .first()
-                .and_then(|r| r.metadata.custom.get("source_language").cloned())
+            let source_language = source_language_override
+                .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| {
                     codec
                         .resources
                         .first()
-                        .map(|r| r.metadata.language.clone())
-                        .unwrap_or("en".to_string())
+                        .and_then(|r| {
+                            r.metadata
+                                .custom
+                                .get("source_language")
+                                .cloned()
+                                .filter(|s| !s.trim().is_empty())
+                        })
+                        .unwrap_or_else(|| {
+                            codec
+                                .resources
+                                .first()
+                                .map(|r| r.metadata.language.clone())
+                                .unwrap_or("en".to_string())
+                        })
                 });
 
             println!("Setting metadata.source_language to: {}", source_language);
 
             // Set version field in the resources to make sure xcstrings format would not throw an error
-            let version = codec
+            let version = version_override.unwrap_or_else(|| {
+                codec
                 .resources
                 .first()
                 .and_then(|r| r.metadata.custom.get("version").cloned())
-                .unwrap_or_else(|| "1.0".to_string());
+                .unwrap_or_else(|| "1.0".to_string())
+            });
 
             println!("Setting metadata.version to: {}", version);
 
