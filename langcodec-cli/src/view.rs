@@ -1,5 +1,17 @@
 use langcodec::Codec;
 
+/// Truncate a string by Unicode scalar values (chars),
+/// appending ellipsis if content exceeds `max_chars`.
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    let mut iter = s.chars();
+    let truncated: String = iter.by_ref().take(max_chars).collect();
+    if iter.next().is_some() {
+        format!("{}...", truncated)
+    } else {
+        truncated
+    }
+}
+
 /// Print a view of the resources in a codec.
 pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
     println!("Processing resources...");
@@ -60,11 +72,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
                     if full {
                         println!("    Value: {}", value);
                     } else {
-                        let truncated = if value.len() > 50 {
-                            format!("{}...", &value[..50])
-                        } else {
-                            value.clone()
-                        };
+                        let truncated = truncate_chars(value, 50);
                         println!("    Value: {}", truncated);
                     }
                 }
@@ -75,11 +83,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
                         if full {
                             println!("      {:?}: {}", category, value);
                         } else {
-                            let truncated = if value.len() > 50 {
-                                format!("{}...", &value[..50])
-                            } else {
-                                value.clone()
-                            };
+                            let truncated = truncate_chars(value, 50);
                             println!("      {:?}: {}", category, truncated);
                         }
                     }
