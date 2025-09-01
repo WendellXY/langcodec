@@ -30,7 +30,11 @@ fn accumulate(lang_stats: &mut LangStats, status: &EntryStatus) {
 
 pub fn print_stats(codec: &Codec, lang_filter: &Option<String>, json_output: bool) {
     let resources: Vec<_> = match lang_filter {
-        Some(lang) => codec.resources.iter().filter(|r| r.metadata.language == *lang).collect(),
+        Some(lang) => codec
+            .resources
+            .iter()
+            .filter(|r| r.metadata.language == *lang)
+            .collect(),
         None => codec.resources.iter().collect(),
     };
 
@@ -84,7 +88,10 @@ pub fn print_stats(codec: &Codec, lang_filter: &Option<String>, json_output: boo
         println!("  Total: {}", stats.total);
         println!("  By status:");
         for (k, v) in [
-            ("translated", stats.by_status.get("translated").copied().unwrap_or(0)),
+            (
+                "translated",
+                stats.by_status.get("translated").copied().unwrap_or(0),
+            ),
             (
                 "needs_review",
                 stats.by_status.get("needs_review").copied().unwrap_or(0),
@@ -105,4 +112,3 @@ pub fn print_stats(codec: &Codec, lang_filter: &Option<String>, json_output: boo
         println!("  Completion: {:.2}%", percent);
     }
 }
-

@@ -3,10 +3,10 @@ mod debug;
 mod formats;
 mod merge;
 mod path_glob;
+mod stats;
 mod transformers;
 mod validation;
 mod view;
-mod stats;
 
 use crate::convert::{ConvertOptions, run_unified_convert_command, try_custom_format_view};
 use crate::debug::run_debug_command;
@@ -304,7 +304,9 @@ fn main() {
         Commands::Stats { input, lang, json } => {
             // Validate
             let mut context = ValidationContext::new().with_input_file(input.clone());
-            if let Some(l) = &lang { context = context.with_language_code(l.clone()); }
+            if let Some(l) = &lang {
+                context = context.with_language_code(l.clone());
+            }
             if let Err(e) = validate_context(&context) {
                 eprintln!("❌ Validation failed: {}", e);
                 std::process::exit(1);

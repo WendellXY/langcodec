@@ -356,11 +356,7 @@ mod normalize_tests {
         let strings = tmp.path().join("en.strings");
         let xml = tmp.path().join("strings.xml");
 
-        fs::write(
-            &strings,
-            "\n\"g\" = \"Hello %@ and %1$@ and %ld\";\n",
-        )
-        .unwrap();
+        fs::write(&strings, "\n\"g\" = \"Hello %@ and %1$@ and %ld\";\n").unwrap();
 
         // Without normalization: convert should succeed
         convert(

@@ -643,9 +643,9 @@ impl Codec {
     /// assert!(codec.validate_placeholders(true).is_ok());
     /// ```
     pub fn validate_placeholders(&self, strict: bool) -> Result<(), Error> {
-        use std::collections::HashMap;
         use crate::placeholder::signature;
         use crate::types::Translation;
+        use std::collections::HashMap;
 
         // key -> lang -> Vec<signatures per form or single>
         let mut map: HashMap<String, HashMap<String, Vec<Vec<String>>>> = HashMap::new();
@@ -654,9 +654,7 @@ impl Codec {
             for entry in &res.entries {
                 let sigs: Vec<Vec<String>> = match &entry.value {
                     Translation::Singular(v) => vec![signature(v)],
-                    Translation::Plural(p) => {
-                        p.forms.values().map(|v| signature(v)).collect()
-                    }
+                    Translation::Plural(p) => p.forms.values().map(|v| signature(v)).collect(),
                 };
                 map.entry(entry.id.clone())
                     .or_default()
@@ -714,9 +712,9 @@ impl Codec {
     ///
     /// Useful to warn in non-strict mode.
     pub fn collect_placeholder_issues(&self) -> Vec<String> {
-        use std::collections::HashMap;
         use crate::placeholder::signature;
         use crate::types::Translation;
+        use std::collections::HashMap;
 
         let mut map: HashMap<String, HashMap<String, Vec<Vec<String>>>> = HashMap::new();
         for res in &self.resources {
@@ -1768,7 +1766,11 @@ mod tests {
         let mut codec = Codec::new();
         // English with %1$@, French with %1$s should match after normalization
         codec.add_resource(Resource {
-            metadata: Metadata { language: "en".into(), domain: "d".into(), custom: HashMap::new() },
+            metadata: Metadata {
+                language: "en".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
             entries: vec![Entry {
                 id: "greet".into(),
                 value: Translation::Singular("Hello %1$@".into()),
@@ -1778,7 +1780,11 @@ mod tests {
             }],
         });
         codec.add_resource(Resource {
-            metadata: Metadata { language: "fr".into(), domain: "d".into(), custom: HashMap::new() },
+            metadata: Metadata {
+                language: "fr".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
             entries: vec![Entry {
                 id: "greet".into(),
                 value: Translation::Singular("Bonjour %1$s".into()),
@@ -1794,7 +1800,11 @@ mod tests {
     fn test_validate_placeholders_mismatch() {
         let mut codec = Codec::new();
         codec.add_resource(Resource {
-            metadata: Metadata { language: "en".into(), domain: "d".into(), custom: HashMap::new() },
+            metadata: Metadata {
+                language: "en".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
             entries: vec![Entry {
                 id: "count".into(),
                 value: Translation::Singular("%d files".into()),
@@ -1804,7 +1814,11 @@ mod tests {
             }],
         });
         codec.add_resource(Resource {
-            metadata: Metadata { language: "fr".into(), domain: "d".into(), custom: HashMap::new() },
+            metadata: Metadata {
+                language: "fr".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
             entries: vec![Entry {
                 id: "count".into(),
                 value: Translation::Singular("%s fichiers".into()),
@@ -1820,7 +1834,11 @@ mod tests {
     fn test_collect_placeholder_issues_non_strict_ok() {
         let mut codec = Codec::new();
         codec.add_resource(Resource {
-            metadata: Metadata { language: "en".into(), domain: "d".into(), custom: HashMap::new() },
+            metadata: Metadata {
+                language: "en".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
             entries: vec![Entry {
                 id: "count".into(),
                 value: Translation::Singular("%d files".into()),
@@ -1830,7 +1848,11 @@ mod tests {
             }],
         });
         codec.add_resource(Resource {
-            metadata: Metadata { language: "fr".into(), domain: "d".into(), custom: HashMap::new() },
+            metadata: Metadata {
+                language: "fr".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
             entries: vec![Entry {
                 id: "count".into(),
                 value: Translation::Singular("%s fichiers".into()),
@@ -1849,7 +1871,11 @@ mod tests {
     fn test_normalize_placeholders_in_place() {
         let mut codec = Codec::new();
         codec.add_resource(Resource {
-            metadata: Metadata { language: "en".into(), domain: "d".into(), custom: HashMap::new() },
+            metadata: Metadata {
+                language: "en".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
             entries: vec![Entry {
                 id: "g".into(),
                 value: Translation::Singular("Hello %@ and %1$@".into()),
@@ -1859,7 +1885,10 @@ mod tests {
             }],
         });
         codec.normalize_placeholders_in_place();
-        let v = match &codec.resources[0].entries[0].value { Translation::Singular(v) => v.clone(), _ => String::new() };
+        let v = match &codec.resources[0].entries[0].value {
+            Translation::Singular(v) => v.clone(),
+            _ => String::new(),
+        };
         assert!(v.contains("%s"));
         assert!(v.contains("%1$s"));
     }

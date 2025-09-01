@@ -5,7 +5,6 @@
 //! - Extract a placeholder "signature" for comparison across languages.
 //! - Validate placeholder consistency per entry (across all languages and plural forms).
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaceholderToken {
     pub index: Option<usize>,
@@ -73,7 +72,10 @@ pub fn extract_placeholders(input: &str) -> Vec<PlaceholderToken> {
         if j < bytes.len() {
             let ch = bytes[j] as char;
             if ch.is_ascii_alphabetic() || ch == '@' {
-                out.push(PlaceholderToken { index, kind: canonical_kind_char(ch) });
+                out.push(PlaceholderToken {
+                    index,
+                    kind: canonical_kind_char(ch),
+                });
                 i = j + 1;
                 continue;
             }
@@ -91,19 +93,37 @@ pub fn extract_placeholders(input: &str) -> Vec<PlaceholderToken> {
 /// - %1$@ -> %1$s
 /// - %ld, %lu -> %d / %u
 pub fn normalize_placeholders(input: &str) -> String {
-    let mut out = input.to_string();
-    // Positional iOS object -> Android string
-    out = out.replace("%1$@", "%1$s");
-    out = out.replace("%2$@", "%2$s");
-    out = out.replace("%3$@", "%3$s");
-    out = out.replace("%4$@", "%4$s");
-    out = out.replace("%5$@", "%5$s");
+    // Replace positional iOS object placeholders %<n>$@ -> %<n>$s
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    let mut tmp = String::with_capacity(input.len());
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let mut j = i + 1;
+            let start_digits = j;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > start_digits && j + 1 < bytes.len() && bytes[j] == b'$' && bytes[j + 1] == b'@' {
+                // Copy prefix, then normalized token
+                tmp.push('%');
+                tmp.push_str(&input[start_digits..j]); // digits
+                tmp.push('$');
+                tmp.push('s');
+                i = j + 2;
+                continue;
+            }
+        }
+        tmp.push(bytes[i] as char);
+        i += 1;
+    }
+
     // Simple iOS object -> string
-    out = out.replace("%@", "%s");
+    let out = tmp.replace("%@", "%s");
     // Long ints to canonical
-    out = out.replace("%ld", "%d");
-    out = out.replace("%lu", "%u");
-    out
+    let out = out.replace("%ld", "%d");
+
+    out.replace("%lu", "%u")
 }
 
 /// Build a normalized signature (sequence of tokens) for comparison.
@@ -140,6 +160,13 @@ mod tests {
         assert!(n.contains("%s"));
         assert!(n.contains("%d"));
         assert_eq!(signature(s), vec!["s", "d"]);
+    }
+
+    #[test]
+    fn test_normalize_positional_object() {
+        let s = "Hello %1$@";
+        let n = normalize_placeholders(s);
+        assert!(n.contains("%1$s"));
     }
 
     #[test]
