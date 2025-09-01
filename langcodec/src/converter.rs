@@ -295,7 +295,7 @@ pub fn infer_format_from_extension<P: AsRef<Path>>(path: P) -> Option<FormatType
 /// );
 /// assert_eq!(
 ///     infer_format_from_path("values/strings.xml"),
-///     Some(FormatType::AndroidStrings(None))
+///     Some(FormatType::AndroidStrings(Some("en".to_string())))
 /// );
 /// assert_eq!(
 ///     infer_format_from_path("Localizable.xcstrings"),
@@ -364,7 +364,7 @@ pub fn infer_format_from_path<P: AsRef<Path>>(path: P) -> Option<FormatType> {
 /// // No language in path
 /// assert_eq!(
 ///     infer_language_from_path("values/strings.xml", &FormatType::AndroidStrings(None)).unwrap(),
-///     None
+///     Some("en".to_string())
 /// );
 /// ```
 pub fn infer_language_from_path<P: AsRef<Path>>(
@@ -453,7 +453,11 @@ pub fn infer_language_from_path<P: AsRef<Path>>(
                 }
             }
             FormatType::AndroidStrings(_) => {
-                // Android: values-xx, values-xx-rYY, values-b+zh+Hans+CN, etc.
+                // Android: values (default → en), values-xx, values-xx-rYY, values-b+zh+Hans+CN, etc.
+                if comp == "values" {
+                    // Treat base `values/` as English by default
+                    return Ok(Some("en".to_string()));
+                }
                 if let Some(lang) = parse_android_values_lang(&comp) {
                     return Ok(Some(lang));
                 }
