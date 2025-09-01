@@ -100,14 +100,17 @@ impl Parser for Format {
             items.sort_by(|a, b| a.quantity.cmp(&b.quantity));
             for item in &items {
                 let mut it = BytesStart::new("item");
-                it.push_attribute(("quantity", match item.quantity {
-                    PluralCategory::Zero => "zero",
-                    PluralCategory::One => "one",
-                    PluralCategory::Two => "two",
-                    PluralCategory::Few => "few",
-                    PluralCategory::Many => "many",
-                    PluralCategory::Other => "other",
-                }));
+                it.push_attribute((
+                    "quantity",
+                    match item.quantity {
+                        PluralCategory::Zero => "zero",
+                        PluralCategory::One => "one",
+                        PluralCategory::Two => "two",
+                        PluralCategory::Few => "few",
+                        PluralCategory::Many => "many",
+                        PluralCategory::Other => "other",
+                    },
+                ));
                 xml_writer.write_event(Event::Start(it))?;
                 xml_writer.write_event(Event::Text(BytesText::new(&item.value)))?;
                 xml_writer.write_event(Event::End(BytesEnd::new("item")))?;
@@ -165,11 +168,7 @@ impl From<Resource> for Format {
 
 impl From<Format> for Resource {
     fn from(value: Format) -> Self {
-        let mut entries: Vec<Entry> = value
-            .strings
-            .iter()
-            .map(StringResource::to_entry)
-            .collect();
+        let mut entries: Vec<Entry> = value.strings.iter().map(StringResource::to_entry).collect();
 
         // Convert plurals to entries
         for pr in &value.plurals {
@@ -191,7 +190,10 @@ impl From<Format> for Resource {
             };
             entries.push(Entry {
                 id: pr.name.clone(),
-                value: Translation::Plural(Plural { id: pr.name.clone(), forms }),
+                value: Translation::Plural(Plural {
+                    id: pr.name.clone(),
+                    forms,
+                }),
                 comment: None,
                 status,
                 custom: HashMap::new(),
@@ -323,7 +325,8 @@ fn parse_plurals_resource<R: BufRead>(
             _ => {}
         }
     }
-    let name = name.ok_or_else(|| Error::InvalidResource("plurals tag missing 'name'".to_string()))?;
+    let name =
+        name.ok_or_else(|| Error::InvalidResource("plurals tag missing 'name'".to_string()))?;
 
     let mut buf = Vec::new();
     let mut items: Vec<PluralItem> = Vec::new();
@@ -339,17 +342,22 @@ fn parse_plurals_resource<R: BufRead>(
                         quantity = PluralCategory::from_str(&v).ok();
                     }
                 }
-                let quantity = quantity.ok_or_else(|| Error::InvalidResource("item missing 'quantity'".to_string()))?;
+                let quantity = quantity
+                    .ok_or_else(|| Error::InvalidResource("item missing 'quantity'".to_string()))?;
                 // Read text content until End(item)
                 let mut value = String::new();
                 let mut local_buf = Vec::new();
                 loop {
                     match xml_reader.read_event_into(&mut local_buf) {
                         Ok(Event::Text(e)) => {
-                            value.push_str(&e.unescape().map_err(Error::XmlParse)?.to_string());
+                            value.push_str(e.unescape().map_err(Error::XmlParse)?.as_ref());
                         }
                         Ok(Event::End(ref end)) if end.name().as_ref() == b"item" => break,
-                        Ok(Event::Eof) => return Err(Error::InvalidResource("Unexpected EOF inside <item>".to_string())),
+                        Ok(Event::Eof) => {
+                            return Err(Error::InvalidResource(
+                                "Unexpected EOF inside <item>".to_string(),
+                            ));
+                        }
                         Ok(_) => {}
                         Err(e) => return Err(Error::XmlParse(e)),
                     }
@@ -358,14 +366,22 @@ fn parse_plurals_resource<R: BufRead>(
                 items.push(PluralItem { quantity, value });
             }
             Ok(Event::End(ref end)) if end.name().as_ref() == b"plurals" => break,
-            Ok(Event::Eof) => return Err(Error::InvalidResource("Unexpected EOF inside <plurals>".to_string())),
+            Ok(Event::Eof) => {
+                return Err(Error::InvalidResource(
+                    "Unexpected EOF inside <plurals>".to_string(),
+                ));
+            }
             Ok(_) => {}
             Err(e) => return Err(Error::XmlParse(e)),
         }
         buf.clear();
     }
 
-    Ok(PluralsResource { name, items, translatable })
+    Ok(PluralsResource {
+        name,
+        items,
+        translatable,
+    })
 }
 
 #[cfg(test)]
@@ -484,10 +500,17 @@ mod tests {
         forms.insert(PluralCategory::Other, "%d files".to_string());
 
         let resource = Resource {
-            metadata: Metadata { language: "en".into(), domain: String::new(), custom: HashMap::new() },
+            metadata: Metadata {
+                language: "en".into(),
+                domain: String::new(),
+                custom: HashMap::new(),
+            },
             entries: vec![Entry {
                 id: "files".into(),
-                value: Translation::Plural(Plural { id: "files".into(), forms }),
+                value: Translation::Plural(Plural {
+                    id: "files".into(),
+                    forms,
+                }),
                 comment: None,
                 status: EntryStatus::Translated,
                 custom: HashMap::new(),
@@ -499,7 +522,15 @@ mod tests {
         assert_eq!(fmt.plurals.len(), 1);
         let pr = &fmt.plurals[0];
         assert_eq!(pr.name, "files");
-        assert!(pr.items.iter().any(|i| matches!(i.quantity, PluralCategory::One) && i.value == "One file"));
-        assert!(pr.items.iter().any(|i| matches!(i.quantity, PluralCategory::Other) && i.value == "%d files"));
+        assert!(
+            pr.items
+                .iter()
+                .any(|i| matches!(i.quantity, PluralCategory::One) && i.value == "One file")
+        );
+        assert!(
+            pr.items
+                .iter()
+                .any(|i| matches!(i.quantity, PluralCategory::Other) && i.value == "%d files")
+        );
     }
 }

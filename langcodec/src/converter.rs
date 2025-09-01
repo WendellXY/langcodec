@@ -626,8 +626,13 @@ mod tests {
         )
         .unwrap();
 
-        convert(&input, FormatType::CSV, &output, FormatType::AndroidStrings(Some("en".into())))
-            .unwrap();
+        convert(
+            &input,
+            FormatType::CSV,
+            &output,
+            FormatType::AndroidStrings(Some("en".into())),
+        )
+        .unwrap();
 
         // Read back as Android to verify
         let android = crate::formats::AndroidStringsFormat::read_from(&output).unwrap();
@@ -665,7 +670,10 @@ mod tests {
             },
             entries: vec![Entry {
                 id: "apples".into(),
-                value: Translation::Plural(Plural { id: "apples".into(), forms }),
+                value: Translation::Plural(Plural {
+                    id: "apples".into(),
+                    forms,
+                }),
                 comment: Some("Count apples".into()),
                 status: EntryStatus::Translated,
                 custom: HashMap::new(),
@@ -677,8 +685,13 @@ mod tests {
         xc.write_to(&input).unwrap();
 
         // Convert to Android (English)
-        convert(&input, FormatType::Xcstrings, &output, FormatType::AndroidStrings(Some("en".into())))
-            .unwrap();
+        convert(
+            &input,
+            FormatType::Xcstrings,
+            &output,
+            FormatType::AndroidStrings(Some("en".into())),
+        )
+        .unwrap();
 
         // Read back as Android
         let android = crate::formats::AndroidStringsFormat::read_from(&output).unwrap();
@@ -698,7 +711,7 @@ mod tests {
                 PluralCategory::Many => ("many", i.value.clone()),
             })
             .collect();
-        qs.sort_by(|a, b| a.0.cmp(&b.0));
+        qs.sort_by(|a, b| a.0.cmp(b.0));
         assert!(qs.iter().any(|(q, v)| *q == "one" && v == "One apple"));
         assert!(qs.iter().any(|(q, v)| *q == "other" && v == "%d apples"));
     }
