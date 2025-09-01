@@ -339,4 +339,55 @@ mod tests {
         }
         assert!(matches!(entry.status, EntryStatus::NeedsReview));
     }
+
+    #[test]
+    fn test_autofix_does_not_mark_unchanged_entries() {
+        // English: first entry missing 'one', second entry already complete
+        let mut resource = Resource {
+            metadata: Metadata {
+                language: "en".into(),
+                domain: String::new(),
+                custom: Default::default(),
+            },
+            entries: vec![
+                Entry {
+                    id: "apples".into(),
+                    value: Translation::Plural(
+                        Plural::new(
+                            "apples",
+                            vec![(PluralCategory::Other, "%d apples".to_string())].into_iter(),
+                        )
+                        .unwrap(),
+                    ),
+                    comment: None,
+                    status: EntryStatus::Translated,
+                    custom: Default::default(),
+                },
+                Entry {
+                    id: "bananas".into(),
+                    value: Translation::Plural(
+                        Plural::new(
+                            "bananas",
+                            vec![
+                                (PluralCategory::One, "One banana".to_string()),
+                                (PluralCategory::Other, "%d bananas".to_string()),
+                            ]
+                            .into_iter(),
+                        )
+                        .unwrap(),
+                    ),
+                    comment: None,
+                    status: EntryStatus::Translated,
+                    custom: Default::default(),
+                },
+            ],
+        };
+
+        let added = autofix_fill_missing_from_other_resource(&mut resource);
+        assert!(added >= 1);
+        // First entry should be NeedsReview
+        assert!(matches!(resource.entries[0].status, EntryStatus::NeedsReview));
+        // Second entry should remain Translated
+        assert!(matches!(resource.entries[1].status, EntryStatus::Translated));
+    }
 }
