@@ -98,10 +98,10 @@ pub fn run_merge_command(
             // Set version field in the resources to make sure xcstrings format would not throw an error
             let version = version_override.unwrap_or_else(|| {
                 codec
-                .resources
-                .first()
-                .and_then(|r| r.metadata.custom.get("version").cloned())
-                .unwrap_or_else(|| "1.0".to_string())
+                    .resources
+                    .first()
+                    .and_then(|r| r.metadata.custom.get("version").cloned())
+                    .unwrap_or_else(|| "1.0".to_string())
             });
 
             println!("Setting metadata.version to: {}", version);

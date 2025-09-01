@@ -56,6 +56,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
 
             match &entry.value {
                 langcodec::types::Translation::Singular(value) => {
+                    println!("    Type: Singular");
                     if full {
                         println!("    Value: {}", value);
                     } else {
@@ -68,6 +69,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
                     }
                 }
                 langcodec::types::Translation::Plural(plural) => {
+                    println!("    Type: Plural");
                     println!("    Plural ID: {}", plural.id);
                     for (category, value) in &plural.forms {
                         if full {

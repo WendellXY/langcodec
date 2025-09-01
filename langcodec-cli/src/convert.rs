@@ -2,7 +2,7 @@ use crate::formats::{self, parse_custom_format};
 use crate::transformers::custom_format_to_resource;
 use crate::validation::{self, validate_custom_format_file};
 
-use langcodec::{convert_auto, formats::FormatType, Codec};
+use langcodec::{Codec, convert_auto, formats::FormatType};
 use std::fs::File;
 use std::io::BufWriter;
 
@@ -125,8 +125,7 @@ pub fn run_unified_convert_command(input: String, output: String, options: Conve
                         }
 
                         // If exclude_lang is specified, exclude those languages
-                        if !options.exclude_lang.is_empty() && options.exclude_lang.contains(lang)
-                        {
+                        if !options.exclude_lang.is_empty() && options.exclude_lang.contains(lang) {
                             return false;
                         }
 
@@ -138,18 +137,19 @@ pub fn run_unified_convert_command(input: String, output: String, options: Conve
             },
         ) {
             Ok(()) => {
-                let filter_msg = if !options.include_lang.is_empty() || !options.exclude_lang.is_empty() {
-                    let mut parts = Vec::new();
-                    if !options.include_lang.is_empty() {
-                        parts.push(format!("including: {}", options.include_lang.join(", ")));
-                    }
-                    if !options.exclude_lang.is_empty() {
-                        parts.push(format!("excluding: {}", options.exclude_lang.join(", ")));
-                    }
-                    format!(" with language filtering ({})", parts.join(", "))
-                } else {
-                    String::new()
-                };
+                let filter_msg =
+                    if !options.include_lang.is_empty() || !options.exclude_lang.is_empty() {
+                        let mut parts = Vec::new();
+                        if !options.include_lang.is_empty() {
+                            parts.push(format!("including: {}", options.include_lang.join(", ")));
+                        }
+                        if !options.exclude_lang.is_empty() {
+                            parts.push(format!("excluding: {}", options.exclude_lang.join(", ")));
+                        }
+                        format!(" with language filtering ({})", parts.join(", "))
+                    } else {
+                        String::new()
+                    };
 
                 println!(
                     "✅ Successfully converted to .langcodec (Resource JSON array){}",
@@ -158,18 +158,19 @@ pub fn run_unified_convert_command(input: String, output: String, options: Conve
                 return;
             }
             Err(e) => {
-                let filter_msg = if !options.include_lang.is_empty() || !options.exclude_lang.is_empty() {
-                    let mut parts = Vec::new();
-                    if !options.include_lang.is_empty() {
-                        parts.push(format!("including: {}", options.include_lang.join(", ")));
-                    }
-                    if !options.exclude_lang.is_empty() {
-                        parts.push(format!("excluding: {}", options.exclude_lang.join(", ")));
-                    }
-                    format!(" with language filtering ({})", parts.join(", "))
-                } else {
-                    String::new()
-                };
+                let filter_msg =
+                    if !options.include_lang.is_empty() || !options.exclude_lang.is_empty() {
+                        let mut parts = Vec::new();
+                        if !options.include_lang.is_empty() {
+                            parts.push(format!("including: {}", options.include_lang.join(", ")));
+                        }
+                        if !options.exclude_lang.is_empty() {
+                            parts.push(format!("excluding: {}", options.exclude_lang.join(", ")));
+                        }
+                        format!(" with language filtering ({})", parts.join(", "))
+                    } else {
+                        String::new()
+                    };
 
                 println!("❌ Conversion to .langcodec failed{}", filter_msg);
                 eprintln!("Error: {}", e);
@@ -186,7 +187,10 @@ pub fn run_unified_convert_command(input: String, output: String, options: Conve
     }
 
     // Strategy 2: Try custom formats for JSON/YAML/langcodec files
-    if input.ends_with(".json") || input.ends_with(".yaml") || input.ends_with(".yml") || input.ends_with(".langcodec")
+    if input.ends_with(".json")
+        || input.ends_with(".yaml")
+        || input.ends_with(".yml")
+        || input.ends_with(".langcodec")
     {
         // For JSON files without explicit format, try standard format detection first
         if input.ends_with(".json") && options.input_format.is_none() {
@@ -557,4 +561,3 @@ pub fn read_resources_from_any_input(
         input
     ))
 }
-
