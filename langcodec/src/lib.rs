@@ -145,6 +145,7 @@ pub mod formats;
 pub mod placeholder;
 pub mod traits;
 pub mod types;
+pub mod plural_rules;
 
 // Re-export most used types for easy consumption
 pub use crate::{
@@ -158,6 +159,7 @@ pub use crate::{
     error::Error,
     formats::FormatType,
     placeholder::{extract_placeholders, normalize_placeholders, signature},
+    plural_rules::{required_categories_for_str, validate_resource_plurals},
     types::{
         ConflictStrategy, Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource,
         Translation,

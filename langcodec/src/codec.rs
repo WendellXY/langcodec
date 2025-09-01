@@ -613,6 +613,28 @@ impl Codec {
         Ok(())
     }
 
+    /// Validates plural completeness per CLDR category sets for each locale.
+    ///
+    /// For each plural entry in each resource, checks that all required plural
+    /// categories for the language are present. Returns a Validation error with
+    /// aggregated details if any are missing.
+    pub fn validate_plurals(&self) -> Result<(), Error> {
+        use crate::plural_rules::validate_resource_plurals;
+
+        let mut problems: Vec<String> = Vec::new();
+        for res in &self.resources {
+            if let Err(e) = validate_resource_plurals(res) {
+                problems.push(e.to_string());
+            }
+        }
+
+        if problems.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::validation_error(problems.join("\n")))
+        }
+    }
+
     /// Cleans up resources by removing empty resources and entries.
     pub fn clean_up_resources(&mut self) {
         self.resources
@@ -962,7 +984,18 @@ impl Codec {
         path: P,
         format_type: FormatType,
     ) -> Result<(), Error> {
-        let language = crate::converter::infer_language_from_path(&path, &format_type)?;
+        let mut language = crate::converter::infer_language_from_path(&path, &format_type)?;
+        // Fallback to explicitly provided language if inference failed
+        if language.is_none() {
+            match &format_type {
+                FormatType::Strings(lang_opt) | FormatType::AndroidStrings(lang_opt) => {
+                    if let Some(l) = lang_opt {
+                        language = Some(l.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
 
         let domain = path
             .as_ref()
