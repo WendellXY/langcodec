@@ -7,6 +7,7 @@ use crate::{
     types::{Plural, PluralCategory, Resource, Translation},
 };
 
+use serde::Serialize;
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -74,6 +75,15 @@ lazy_static! {
     };
 }
 
+/// Non-fatal report describing missing plural categories for a key in a locale.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PluralValidationReport {
+    pub language: String,
+    pub key: String,
+    pub missing: BTreeSet<PluralCategory>,
+    pub have: BTreeSet<PluralCategory>,
+}
+
 /// Returns the required CLDR plural categories for a given language identifier.
 ///
 /// This is a curated subset of CLDR rules covering common locales. For unknown
@@ -109,49 +119,57 @@ pub fn missing_categories_for_plural(
     &required - &have
 }
 
-/// Validate a single resource for missing plural categories.
-pub fn validate_resource_plurals(resource: &Resource) -> Result<(), Error> {
-    let lang_id = match resource.parse_language_identifier() {
-        Some(id) => id,
-        None => {
-            return Err(Error::validation_error(format!(
-                "Invalid or missing language for resource: {}",
-                resource.metadata.language
-            )));
-        }
+/// Collect non-fatal plural issues for a single resource.
+pub fn collect_resource_plural_issues(resource: &Resource) -> Vec<PluralValidationReport> {
+    let Some(lang_id) = resource.parse_language_identifier() else {
+        return vec![PluralValidationReport {
+            language: resource.metadata.language.clone(),
+            key: String::from("<resource>"),
+            missing: [PluralCategory::Other].into_iter().collect(),
+            have: BTreeSet::new(),
+        }];
     };
 
-    let mut problems: Vec<String> = Vec::new();
-
+    let mut reports = Vec::new();
     for entry in &resource.entries {
         if let Translation::Plural(plural) = &entry.value {
+            let have: BTreeSet<PluralCategory> = plural.forms.keys().cloned().collect();
             let missing = missing_categories_for_plural(&lang_id, plural);
             if !missing.is_empty() {
-                let have: Vec<String> = plural
-                    .forms
-                    .keys()
-                    .map(|k| format!("{:?}", k))
-                    .collect();
-                let miss: Vec<String> = missing.into_iter().map(|k| format!("{:?}", k)).collect();
-                problems.push(format!(
-                    "lang='{}' key='{}': missing plural categories: [{}] (have: [{}])",
-                    resource.metadata.language,
-                    entry.id,
-                    miss.join(", "),
-                    have.join(", ")
-                ));
+                reports.push(PluralValidationReport {
+                    language: resource.metadata.language.clone(),
+                    key: entry.id.clone(),
+                    missing,
+                    have,
+                });
             }
         }
     }
+    reports
+}
 
-    if problems.is_empty() {
-        Ok(())
-    } else {
-        Err(Error::validation_error(format!(
-            "Plural validation failed:\n{}",
-            problems.join("\n")
-        )))
+/// Validate a single resource for missing plural categories.
+pub fn validate_resource_plurals(resource: &Resource) -> Result<(), Error> {
+    let reports = collect_resource_plural_issues(resource);
+    if reports.is_empty() {
+        return Ok(());
     }
+    let mut lines = Vec::new();
+    for r in reports {
+        let miss: Vec<String> = r.missing.iter().map(|k| format!("{:?}", k)).collect();
+        let have: Vec<String> = r.have.iter().map(|k| format!("{:?}", k)).collect();
+        lines.push(format!(
+            "lang='{}' key='{}': missing plural categories: [{}] (have: [{}])",
+            r.language,
+            r.key,
+            miss.join(", "),
+            have.join(", ")
+        ));
+    }
+    Err(Error::validation_error(format!(
+        "Plural validation failed:\n{}",
+        lines.join("\n")
+    )))
 }
 
 #[cfg(test)]
@@ -206,5 +224,36 @@ mod tests {
 
         let err = validate_resource_plurals(&resource).unwrap_err();
         assert!(format!("{}", err).contains("missing plural categories"));
+    }
+
+    #[test]
+    fn test_collect_resource_plural_issues() {
+        // English requires one/other; missing 'one' should yield a report
+        let resource = Resource {
+            metadata: Metadata {
+                language: "en".into(),
+                domain: String::new(),
+                custom: Default::default(),
+            },
+            entries: vec![Entry {
+                id: "apples".into(),
+                value: Translation::Plural(Plural::new(
+                    "apples",
+                    vec![(PluralCategory::Other, "%d apples".to_string())].into_iter(),
+                )
+                .unwrap()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: Default::default(),
+            }],
+        };
+
+        let reports = collect_resource_plural_issues(&resource);
+        assert_eq!(reports.len(), 1);
+        let r = &reports[0];
+        assert_eq!(r.language, "en");
+        assert_eq!(r.key, "apples");
+        assert!(r.missing.contains(&PluralCategory::One));
+        assert!(r.have.contains(&PluralCategory::Other));
     }
 }

@@ -619,20 +619,41 @@ impl Codec {
     /// categories for the language are present. Returns a Validation error with
     /// aggregated details if any are missing.
     pub fn validate_plurals(&self) -> Result<(), Error> {
-        use crate::plural_rules::validate_resource_plurals;
+        use crate::plural_rules::collect_resource_plural_issues;
 
-        let mut problems: Vec<String> = Vec::new();
+        let mut reports = Vec::new();
         for res in &self.resources {
-            if let Err(e) = validate_resource_plurals(res) {
-                problems.push(e.to_string());
-            }
+            reports.extend(collect_resource_plural_issues(res));
         }
 
-        if problems.is_empty() {
-            Ok(())
-        } else {
-            Err(Error::validation_error(problems.join("\n")))
+        if reports.is_empty() {
+            return Ok(());
         }
+
+        // Fold into an Error message for the validating API
+        let mut lines = Vec::new();
+        for r in reports {
+            let miss: Vec<String> = r.missing.iter().map(|k| format!("{:?}", k)).collect();
+            let have: Vec<String> = r.have.iter().map(|k| format!("{:?}", k)).collect();
+            lines.push(format!(
+                "lang='{}' key='{}': missing plural categories: [{}] (have: [{}])",
+                r.language,
+                r.key,
+                miss.join(", "),
+                have.join(", ")
+            ));
+        }
+        Err(Error::validation_error(lines.join("\n")))
+    }
+
+    /// Collects non-fatal plural validation reports across all resources.
+    pub fn collect_plural_issues(&self) -> Vec<crate::plural_rules::PluralValidationReport> {
+        use crate::plural_rules::collect_resource_plural_issues;
+        let mut reports = Vec::new();
+        for res in &self.resources {
+            reports.extend(collect_resource_plural_issues(res));
+        }
+        reports
     }
 
     /// Cleans up resources by removing empty resources and entries.
