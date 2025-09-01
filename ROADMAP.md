@@ -22,10 +22,10 @@ Legend: [ ] todo, [x] done, [~] in progress
   - [x] Detect placeholder mismatches across languages; strict vs non‑strict modes
   - [x] Auto‑fix option for common cases (`normalize_placeholders_in_place`)
   - [x] Tests across singular and plural entries; cross‑language normalization
-- [ ] Plural rules engine
-  - [ ] CLDR‑driven required category sets per locale (few/many/etc.)
-  - [ ] Validation pass: flag missing categories per key+locale
-  - [ ] CLI: `view --check-plurals` and `validate` output
+- [~] Plural rules engine
+  - [x] CLDR‑driven required category sets per locale (few/many/etc.)
+  - [x] Validation pass: flag missing categories per key+locale
+  - [~] CLI: `view --check-plurals` and `validate` output
 - [ ] Strict vs. permissive parsing
   - [ ] Global setting in lib; CLI `--strict` flag
   - [ ] Consistent error surfaces with actionable context
