@@ -48,4 +48,3 @@ fn test_stats_json_on_android_strings() {
     assert_eq!(by_status["do_not_translate"], 1);
     assert_eq!(by_status["new"], 1);
 }
-

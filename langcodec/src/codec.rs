@@ -619,6 +619,182 @@ impl Codec {
             .retain(|resource| !resource.entries.is_empty());
     }
 
+    /// Validate placeholder consistency across languages for each key.
+    ///
+    /// Rules (initial version):
+    /// - For each key, each language must have the same placeholder signature.
+    /// - For plural entries, all forms within a language must share the same signature.
+    /// - iOS vs Android differences like `%@`/`%1$@` vs `%s`/`%1$s` are normalized.
+    ///
+    /// Example
+    /// ```rust
+    /// use langcodec::{Codec, types::{Entry, EntryStatus, Metadata, Resource, Translation}};
+    /// let mut codec = Codec::new();
+    /// let en = Resource{
+    ///     metadata: Metadata{ language: "en".into(), domain: String::new(), custom: Default::default() },
+    ///     entries: vec![Entry{ id: "greet".into(), value: Translation::Singular("Hello %1$@".into()), comment: None, status: EntryStatus::Translated, custom: Default::default() }]
+    /// };
+    /// let fr = Resource{
+    ///     metadata: Metadata{ language: "fr".into(), domain: String::new(), custom: Default::default() },
+    ///     entries: vec![Entry{ id: "greet".into(), value: Translation::Singular("Bonjour %1$s".into()), comment: None, status: EntryStatus::Translated, custom: Default::default() }]
+    /// };
+    /// codec.add_resource(en);
+    /// codec.add_resource(fr);
+    /// assert!(codec.validate_placeholders(true).is_ok());
+    /// ```
+    pub fn validate_placeholders(&self, strict: bool) -> Result<(), Error> {
+        use crate::placeholder::signature;
+        use crate::types::Translation;
+        use std::collections::HashMap;
+
+        // key -> lang -> Vec<signatures per form or single>
+        let mut map: HashMap<String, HashMap<String, Vec<Vec<String>>>> = HashMap::new();
+
+        for res in &self.resources {
+            for entry in &res.entries {
+                let sigs: Vec<Vec<String>> = match &entry.value {
+                    Translation::Singular(v) => vec![signature(v)],
+                    Translation::Plural(p) => p.forms.values().map(|v| signature(v)).collect(),
+                };
+                map.entry(entry.id.clone())
+                    .or_default()
+                    .entry(res.metadata.language.clone())
+                    .or_default()
+                    .push(sigs.into_iter().flatten().collect());
+            }
+        }
+
+        let mut problems = Vec::new();
+
+        for (key, langs) in map {
+            // Per-language: ensure all collected signatures for this entry are identical
+            let mut per_lang_sig: HashMap<String, Vec<String>> = HashMap::new();
+            for (lang, sig_lists) in langs {
+                if let Some(first) = sig_lists.first() {
+                    if sig_lists.iter().any(|s| s != first) {
+                        problems.push(format!(
+                            "Key '{}' in '{}': inconsistent placeholders across forms: {:?}",
+                            key, lang, sig_lists
+                        ));
+                    }
+                    per_lang_sig.insert(lang, first.clone());
+                }
+            }
+
+            // Across languages, pick one baseline and compare
+            if let Some((base_lang, base_sig)) = per_lang_sig.iter().next() {
+                for (lang, sig) in &per_lang_sig {
+                    if sig != base_sig {
+                        problems.push(format!(
+                            "Key '{}' mismatch: {} {:?} vs {} {:?}",
+                            key, base_lang, base_sig, lang, sig
+                        ));
+                    }
+                }
+            }
+        }
+
+        if problems.is_empty() {
+            return Ok(());
+        }
+        if strict {
+            return Err(Error::validation_error(format!(
+                "Placeholder issues: {}",
+                problems.join(" | ")
+            )));
+        }
+        // Non-strict mode: treat as success
+        Ok(())
+    }
+
+    /// Collect placeholder issues without failing.
+    /// Returns a list of human-readable messages; empty if none.
+    ///
+    /// Useful to warn in non-strict mode.
+    pub fn collect_placeholder_issues(&self) -> Vec<String> {
+        use crate::placeholder::signature;
+        use crate::types::Translation;
+        use std::collections::HashMap;
+
+        let mut map: HashMap<String, HashMap<String, Vec<Vec<String>>>> = HashMap::new();
+        for res in &self.resources {
+            for entry in &res.entries {
+                let sigs: Vec<Vec<String>> = match &entry.value {
+                    Translation::Singular(v) => vec![signature(v)],
+                    Translation::Plural(p) => p.forms.values().map(|v| signature(v)).collect(),
+                };
+                map.entry(entry.id.clone())
+                    .or_default()
+                    .entry(res.metadata.language.clone())
+                    .or_default()
+                    .push(sigs.into_iter().flatten().collect());
+            }
+        }
+
+        let mut problems = Vec::new();
+        for (key, langs) in map {
+            let mut per_lang_sig: HashMap<String, Vec<String>> = HashMap::new();
+            for (lang, sig_lists) in langs {
+                if let Some(first) = sig_lists.first() {
+                    if sig_lists.iter().any(|s| s != first) {
+                        problems.push(format!(
+                            "Key '{}' in '{}': inconsistent placeholders across forms: {:?}",
+                            key, lang, sig_lists
+                        ));
+                    }
+                    per_lang_sig.insert(lang, first.clone());
+                }
+            }
+            if let Some((base_lang, base_sig)) = per_lang_sig.iter().next() {
+                for (lang, sig) in &per_lang_sig {
+                    if sig != base_sig {
+                        problems.push(format!(
+                            "Key '{}' mismatch: {} {:?} vs {} {:?}",
+                            key, base_lang, base_sig, lang, sig
+                        ));
+                    }
+                }
+            }
+        }
+        problems
+    }
+
+    /// Normalize placeholders in all entries (mutates in place).
+    /// Converts iOS patterns like `%@`, `%1$@`, `%ld` to canonical forms (%s, %1$s, %d/%u).
+    ///
+    /// Example
+    /// ```rust
+    /// use langcodec::{Codec, types::{Entry, EntryStatus, Metadata, Resource, Translation}};
+    /// let mut codec = Codec::new();
+    /// codec.add_resource(Resource{
+    ///     metadata: Metadata{ language: "en".into(), domain: String::new(), custom: Default::default() },
+    ///     entries: vec![Entry{ id: "id".into(), value: Translation::Singular("Hello %@ and %1$@".into()), comment: None, status: EntryStatus::Translated, custom: Default::default() }]
+    /// });
+    /// codec.normalize_placeholders_in_place();
+    /// let v = match &codec.resources[0].entries[0].value { Translation::Singular(v) => v.clone(), _ => unreachable!() };
+    /// assert!(v.contains("%s") && v.contains("%1$s"));
+    /// ```
+    pub fn normalize_placeholders_in_place(&mut self) {
+        use crate::placeholder::normalize_placeholders;
+        use crate::types::Translation;
+        for res in &mut self.resources {
+            for entry in &mut res.entries {
+                match &mut entry.value {
+                    Translation::Singular(v) => {
+                        let nv = normalize_placeholders(v);
+                        *v = nv;
+                    }
+                    Translation::Plural(p) => {
+                        for v in p.forms.values_mut() {
+                            let nv = normalize_placeholders(v);
+                            *v = nv;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Merge resources with the same language by the given strategy.
     ///
     /// This method groups resources by language and merges multiple resources
@@ -1583,5 +1759,137 @@ mod tests {
         assert_eq!(merged.resources.len(), 1);
         assert_eq!(merged.resources[0].metadata.language, "en");
         assert_eq!(merged.resources[0].entries.len(), 2);
+    }
+
+    #[test]
+    fn test_validate_placeholders_across_languages() {
+        let mut codec = Codec::new();
+        // English with %1$@, French with %1$s should match after normalization
+        codec.add_resource(Resource {
+            metadata: Metadata {
+                language: "en".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "greet".into(),
+                value: Translation::Singular("Hello %1$@".into()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        });
+        codec.add_resource(Resource {
+            metadata: Metadata {
+                language: "fr".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "greet".into(),
+                value: Translation::Singular("Bonjour %1$s".into()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        });
+        assert!(codec.validate_placeholders(true).is_ok());
+    }
+
+    #[test]
+    fn test_validate_placeholders_mismatch() {
+        let mut codec = Codec::new();
+        codec.add_resource(Resource {
+            metadata: Metadata {
+                language: "en".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "count".into(),
+                value: Translation::Singular("%d files".into()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        });
+        codec.add_resource(Resource {
+            metadata: Metadata {
+                language: "fr".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "count".into(),
+                value: Translation::Singular("%s fichiers".into()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        });
+        assert!(codec.validate_placeholders(true).is_err());
+    }
+
+    #[test]
+    fn test_collect_placeholder_issues_non_strict_ok() {
+        let mut codec = Codec::new();
+        codec.add_resource(Resource {
+            metadata: Metadata {
+                language: "en".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "count".into(),
+                value: Translation::Singular("%d files".into()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        });
+        codec.add_resource(Resource {
+            metadata: Metadata {
+                language: "fr".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "count".into(),
+                value: Translation::Singular("%s fichiers".into()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        });
+        // Non-strict should be Ok but issues present
+        assert!(codec.validate_placeholders(false).is_ok());
+        let issues = codec.collect_placeholder_issues();
+        assert!(!issues.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_placeholders_in_place() {
+        let mut codec = Codec::new();
+        codec.add_resource(Resource {
+            metadata: Metadata {
+                language: "en".into(),
+                domain: "d".into(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "g".into(),
+                value: Translation::Singular("Hello %@ and %1$@".into()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        });
+        codec.normalize_placeholders_in_place();
+        let v = match &codec.resources[0].entries[0].value {
+            Translation::Singular(v) => v.clone(),
+            _ => String::new(),
+        };
+        assert!(v.contains("%s"));
+        assert!(v.contains("%1$s"));
     }
 }
