@@ -1,4 +1,4 @@
-use langcodec::{Codec, types::EntryStatus};
+use langcodec::{collect_resource_plural_issues, Codec, types::EntryStatus};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -46,6 +46,10 @@ pub fn print_stats(codec: &Codec, lang_filter: &Option<String>, json_output: boo
             for e in &res.entries {
                 accumulate(&mut stats, &e.status);
             }
+            let plural_issues = collect_resource_plural_issues(res);
+            let missing_plural_entries = plural_issues.len();
+            let missing_plural_categories_total: usize =
+                plural_issues.iter().map(|r| r.missing.len()).sum();
             let percent = if stats.denominator == 0 {
                 100.0
             } else {
@@ -56,6 +60,8 @@ pub fn print_stats(codec: &Codec, lang_filter: &Option<String>, json_output: boo
                 "total": stats.total,
                 "by_status": stats.by_status,
                 "completion_percent": (percent * 100.0).round() / 100.0,
+                "missing_plural_entries": missing_plural_entries,
+                "missing_plural_categories_total": missing_plural_categories_total,
             }));
         }
         let summary = json!({
@@ -79,6 +85,10 @@ pub fn print_stats(codec: &Codec, lang_filter: &Option<String>, json_output: boo
         for e in &res.entries {
             accumulate(&mut stats, &e.status);
         }
+        let plural_issues = collect_resource_plural_issues(res);
+        let missing_plural_entries = plural_issues.len();
+        let missing_plural_categories_total: usize =
+            plural_issues.iter().map(|r| r.missing.len()).sum();
         let percent = if stats.denominator == 0 {
             100.0
         } else {
@@ -110,5 +120,9 @@ pub fn print_stats(codec: &Codec, lang_filter: &Option<String>, json_output: boo
             println!("    {}: {}", k, v);
         }
         println!("  Completion: {:.2}%", percent);
+        println!(
+            "  Missing plurals: {} (missing categories: {})",
+            missing_plural_entries, missing_plural_categories_total
+        );
     }
 }
