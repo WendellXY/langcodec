@@ -74,6 +74,10 @@ enum Commands {
         /// Display full value without truncation (even in terminal)
         #[arg(long)]
         full: bool,
+
+        /// Validate plural completeness against CLDR category sets
+        #[arg(long, default_value_t = false)]
+        check_plurals: bool,
     },
 
     /// Merge multiple localization files into one output file with automatic format detection and conversion.
@@ -187,7 +191,12 @@ fn main() {
                 },
             );
         }
-        Commands::View { input, lang, full } => {
+        Commands::View {
+            input,
+            lang,
+            full,
+            check_plurals,
+        } => {
             // Create validation context
             let mut context = ValidationContext::new().with_input_file(input.clone());
 
@@ -223,6 +232,16 @@ fn main() {
             }
 
             print_view(&codec, &lang, full);
+
+            if check_plurals {
+                match codec.validate_plurals() {
+                    Ok(()) => println!("\n✅ Plural validation passed"),
+                    Err(e) => {
+                        eprintln!("\n❌ Plural validation failed: {}", e);
+                        std::process::exit(2);
+                    }
+                }
+            }
         }
         Commands::Merge {
             inputs,

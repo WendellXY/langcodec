@@ -143,6 +143,7 @@ pub mod converter;
 pub mod error;
 pub mod formats;
 pub mod placeholder;
+pub mod plural_rules;
 pub mod traits;
 pub mod types;
 
@@ -158,6 +159,10 @@ pub use crate::{
     error::Error,
     formats::FormatType,
     placeholder::{extract_placeholders, normalize_placeholders, signature},
+    plural_rules::{
+        PluralValidationReport, autofix_fill_missing_from_other_resource,
+        collect_resource_plural_issues, required_categories_for_str, validate_resource_plurals,
+    },
     types::{
         ConflictStrategy, Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource,
         Translation,

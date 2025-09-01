@@ -613,6 +613,60 @@ impl Codec {
         Ok(())
     }
 
+    /// Validates plural completeness per CLDR category sets for each locale.
+    ///
+    /// For each plural entry in each resource, checks that all required plural
+    /// categories for the language are present. Returns a Validation error with
+    /// aggregated details if any are missing.
+    pub fn validate_plurals(&self) -> Result<(), Error> {
+        use crate::plural_rules::collect_resource_plural_issues;
+
+        let mut reports = Vec::new();
+        for res in &self.resources {
+            reports.extend(collect_resource_plural_issues(res));
+        }
+
+        if reports.is_empty() {
+            return Ok(());
+        }
+
+        // Fold into an Error message for the validating API
+        let mut lines = Vec::new();
+        for r in reports {
+            let miss: Vec<String> = r.missing.iter().map(|k| format!("{:?}", k)).collect();
+            let have: Vec<String> = r.have.iter().map(|k| format!("{:?}", k)).collect();
+            lines.push(format!(
+                "lang='{}' key='{}': missing plural categories: [{}] (have: [{}])",
+                r.language,
+                r.key,
+                miss.join(", "),
+                have.join(", ")
+            ));
+        }
+        Err(Error::validation_error(lines.join("\n")))
+    }
+
+    /// Collects non-fatal plural validation reports across all resources.
+    pub fn collect_plural_issues(&self) -> Vec<crate::plural_rules::PluralValidationReport> {
+        use crate::plural_rules::collect_resource_plural_issues;
+        let mut reports = Vec::new();
+        for res in &self.resources {
+            reports.extend(collect_resource_plural_issues(res));
+        }
+        reports
+    }
+
+    /// Autofix: fill missing plural categories using 'other' and mark entries as NeedsReview.
+    /// Returns total categories added across all resources.
+    pub fn autofix_fill_missing_from_other(&mut self) -> usize {
+        use crate::plural_rules::autofix_fill_missing_from_other_resource;
+        let mut total = 0usize;
+        for res in &mut self.resources {
+            total += autofix_fill_missing_from_other_resource(res);
+        }
+        total
+    }
+
     /// Cleans up resources by removing empty resources and entries.
     pub fn clean_up_resources(&mut self) {
         self.resources
@@ -962,7 +1016,18 @@ impl Codec {
         path: P,
         format_type: FormatType,
     ) -> Result<(), Error> {
-        let language = crate::converter::infer_language_from_path(&path, &format_type)?;
+        let mut language = crate::converter::infer_language_from_path(&path, &format_type)?;
+        // Fallback to explicitly provided language if inference failed
+        if language.is_none() {
+            match &format_type {
+                FormatType::Strings(lang_opt) | FormatType::AndroidStrings(lang_opt) => {
+                    if let Some(l) = lang_opt {
+                        language = Some(l.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
 
         let domain = path
             .as_ref()
