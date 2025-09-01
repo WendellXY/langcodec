@@ -1,46 +1,31 @@
 # langcodec
 
-**A universal localization file toolkit in Rust.**
+Universal localization toolkit: library + CLI for Apple/Android/CSV/TSV.
 
-`langcodec` provides format-agnostic parsing, conversion, merging, and serialization for major localization formats, including Apple `.strings`, `.xcstrings`, Android `strings.xml`, CSV, and TSV. It enables seamless conversion and merging between formats, powerful internal data modeling, and extensibility for new formats.
+- Library crate (`langcodec`): parse, write, convert, merge with a unified model
+- CLI crate (`langcodec-cli`): convert, merge, view, stats, debug
 
 ---
 
 ## Status
 
-This is a `0.4.0` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, the API may evolve as development continues. The library is functional and well-tested, but breaking changes may occur in future releases. Contributions and feedback are very welcome to help shape the future of this project!
+This is a `0.4.0` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, APIs may evolve. Contributions and feedback are very welcome!
 
 ---
 
 ## Installation
 
-### CLI Tool
-
-Install the command-line interface from crates.io:
-
-```sh
-cargo install langcodec-cli
-```
-
-### Library
-
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-langcodec = "0.4.0"
-```
+- CLI: `cargo install langcodec-cli`
+- Lib: add `langcodec = "0.4.0"` to your `Cargo.toml`
 
 ---
 
 ## Features
 
-- ✨ Parse, write, convert, and merge multiple localization file formats
-- 🦀 Idiomatic, modular, and ergonomic Rust API
-- 📦 Designed for CLI tools, CI/CD pipelines, and library integration
-- 🔄 Unified internal model (`Resource`) for lossless format-agnostic processing
-- 📖 Well-documented, robust error handling and extensible codebase
-- 🚀 More formats and CLI support are planned for upcoming releases
+- Parse, write, convert, merge: `.strings`, `.xcstrings`, `strings.xml`, CSV, TSV
+- Unified `Resource` model (`Translation::Singular|Plural`)
+- Plurals: `.xcstrings` and Android `<plurals>` supported
+- CLI helpers: convert, merge, view, stats (JSON or human-readable)
 
 ---
 
@@ -62,103 +47,39 @@ langcodec = "0.4.0"
 
 ---
 
-## Usage
+## Getting Started
 
-### As a Library
-
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-langcodec = "0.4.0"
-```
-
-#### Example: Read, Manipulate, and Write
-
-```rust
-use langcodec::{Codec, formats::FormatType};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut codec = Codec::new();
-
-    // Read Apple .strings file
-    codec.read_file_by_extension("en.lproj/Localizable.strings", None)?;
-
-    // Manipulate resources if needed (see types.rs for Resource/Entry APIs)
-
-    // Write changes back to the original file
-    codec.write_to_file()?;
-
-    // Convert Apple's strings localization to Android's strings
-    convert_auto("Localizable.strings", "strings.xml")?;
-
-    Ok(())
-}
-```
+- Library guide: see `langcodec/README.md`
+- CLI guide: see `langcodec-cli/README.md`
 
 ---
 
-### CLI
+### CLI Highlights
 
-A CLI tool is provided for easy conversion, merging, and debugging of localization files.
-
-#### Install
-
-```sh
-# From crates.io (recommended)
-cargo install langcodec-cli
-
-# From source
-cargo install --path langcodec-cli
-```
-
-#### Commands
-
-- **Convert** between formats:
-
-  ```sh
-  langcodec convert -i input.strings -o output.xml
-  langcodec convert -i input.csv -o output.strings
-  langcodec convert -i input.tsv -o output.xcstrings
-  langcodec convert -i input.json -o output.xcstrings
-  # Override xcstrings metadata
-  langcodec convert -i input.json -o output.xcstrings --source-language en-GB --version 2.0
-  ```
-
-  The convert command automatically detects input and output formats from file extensions.
-  For JSON files, it will try multiple parsing strategies:
-  - Standard Resource format (if supported by langcodec)
-  - JSON key-value pairs (for custom JSON formats)
-
-- **Merge** multiple files of the same format:
-
-  ```sh
-  langcodec merge -i file1.csv file2.csv -o merged.csv --lang en --strategy last
-  langcodec merge -i file1.tsv file2.tsv -o merged.tsv --lang en --strategy last
-  langcodec merge -i en.lproj/Localizable.strings fr.lproj/Localizable.strings -o merged.strings --lang en
-  ```
-
-  - `--strategy` can be `last` (default), `first`, or `error` (fail on conflict).
-  - `--lang` is required for formats that need a language code (e.g., CSV, .strings).
-  - For `.xcstrings` output, you can override metadata:
-    - `--source-language` (default: `en`)
-    - `--version` (default: `1.0`)
-
-- **Debug**: Output a file's parsed representation as JSON:
-
-  ```sh
-  langcodec debug -i input.csv --lang en
-  langcodec debug -i input.tsv --lang en
-  langcodec debug -i input.strings --lang en -o output.json
-  ```
-
-- **View**: Pretty-print entries in a localization file:
-
-  ```sh
-  langcodec view -i input.strings --lang en
-  langcodec view -i input.tsv --lang en
-  langcodec view -i strings.xml --full   # Displays "Type: Plural" for Android plurals
-  ```
+- Convert: `langcodec convert -i input.strings -o strings.xml`
+- View: `langcodec view -i strings.xml --full`
+- Stats (JSON): `langcodec stats -i Localizable.xcstrings --json`
+  - See full options: langcodec-cli/README.md#stats
+  - Example output:
+    ```json
+    {
+      "summary": { "languages": 1, "unique_keys": 42 },
+      "languages": [
+        {
+          "language": "en",
+          "total": 42,
+          "by_status": {
+            "translated": 30,
+            "needs_review": 2,
+            "stale": 0,
+            "new": 10,
+            "do_not_translate": 0
+          },
+          "completion_percent": 75.0
+        }
+      ]
+    }
+    ```
 
 #### Notes
 
@@ -175,76 +96,20 @@ cargo install --path langcodec-cli
 - `.xcstrings` plural variations convert to Android `<plurals>` when targeting Android output.
 - The `view` command prints plural entries with a "Type: Plural" header and each category/value.
 
-#### Custom Formats
-
-The CLI supports additional custom formats for specialized use cases:
-
-**JSON Language Map** (`json-language-map`):
-
-```json
-{
-    "key": "hello_world",
-    "en": "Hello, World!",
-    "fr": "Bonjour, le monde!"
-}
-```
-
-**JSON Array Language Map** (`json-array-language-map`):
-
-<!-- cspell:disable -->
-```json
-[
-    {
-        "key": "hello_world",
-        "en": "Hello, World!",
-        "fr": "Bonjour, le monde!"
-    },
-    {
-        "key": "welcome_message",
-        "en": "Welcome to our app!",
-        "fr": "Bienvenue dans notre application!"
-    }
-]
-```
-<!-- cspell:enable -->
-
-**YAML Language Map** (`yaml-language-map`):
-
-```yaml
-key: hello_world
-en: Hello, World!
-fr: Bonjour, le monde!
-```
-
-Use these formats with the `--input-format` flag:
-
-```sh
-langcodec convert -i input.json -o output.xcstrings --input-format json-language-map
-langcodec convert -i input.json -o output.xcstrings --input-format json-array-language-map
-langcodec convert -i input.yaml -o output.xcstrings --input-format yaml-language-map
-```
+For JSON/YAML custom formats and more examples, see `langcodec-cli/README.md`.
 
 ---
 
 ## Data Model
 
-At the core of `langcodec` is the `Resource` struct—an expressive, format-agnostic model for localization data.
-See [`src/types.rs`](src/types.rs) for details.
-
-```rust
-pub struct Resource {
-    pub metadata: Metadata,
-    pub entries: Vec<Entry>,
-}
-```
-
-Each `Entry` supports singular and plural translations, comments, status, and custom fields.
+At the core is the `Resource` struct with `Entry` values (singular or plural). See `langcodec/README.md` and docs.rs for details.
 
 ---
 
-## Error Handling
+## Roadmap & Contributing
 
-All public APIs use the crate's own `Error` enum, which provides meaningful variants for parsing, I/O, and format mismatches.
+- Roadmap: see `ROADMAP.md`
+- Contributions welcome! Please open issues/PRs.
 
 ---
 
