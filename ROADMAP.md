@@ -17,11 +17,11 @@ Legend: [ ] todo, [x] done, [~] in progress
 
 ## M1. Quality & Safety
 
-- [ ] Placeholder normalization and validation
-  - [ ] Mapping between iOS (`%1$@`, `%d`) and Android (`%1$s`, `%d`)
-  - [ ] Detect placeholder mismatches across languages; fail in strict mode, warn otherwise
-  - [ ] Auto‑fix option for common cases (`%@` → `%s`, `%1$@` → `%1$s`)
-  - [ ] Tests across `.strings`, Android, `.xcstrings`
+- [x] Placeholder normalization and validation
+  - [x] Mapping between iOS (`%1$@`, `%@`, `%ld`) and Android (`%1$s`, `%s`, `%d/%u`)
+  - [x] Detect placeholder mismatches across languages; strict vs non‑strict modes
+  - [x] Auto‑fix option for common cases (`normalize_placeholders_in_place`)
+  - [x] Tests across singular and plural entries; cross‑language normalization
 - [ ] Plural rules engine
   - [ ] CLDR‑driven required category sets per locale (few/many/etc.)
   - [ ] Validation pass: flag missing categories per key+locale
