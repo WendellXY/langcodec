@@ -606,3 +606,100 @@ pub fn merge_resources(
 
     Ok(merged)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Entry, EntryStatus, Metadata, Plural, PluralCategory, Translation};
+    use std::collections::{BTreeMap, HashMap};
+
+    #[test]
+    fn test_convert_csv_to_android_strings_en() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input = tmp.path().join("in.csv");
+        let output = tmp.path().join("strings.xml");
+
+        // CSV with header and two rows
+        std::fs::write(
+            &input,
+            "key,en,fr\nhello,Hello,Bonjour\nbye,Goodbye,Au revoir\n",
+        )
+        .unwrap();
+
+        convert(&input, FormatType::CSV, &output, FormatType::AndroidStrings(Some("en".into())))
+            .unwrap();
+
+        // Read back as Android to verify
+        let android = crate::formats::AndroidStringsFormat::read_from(&output).unwrap();
+        // ensure we have only strings for the selected language
+        assert_eq!(android.strings.len(), 2);
+        let mut names: Vec<&str> = android.strings.iter().map(|s| s.name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, vec!["bye", "hello"]);
+        let hello = android.strings.iter().find(|s| s.name == "hello").unwrap();
+        assert_eq!(hello.value, "Hello");
+        let bye = android.strings.iter().find(|s| s.name == "bye").unwrap();
+        assert_eq!(bye.value, "Goodbye");
+    }
+
+    #[test]
+    fn test_convert_xcstrings_plurals_to_android() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input = tmp.path().join("in.xcstrings");
+        let output = tmp.path().join("strings.xml");
+
+        // Build a Resource with a plural entry for English
+        let mut custom = HashMap::new();
+        custom.insert("source_language".into(), "en".into());
+        custom.insert("version".into(), "1.0".into());
+
+        let mut forms = BTreeMap::new();
+        forms.insert(PluralCategory::One, "One apple".to_string());
+        forms.insert(PluralCategory::Other, "%d apples".to_string());
+
+        let res = Resource {
+            metadata: Metadata {
+                language: "en".into(),
+                domain: "domain".into(),
+                custom,
+            },
+            entries: vec![Entry {
+                id: "apples".into(),
+                value: Translation::Plural(Plural { id: "apples".into(), forms }),
+                comment: Some("Count apples".into()),
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        // Write XCStrings input
+        let xc = crate::formats::XcstringsFormat::try_from(vec![res]).unwrap();
+        xc.write_to(&input).unwrap();
+
+        // Convert to Android (English)
+        convert(&input, FormatType::Xcstrings, &output, FormatType::AndroidStrings(Some("en".into())))
+            .unwrap();
+
+        // Read back as Android
+        let android = crate::formats::AndroidStringsFormat::read_from(&output).unwrap();
+        assert_eq!(android.plurals.len(), 1);
+        let p = &android.plurals[0];
+        assert_eq!(p.name, "apples");
+        // Should include at least 'one' and 'other'
+        let mut qs: Vec<_> = p
+            .items
+            .iter()
+            .map(|i| match i.quantity {
+                PluralCategory::One => ("one", i.value.clone()),
+                PluralCategory::Other => ("other", i.value.clone()),
+                PluralCategory::Zero => ("zero", i.value.clone()),
+                PluralCategory::Two => ("two", i.value.clone()),
+                PluralCategory::Few => ("few", i.value.clone()),
+                PluralCategory::Many => ("many", i.value.clone()),
+            })
+            .collect();
+        qs.sort_by(|a, b| a.0.cmp(&b.0));
+        assert!(qs.iter().any(|(q, v)| *q == "one" && v == "One apple"));
+        assert!(qs.iter().any(|(q, v)| *q == "other" && v == "%d apples"));
+    }
+}

@@ -1,6 +1,6 @@
 //! Support for Android `strings.xml` localization format.
 //!
-//! Only singular `<string>` elements are supported. Plurals (`<plurals>`) are not yet implemented.
+//! Supports singular `<string>` and plural `<plurals>` elements.
 //! Provides parsing, serialization, and conversion to/from the internal `Resource` model.
 
 use quick_xml::{
@@ -12,18 +12,20 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     io::{BufRead, Write},
+    str::FromStr,
 };
 
 use crate::{
     error::Error,
     traits::Parser,
-    types::{Entry, EntryStatus, Metadata, Resource, Translation},
+    types::{Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource, Translation},
 };
 
 #[derive(Debug, Serialize)]
 pub struct Format {
     pub language: String,
     pub strings: Vec<StringResource>,
+    pub plurals: Vec<PluralsResource>,
 }
 
 impl Parser for Format {
@@ -33,13 +35,18 @@ impl Parser for Format {
         xml_reader.config_mut().trim_text(true);
 
         let mut buf = Vec::new();
-        let mut resources = Vec::new();
+        let mut string_resources = Vec::new();
+        let mut plural_resources: Vec<PluralsResource> = Vec::new();
 
         loop {
             match xml_reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) if e.name().as_ref() == b"string" => {
                     let sr = parse_string_resource(e, &mut xml_reader)?;
-                    resources.push(sr);
+                    string_resources.push(sr);
+                }
+                Ok(Event::Start(ref e)) if e.name().as_ref() == b"plurals" => {
+                    let pr = parse_plurals_resource(e, &mut xml_reader)?;
+                    plural_resources.push(pr);
                 }
                 Ok(Event::Eof) => break,
                 Ok(_) => {}
@@ -49,7 +56,8 @@ impl Parser for Format {
         }
         Ok(Format {
             language: String::new(), // strings.xml does not contain language metadata
-            strings: resources,
+            strings: string_resources,
+            plurals: plural_resources,
         })
     }
 
@@ -77,6 +85,39 @@ impl Parser for Format {
             xml_writer.write_event(Event::Text(BytesText::new("\n")))?;
         }
 
+        // Write plurals
+        for pr in &self.plurals {
+            let mut elem = BytesStart::new("plurals");
+            elem.push_attribute(("name", pr.name.as_str()));
+            if let Some(trans) = pr.translatable {
+                elem.push_attribute(("translatable", if trans { "true" } else { "false" }));
+            }
+            xml_writer.write_event(Event::Start(elem))?;
+            xml_writer.write_event(Event::Text(BytesText::new("\n")))?;
+
+            // Sort items by quantity for stable output
+            let mut items = pr.items.clone();
+            items.sort_by(|a, b| a.quantity.cmp(&b.quantity));
+            for item in &items {
+                let mut it = BytesStart::new("item");
+                it.push_attribute(("quantity", match item.quantity {
+                    PluralCategory::Zero => "zero",
+                    PluralCategory::One => "one",
+                    PluralCategory::Two => "two",
+                    PluralCategory::Few => "few",
+                    PluralCategory::Many => "many",
+                    PluralCategory::Other => "other",
+                }));
+                xml_writer.write_event(Event::Start(it))?;
+                xml_writer.write_event(Event::Text(BytesText::new(&item.value)))?;
+                xml_writer.write_event(Event::End(BytesEnd::new("item")))?;
+                xml_writer.write_event(Event::Text(BytesText::new("\n")))?;
+            }
+
+            xml_writer.write_event(Event::End(BytesEnd::new("plurals")))?;
+            xml_writer.write_event(Event::Text(BytesText::new("\n")))?;
+        }
+
         xml_writer.write_event(Event::End(BytesEnd::new("resources")))?;
         xml_writer.write_event(Event::Text(BytesText::new("\n")))?;
         Ok(())
@@ -85,26 +126,85 @@ impl Parser for Format {
 
 impl From<Resource> for Format {
     fn from(value: Resource) -> Self {
+        let mut strings = Vec::new();
+        let mut plurals = Vec::new();
+        for entry in &value.entries {
+            match &entry.value {
+                Translation::Singular(_) => strings.push(StringResource::from_entry(entry)),
+                Translation::Plural(p) => {
+                    let mut items: Vec<PluralItem> = p
+                        .forms
+                        .iter()
+                        .map(|(cat, v)| PluralItem {
+                            quantity: cat.clone(),
+                            value: v.clone(),
+                        })
+                        .collect();
+                    // Ensure stable order later
+                    items.sort_by(|a, b| a.quantity.cmp(&b.quantity));
+                    plurals.push(PluralsResource {
+                        name: entry.id.clone(),
+                        items,
+                        translatable: match entry.status {
+                            EntryStatus::Translated => Some(true),
+                            EntryStatus::DoNotTranslate => Some(false),
+                            _ => None,
+                        },
+                    });
+                }
+            }
+        }
+
         Self {
             language: value.metadata.language.clone(),
-            strings: value
-                .entries
-                .iter()
-                .map(StringResource::from_entry)
-                .collect(),
+            strings,
+            plurals,
         }
     }
 }
 
 impl From<Format> for Resource {
     fn from(value: Format) -> Self {
+        let mut entries: Vec<Entry> = value
+            .strings
+            .iter()
+            .map(StringResource::to_entry)
+            .collect();
+
+        // Convert plurals to entries
+        for pr in &value.plurals {
+            let mut forms = std::collections::BTreeMap::new();
+            for item in &pr.items {
+                forms.insert(item.quantity.clone(), item.value.clone());
+            }
+            let all_empty = forms.values().all(|v| v.is_empty());
+            let status = match pr.translatable {
+                Some(true) => EntryStatus::Translated,
+                Some(false) => EntryStatus::DoNotTranslate,
+                None => {
+                    if all_empty {
+                        EntryStatus::New
+                    } else {
+                        EntryStatus::Translated
+                    }
+                }
+            };
+            entries.push(Entry {
+                id: pr.name.clone(),
+                value: Translation::Plural(Plural { id: pr.name.clone(), forms }),
+                comment: None,
+                status,
+                custom: HashMap::new(),
+            });
+        }
+
         Resource {
             metadata: Metadata {
                 language: value.language.clone(),
                 domain: String::new(), // strings.xml does not have a domain
                 custom: HashMap::new(),
             },
-            entries: value.strings.iter().map(StringResource::to_entry).collect(),
+            entries,
         }
     }
 }
@@ -147,6 +247,19 @@ impl StringResource {
             },
         }
     }
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PluralItem {
+    pub quantity: PluralCategory,
+    pub value: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PluralsResource {
+    pub name: String,
+    pub items: Vec<PluralItem>,
+    pub translatable: Option<bool>,
 }
 
 fn parse_string_resource<R: BufRead>(
@@ -192,6 +305,69 @@ fn parse_string_resource<R: BufRead>(
     })
 }
 
+fn parse_plurals_resource<R: BufRead>(
+    e: &BytesStart,
+    xml_reader: &mut Reader<R>,
+) -> Result<PluralsResource, Error> {
+    let mut name: Option<String> = None;
+    let mut translatable: Option<bool> = None;
+
+    for attr in e.attributes().with_checks(false) {
+        let attr = attr.map_err(|e| Error::DataMismatch(e.to_string()))?;
+        match attr.key.as_ref() {
+            b"name" => name = Some(attr.unescape_value()?.to_string()),
+            b"translatable" => {
+                let v = attr.unescape_value()?.to_string();
+                translatable = Some(v == "true");
+            }
+            _ => {}
+        }
+    }
+    let name = name.ok_or_else(|| Error::InvalidResource("plurals tag missing 'name'".to_string()))?;
+
+    let mut buf = Vec::new();
+    let mut items: Vec<PluralItem> = Vec::new();
+    loop {
+        match xml_reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) if e.name().as_ref() == b"item" => {
+                // parse quantity
+                let mut quantity: Option<PluralCategory> = None;
+                for attr in e.attributes().with_checks(false) {
+                    let attr = attr.map_err(|e| Error::DataMismatch(e.to_string()))?;
+                    if attr.key.as_ref() == b"quantity" {
+                        let v = attr.unescape_value()?.to_string();
+                        quantity = PluralCategory::from_str(&v).ok();
+                    }
+                }
+                let quantity = quantity.ok_or_else(|| Error::InvalidResource("item missing 'quantity'".to_string()))?;
+                // Read text content until End(item)
+                let mut value = String::new();
+                let mut local_buf = Vec::new();
+                loop {
+                    match xml_reader.read_event_into(&mut local_buf) {
+                        Ok(Event::Text(e)) => {
+                            value.push_str(&e.unescape().map_err(Error::XmlParse)?.to_string());
+                        }
+                        Ok(Event::End(ref end)) if end.name().as_ref() == b"item" => break,
+                        Ok(Event::Eof) => return Err(Error::InvalidResource("Unexpected EOF inside <item>".to_string())),
+                        Ok(_) => {}
+                        Err(e) => return Err(Error::XmlParse(e)),
+                    }
+                    local_buf.clear();
+                }
+                items.push(PluralItem { quantity, value });
+            }
+            Ok(Event::End(ref end)) if end.name().as_ref() == b"plurals" => break,
+            Ok(Event::Eof) => return Err(Error::InvalidResource("Unexpected EOF inside <plurals>".to_string())),
+            Ok(_) => {}
+            Err(e) => return Err(Error::XmlParse(e)),
+        }
+        buf.clear();
+    }
+
+    Ok(PluralsResource { name, items, translatable })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_plurals_ignored() {
+    fn test_parse_plurals_included() {
         let xml = r#"
         <resources>
             <string name="hello">Hello</string>
@@ -234,10 +410,13 @@ mod tests {
             </plurals>
         </resources>
         "#;
-        // Plurals are ignored (not parsed as string resources), so only 1 entry.
+        // Plurals are parsed into `plurals`
         let format = Format::from_str(xml).unwrap();
         assert_eq!(format.strings.len(), 1);
+        assert_eq!(format.plurals.len(), 1);
         assert_eq!(format.strings[0].name, "hello");
+        assert_eq!(format.plurals[0].name, "apples");
+        assert_eq!(format.plurals[0].items.len(), 2);
     }
 
     #[test]
@@ -259,6 +438,10 @@ mod tests {
         <resources>
             <string name="greet">Hi</string>
             <string name="bye" translatable="false">Bye</string>
+            <plurals name="apples" translatable="true">
+                <item quantity="one">One apple</item>
+                <item quantity="other">%d apples</item>
+            </plurals>
         </resources>
         "#;
         let format = Format::from_str(xml).unwrap();
@@ -267,10 +450,16 @@ mod tests {
         let out_str = String::from_utf8(out).unwrap();
         let reparsed = Format::from_str(&out_str).unwrap();
         assert_eq!(format.strings.len(), reparsed.strings.len());
+        assert_eq!(format.plurals.len(), reparsed.plurals.len());
         for (orig, new) in format.strings.iter().zip(reparsed.strings.iter()) {
             assert_eq!(orig.name, new.name);
             assert_eq!(orig.value, new.value);
             assert_eq!(orig.translatable, new.translatable);
+        }
+        for (orig, new) in format.plurals.iter().zip(reparsed.plurals.iter()) {
+            assert_eq!(orig.name, new.name);
+            assert_eq!(orig.translatable, new.translatable);
+            assert_eq!(orig.items.len(), new.items.len());
         }
     }
 
@@ -285,5 +474,32 @@ mod tests {
         assert_eq!(format.strings.len(), 1);
         let entry = format.strings[0].to_entry();
         assert_eq!(entry.status, EntryStatus::New);
+    }
+
+    #[test]
+    fn test_resource_to_android_format_with_plurals() {
+        use std::collections::BTreeMap;
+        let mut forms = BTreeMap::new();
+        forms.insert(PluralCategory::One, "One file".to_string());
+        forms.insert(PluralCategory::Other, "%d files".to_string());
+
+        let resource = Resource {
+            metadata: Metadata { language: "en".into(), domain: String::new(), custom: HashMap::new() },
+            entries: vec![Entry {
+                id: "files".into(),
+                value: Translation::Plural(Plural { id: "files".into(), forms }),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+
+        let fmt = Format::from(resource);
+        assert_eq!(fmt.strings.len(), 0);
+        assert_eq!(fmt.plurals.len(), 1);
+        let pr = &fmt.plurals[0];
+        assert_eq!(pr.name, "files");
+        assert!(pr.items.iter().any(|i| matches!(i.quantity, PluralCategory::One) && i.value == "One file"));
+        assert!(pr.items.iter().any(|i| matches!(i.quantity, PluralCategory::Other) && i.value == "%d files"));
     }
 }
