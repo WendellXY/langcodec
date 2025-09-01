@@ -625,6 +625,23 @@ impl Codec {
     /// - For each key, each language must have the same placeholder signature.
     /// - For plural entries, all forms within a language must share the same signature.
     /// - iOS vs Android differences like `%@`/`%1$@` vs `%s`/`%1$s` are normalized.
+    ///
+    /// Example
+    /// ```rust
+    /// use langcodec::{Codec, types::{Entry, EntryStatus, Metadata, Resource, Translation}};
+    /// let mut codec = Codec::new();
+    /// let en = Resource{
+    ///     metadata: Metadata{ language: "en".into(), domain: String::new(), custom: Default::default() },
+    ///     entries: vec![Entry{ id: "greet".into(), value: Translation::Singular("Hello %1$@".into()), comment: None, status: EntryStatus::Translated, custom: Default::default() }]
+    /// };
+    /// let fr = Resource{
+    ///     metadata: Metadata{ language: "fr".into(), domain: String::new(), custom: Default::default() },
+    ///     entries: vec![Entry{ id: "greet".into(), value: Translation::Singular("Bonjour %1$s".into()), comment: None, status: EntryStatus::Translated, custom: Default::default() }]
+    /// };
+    /// codec.add_resource(en);
+    /// codec.add_resource(fr);
+    /// assert!(codec.validate_placeholders(true).is_ok());
+    /// ```
     pub fn validate_placeholders(&self, strict: bool) -> Result<(), Error> {
         use std::collections::HashMap;
         use crate::placeholder::signature;
@@ -698,6 +715,8 @@ impl Codec {
 
     /// Collect placeholder issues without failing.
     /// Returns a list of human-readable messages; empty if none.
+    ///
+    /// Useful to warn in non-strict mode.
     pub fn collect_placeholder_issues(&self) -> Vec<String> {
         use std::collections::HashMap;
         use crate::placeholder::signature;
@@ -752,6 +771,19 @@ impl Codec {
 
     /// Normalize placeholders in all entries (mutates in place).
     /// Converts iOS patterns like `%@`, `%1$@`, `%ld` to canonical forms (%s, %1$s, %d/%u).
+    ///
+    /// Example
+    /// ```rust
+    /// use langcodec::{Codec, types::{Entry, EntryStatus, Metadata, Resource, Translation}};
+    /// let mut codec = Codec::new();
+    /// codec.add_resource(Resource{
+    ///     metadata: Metadata{ language: "en".into(), domain: String::new(), custom: Default::default() },
+    ///     entries: vec![Entry{ id: "id".into(), value: Translation::Singular("Hello %@ and %1$@".into()), comment: None, status: EntryStatus::Translated, custom: Default::default() }]
+    /// });
+    /// codec.normalize_placeholders_in_place();
+    /// let v = match &codec.resources[0].entries[0].value { Translation::Singular(v) => v.clone(), _ => unreachable!() };
+    /// assert!(v.contains("%s") && v.contains("%1$s"));
+    /// ```
     pub fn normalize_placeholders_in_place(&mut self) {
         use crate::placeholder::normalize_placeholders;
         use crate::types::Translation;

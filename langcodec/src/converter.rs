@@ -9,6 +9,7 @@ use crate::{
     formats::{
         AndroidStringsFormat, CSVFormat, FormatType, StringsFormat, TSVFormat, XcstringsFormat,
     },
+    placeholder::normalize_placeholders,
     traits::Parser,
     types::Resource,
 };
@@ -143,13 +144,134 @@ pub fn convert<P: AsRef<Path>>(
     }
 
     // Read input as resources
-    let resources = match input_format {
+    let mut resources = match input_format {
         FormatType::AndroidStrings(_) => vec![AndroidStringsFormat::read_from(&input)?.into()],
         FormatType::Strings(_) => vec![StringsFormat::read_from(&input)?.into()],
         FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(&input)?)?,
         FormatType::CSV => Vec::<Resource>::try_from(CSVFormat::read_from(&input)?)?,
         FormatType::TSV => Vec::<Resource>::try_from(TSVFormat::read_from(&input)?)?,
     };
+
+    // Ensure language is set for single-language inputs if provided on input_format
+    if let Some(l) = input_format.language().cloned() {
+        for res in &mut resources {
+            if res.metadata.language.is_empty() {
+                res.metadata.language = l.clone();
+            }
+        }
+    }
+
+    // Helper to extract resource by language if present, or first one
+    let pick_resource = |lang: Option<String>| -> Option<Resource> {
+        match lang {
+            Some(l) => resources.iter().find(|r| r.metadata.language == l).cloned(),
+            None => resources.first().cloned(),
+        }
+    };
+
+    match output_format {
+        FormatType::AndroidStrings(lang) => {
+            let resource = pick_resource(lang);
+            if let Some(res) = resource {
+                AndroidStringsFormat::from(res).write_to(&output)
+            } else {
+                Err(Error::InvalidResource(
+                    "No matching resource for output language.".to_string(),
+                ))
+            }
+        }
+        FormatType::Strings(lang) => {
+            let resource = pick_resource(lang);
+            if let Some(res) = resource {
+                StringsFormat::try_from(res)?.write_to(&output)
+            } else {
+                Err(Error::InvalidResource(
+                    "No matching resource for output language.".to_string(),
+                ))
+            }
+        }
+        FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(&output),
+        FormatType::CSV => CSVFormat::try_from(resources)?.write_to(&output),
+        FormatType::TSV => TSVFormat::try_from(resources)?.write_to(&output),
+    }
+}
+
+/// Convert like [`convert`], with an option to normalize placeholders before writing.
+///
+/// When `normalize` is true, common iOS placeholder tokens like `%@`, `%1$@`, `%ld` are
+/// converted to canonical forms (`%s`, `%1$s`, `%d`) prior to serialization.
+/// Convert with optional placeholder normalization.
+///
+/// Example
+/// ```rust,no_run
+/// use langcodec::formats::FormatType;
+/// use langcodec::converter::convert_with_normalization;
+/// convert_with_normalization(
+///     "en.lproj/Localizable.strings",
+///     FormatType::Strings(Some("en".to_string())),
+///     "values/strings.xml",
+///     FormatType::AndroidStrings(Some("en".to_string())),
+///     true, // normalize placeholders (e.g., %@ -> %s)
+/// )?;
+/// # Ok::<(), langcodec::Error>(())
+/// ```
+pub fn convert_with_normalization<P: AsRef<Path>>(
+    input: P,
+    input_format: FormatType,
+    output: P,
+    output_format: FormatType,
+    normalize: bool,
+) -> Result<(), Error> {
+    let mut input = input.as_ref().to_path_buf();
+    let mut output = output.as_ref().to_path_buf();
+
+    // Carry language between single-language formats
+    let output_format = if let Some(lang) = input_format.language() {
+        output_format.with_language(Some(lang.clone()))
+    } else {
+        output_format
+    };
+
+    if !input_format.matches_language_of(&output_format) {
+        return Err(Error::InvalidResource(
+            "Input and output formats must match in language.".to_string(),
+        ));
+    }
+
+    // Read input as resources
+    let mut resources = match input_format {
+        FormatType::AndroidStrings(_) => vec![AndroidStringsFormat::read_from(&input)?.into()],
+        FormatType::Strings(_) => vec![StringsFormat::read_from(&input)?.into()],
+        FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(&input)?)?,
+        FormatType::CSV => Vec::<Resource>::try_from(CSVFormat::read_from(&input)?)?,
+        FormatType::TSV => Vec::<Resource>::try_from(TSVFormat::read_from(&input)?)?,
+    };
+
+    // Ensure language is set for single-language inputs if provided on input_format
+    if let Some(l) = input_format.language().cloned() {
+        for res in &mut resources {
+            if res.metadata.language.is_empty() {
+                res.metadata.language = l.clone();
+            }
+        }
+    }
+
+    if normalize {
+        for res in &mut resources {
+            for entry in &mut res.entries {
+                match &mut entry.value {
+                    crate::types::Translation::Singular(v) => {
+                        *v = normalize_placeholders(v).into();
+                    }
+                    crate::types::Translation::Plural(p) => {
+                        for (_c, v) in p.forms.iter_mut() {
+                            *v = normalize_placeholders(v);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Helper to extract resource by language if present, or first one
     let pick_resource = |lang: Option<String>| -> Option<Resource> {
@@ -221,6 +343,83 @@ pub fn convert_auto<P: AsRef<Path>>(input: P, output: P) -> Result<(), Error> {
         ))
     })?;
     convert(input, input_format, output, output_format)
+}
+
+#[cfg(test)]
+mod normalize_tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_convert_strings_to_android_with_normalization() {
+        let tmp = tempfile::tempdir().unwrap();
+        let strings = tmp.path().join("en.strings");
+        let xml = tmp.path().join("strings.xml");
+
+        fs::write(
+            &strings,
+            "\n\"g\" = \"Hello %@ and %1$@ and %ld\";\n",
+        )
+        .unwrap();
+
+        // Without normalization: convert should succeed
+        convert(
+            &strings,
+            FormatType::Strings(Some("en".into())),
+            &xml,
+            FormatType::AndroidStrings(Some("en".into())),
+        )
+        .unwrap();
+        let content = fs::read_to_string(&xml).unwrap();
+        assert!(content.contains("Hello %"));
+
+        // With normalization
+        convert_with_normalization(
+            &strings,
+            FormatType::Strings(Some("en".into())),
+            &xml,
+            FormatType::AndroidStrings(Some("en".into())),
+            true,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&xml).unwrap();
+        assert!(content.contains("%s"));
+        assert!(content.contains("%1$s"));
+        assert!(content.contains("%d"));
+    }
+}
+
+/// Auto-infer formats from paths and convert, with optional placeholder normalization.
+/// Auto-infer formats and convert with optional placeholder normalization.
+///
+/// Example
+/// ```rust,no_run
+/// use langcodec::converter::convert_auto_with_normalization;
+/// convert_auto_with_normalization(
+///     "Localizable.strings",
+///     "strings.xml",
+///     true, // normalize placeholders
+/// )?;
+/// # Ok::<(), langcodec::Error>(())
+/// ```
+pub fn convert_auto_with_normalization<P: AsRef<Path>>(
+    input: P,
+    output: P,
+    normalize: bool,
+) -> Result<(), Error> {
+    let input_format = infer_format_from_path(&input).ok_or_else(|| {
+        Error::UnknownFormat(format!(
+            "Cannot infer input format from extension: {:?}",
+            input.as_ref().extension()
+        ))
+    })?;
+    let output_format = infer_format_from_path(&output).ok_or_else(|| {
+        Error::UnknownFormat(format!(
+            "Cannot infer output format from extension: {:?}",
+            output.as_ref().extension()
+        ))
+    })?;
+    convert_with_normalization(input, input_format, output, output_format, normalize)
 }
 
 /// Infers a [`FormatType`] from a file path's extension.
