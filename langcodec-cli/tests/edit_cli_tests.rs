@@ -93,6 +93,123 @@ fn test_edit_set_add_update_remove_strings_in_place() {
 }
 
 #[test]
+fn test_edit_set_dry_run_add_does_not_write() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("en.strings");
+
+    let initial = r#"/* Greeting */
+"hello" = "Hello";
+"#;
+    fs::write(&input_file, initial).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "edit",
+            "set",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-k",
+            "welcome",
+            "-v",
+            "Welcome!",
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("DRY-RUN"));
+    let after = fs::read_to_string(&input_file).unwrap();
+    assert_eq!(after, initial);
+}
+
+#[test]
+fn test_edit_set_dry_run_update_does_not_write() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("en.strings");
+
+    let initial = r#"/* Greeting */
+"hello" = "Hello";
+"#;
+    fs::write(&input_file, initial).unwrap();
+
+    // First, add welcome so we can dry-run update
+    let _ = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "edit",
+            "set",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-k",
+            "welcome",
+            "-v",
+            "Welcome!",
+        ])
+        .output()
+        .unwrap();
+
+    let before = fs::read_to_string(&input_file).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "edit",
+            "set",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-k",
+            "welcome",
+            "-v",
+            "Welcome again!",
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("DRY-RUN"));
+    let after = fs::read_to_string(&input_file).unwrap();
+    assert_eq!(after, before);
+}
+
+#[test]
+fn test_edit_set_dry_run_remove_does_not_write() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("en.strings");
+
+    let initial = r#"/* Greeting */
+"hello" = "Hello";
+"welcome" = "Welcome!";
+"#;
+    fs::write(&input_file, initial).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "edit",
+            "set",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-k",
+            "welcome",
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("DRY-RUN"));
+    let after = fs::read_to_string(&input_file).unwrap();
+    assert_eq!(after, initial);
+}
+
+#[test]
 fn test_edit_set_with_output_path() {
     let temp_dir = TempDir::new().unwrap();
     let input_file = temp_dir.path().join("en.strings");
@@ -138,4 +255,3 @@ fn test_main_help_lists_edit() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("edit"));
 }
-

@@ -1,7 +1,7 @@
 mod convert;
 mod debug;
-mod formats;
 mod edit;
+mod formats;
 mod merge;
 mod path_glob;
 mod stats;
@@ -11,7 +11,7 @@ mod view;
 
 use crate::convert::{ConvertOptions, run_unified_convert_command, try_custom_format_view};
 use crate::debug::run_debug_command;
-use crate::edit::run_edit_set_command;
+use crate::edit::{run_edit_set_command, EditSetOptions};
 use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::validation::{ValidationContext, validate_context};
 use crate::view::print_view;
@@ -195,6 +195,10 @@ enum EditCommands {
         /// Optional output file; if omitted, writes in-place to input
         #[arg(short, long)]
         output: Option<String>,
+
+        /// Preview changes without writing
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
     },
 }
 
@@ -252,6 +256,7 @@ fn main() {
                 comment,
                 status,
                 output,
+                dry_run,
             } => {
                 // Validation
                 let mut context = ValidationContext::new().with_input_file(input.clone());
@@ -266,7 +271,18 @@ fn main() {
                     std::process::exit(1);
                 }
 
-                if let Err(e) = run_edit_set_command(input, lang, key, value, comment, status, output)
+                let opts = EditSetOptions {
+                    input,
+                    lang,
+                    key,
+                    value,
+                    comment,
+                    status,
+                    output,
+                    dry_run,
+                };
+
+                if let Err(e) = run_edit_set_command(opts)
                 {
                     eprintln!("❌ Edit failed: {}", e);
                     std::process::exit(1);
