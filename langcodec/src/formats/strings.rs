@@ -35,7 +35,7 @@ impl Parser for Format {
         // Read entire input into a string (UTF-8 expected here; UTF-16 handled in read_from)
         let mut reader = reader;
         let mut bytes = Vec::new();
-        reader.read_to_end(&mut bytes).map_err(Error::Io)?;
+        std::io::Read::read_to_end(&mut reader, &mut bytes).map_err(Error::Io)?;
         let content = String::from_utf8(bytes)
             .map_err(|_| Error::InvalidResource("Invalid UTF-8 in .strings file".to_string()))?;
 
@@ -198,7 +198,7 @@ fn parse_strings_content(content: &str) -> (Vec<Pair>, Vec<String>) {
         }
 
         // Key-Value pair: "key" = "value";
-        if let Some((j, key)) = parse_quoted(bytes, i) {
+        if let Some((j, key)) = parse_quoted_utf8(content, bytes, i) {
             i = j;
             let (ni2, _) = skip_inline_ws(bytes, i);
             i = ni2;
@@ -206,7 +206,7 @@ fn parse_strings_content(content: &str) -> (Vec<Pair>, Vec<String>) {
                 i += 1; // consume '='
                 let (ni3, _) = skip_inline_ws(bytes, i);
                 i = ni3;
-                if let Some((jv, value_raw)) = parse_quoted(bytes, i) {
+                if let Some((jv, value_raw)) = parse_quoted_utf8(content, bytes, i) {
                     i = jv;
                     // seek semicolon, ignoring spaces and tabs only
                     let (ni4, _) = skip_inline_ws(bytes, i);
@@ -302,37 +302,35 @@ fn parse_block_comment(bytes: &[u8], i: usize) -> (usize, String) {
     (j, comment)
 }
 
-// Parses a quoted string beginning at position i (which must point to '"').
-// Returns (next_index_after_closing_quote, raw_string_content)
-fn parse_quoted(bytes: &[u8], mut i: usize) -> Option<(usize, String)> {
+// Parses a quoted string starting at byte index i (which must point to '"').
+// Returns (byte_index_after_closing_quote, substring content as UTF-8) without the surrounding quotes,
+// preserving backslashes and non-ASCII characters exactly as in the source.
+fn parse_quoted_utf8(source: &str, bytes: &[u8], i: usize) -> Option<(usize, String)> {
     if i >= bytes.len() || bytes[i] != b'"' {
         return None;
     }
-    i += 1; // skip opening quote
-    let mut out = String::new();
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\\' => {
-                // keep escapes verbatim so we don't change meaning
-                if i + 1 < bytes.len() {
-                    out.push('\u{005C}'); // backslash
-                    out.push(bytes[i + 1] as char);
-                    i += 2;
-                } else {
-                    // trailing backslash, keep it
-                    out.push('\u{005C}');
-                    i += 1;
-                }
-            }
-            b'"' => {
-                i += 1; // consume closing quote
-                return Some((i, out));
-            }
-            ch => {
-                out.push(ch as char);
-                i += 1;
-            }
+    let start = i + 1; // start of content inside quotes
+    let mut j = start;
+    let mut consecutive_backslashes = 0usize;
+    while j < bytes.len() {
+        let b = bytes[j];
+        if b == b'\\' {
+            consecutive_backslashes += 1;
+            j += 1;
+            continue;
         }
+        if b == b'"' {
+            // If number of preceding backslashes is even, the quote terminates the string
+            if consecutive_backslashes % 2 == 0 {
+                let end = j;
+                let s = &source[start..end];
+                return Some((j + 1, s.to_string()));
+            }
+            // else, it's an escaped quote, continue scanning
+        }
+        // reset backslash count on any non-backslash byte
+        consecutive_backslashes = 0;
+        j += 1;
     }
     None
 }
@@ -357,7 +355,7 @@ fn normalize_value_newlines(raw: &str) -> String {
 }
 
 fn escape_strings_token(s: &str) -> String {
-    // Escape quotes and newlines. Backslashes are escaped unless immediately followed by an apostrophe.
+    // Escape quotes and literal newlines. Preserve recognized escape sequences (\n, \t, \r, \" , \' , \\) as-is.
     let mut out = String::new();
     let chars: Vec<char> = s.chars().collect();
     let mut i = 0usize;
@@ -375,29 +373,52 @@ fn escape_strings_token(s: &str) -> String {
                 i += 1;
             }
             '\\' => {
-                // Count run of backslashes
+                // Handle runs of backslashes with lookahead
                 let mut j = i;
                 while j < chars.len() && chars[j] == '\\' {
                     j += 1;
                 }
-                let next = if j < chars.len() {
+                let next_char = if j < chars.len() {
                     Some(chars[j])
                 } else {
                     None
                 };
-                if next == Some('\'') {
-                    // Preserve run as-is when followed by apostrophe
-                    for _ in i..j {
-                        out.push('\\');
+
+                match next_char {
+                    Some('\'') => {
+                        // Preserve run when followed by apostrophe
+                        for _ in i..j {
+                            out.push('\\');
+                        }
+                        out.push('\'');
+                        i = j + 1;
                     }
-                } else {
-                    // Double each backslash in the run
-                    for _ in i..j {
-                        out.push('\\');
-                        out.push('\\');
+                    Some('n') | Some('t') | Some('r') | Some('"') | Some('\\') => {
+                        // Recognized escape sequence: preserve exactly one run of backslashes and the escape char as-is
+                        for _ in i..j {
+                            out.push('\\');
+                        }
+                        out.push(next_char.unwrap());
+                        i = j + 1;
+                    }
+                    Some(other) => {
+                        // Unrecognized escape: double each backslash to preserve literal backslashes, then the next char
+                        for _ in i..j {
+                            out.push('\\');
+                            out.push('\\');
+                        }
+                        out.push(other);
+                        i = j + 1;
+                    }
+                    None => {
+                        // Trailing backslashes at end of string: double them
+                        for _ in i..j {
+                            out.push('\\');
+                            out.push('\\');
+                        }
+                        i = j;
                     }
                 }
-                i = j;
             }
             _ => {
                 out.push(ch);
@@ -412,9 +433,8 @@ impl TryFrom<Entry> for Pair {
     type Error = Error;
 
     fn try_from(entry: Entry) -> Result<Self, Self::Error> {
-        // Strings format only supports singular translations
-        // with plain text values.
-        match Translation::plain_translation(entry.value) {
+        // Strings format only supports singular translations. Preserve the value verbatim.
+        match entry.value {
             Translation::Singular(value) => Ok(Pair {
                 key: entry.id,
                 value,
@@ -601,17 +621,20 @@ mod tests {
         "key1" = "Value with trailing space ";
         "key2" = "Another value with trailing spaces   ";
         "key3" = "No trailing spaces";
+        "key4" = "过去一天 ";
         "#;
         let parsed = Format::from_str(content).unwrap();
-        assert_eq!(parsed.pairs.len(), 3);
+        assert_eq!(parsed.pairs.len(), 4);
 
         let pair1 = &parsed.pairs[0];
         let pair2 = &parsed.pairs[1];
         let pair3 = &parsed.pairs[2];
+        let pair4 = &parsed.pairs[3];
 
         assert_eq!(pair1.value, "Value with trailing space ");
         assert_eq!(pair2.value, "Another value with trailing spaces   ");
         assert_eq!(pair3.value, "No trailing spaces");
+        assert_eq!(pair4.value, "过去一天 ");
     }
 
     #[test]
