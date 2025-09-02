@@ -131,22 +131,22 @@ impl From<Resource> for Format {
     fn from(value: Resource) -> Self {
         let mut strings = Vec::new();
         let mut plurals = Vec::new();
-        for entry in &value.entries {
-            match &entry.value {
-                Translation::Singular(_) => strings.push(StringResource::from_entry(entry)),
+        for entry in value.entries {
+            match entry.value {
+                Translation::Singular(_) => strings.push(StringResource::from_entry(&entry)),
                 Translation::Plural(p) => {
                     let mut items: Vec<PluralItem> = p
                         .forms
-                        .iter()
+                        .into_iter()
                         .map(|(cat, v)| PluralItem {
-                            quantity: cat.clone(),
-                            value: v.clone(),
+                            quantity: cat,
+                            value: v,
                         })
                         .collect();
                     // Ensure stable order later
                     items.sort_by(|a, b| a.quantity.cmp(&b.quantity));
                     plurals.push(PluralsResource {
-                        name: entry.id.clone(),
+                        name: entry.id,
                         items,
                         translatable: match entry.status {
                             EntryStatus::Translated => Some(true),
@@ -159,7 +159,7 @@ impl From<Resource> for Format {
         }
 
         Self {
-            language: value.metadata.language.clone(),
+            language: value.metadata.language,
             strings,
             plurals,
         }
@@ -168,13 +168,18 @@ impl From<Resource> for Format {
 
 impl From<Format> for Resource {
     fn from(value: Format) -> Self {
-        let mut entries: Vec<Entry> = value.strings.iter().map(StringResource::to_entry).collect();
+        let mut entries: Vec<Entry> = value
+            .strings
+            .into_iter()
+            .map(StringResource::into_entry)
+            .collect();
 
         // Convert plurals to entries
-        for pr in &value.plurals {
+        for pr in value.plurals {
             let mut forms = std::collections::BTreeMap::new();
-            for item in &pr.items {
-                forms.insert(item.quantity.clone(), item.value.clone());
+            for item in pr.items {
+                let PluralItem { quantity, value } = item;
+                forms.insert(quantity, value);
             }
             let all_empty = forms.values().all(|v| v.is_empty());
             let status = match pr.translatable {
@@ -190,10 +195,7 @@ impl From<Format> for Resource {
             };
             entries.push(Entry {
                 id: pr.name.clone(),
-                value: Translation::Plural(Plural {
-                    id: pr.name.clone(),
-                    forms,
-                }),
+                value: Translation::Plural(Plural { id: pr.name, forms }),
                 comment: None,
                 status,
                 custom: HashMap::new(),
@@ -202,7 +204,7 @@ impl From<Format> for Resource {
 
         Resource {
             metadata: Metadata {
-                language: value.language.clone(),
+                language: value.language,
                 domain: String::new(), // strings.xml does not have a domain
                 custom: HashMap::new(),
             },
@@ -219,15 +221,23 @@ pub struct StringResource {
 }
 
 impl StringResource {
-    fn to_entry(&self) -> Entry {
+    fn into_entry(self) -> Entry {
+        let StringResource {
+            name,
+            value,
+            translatable,
+        } = self;
+
+        let is_value_empty = value.is_empty();
+
         Entry {
-            id: self.name.clone(),
-            value: Translation::Singular(self.value.clone()),
+            id: name,
+            value: Translation::Singular(value),
             comment: None,
-            status: match self.translatable {
+            status: match translatable {
                 Some(true) => EntryStatus::Translated,
                 Some(false) => EntryStatus::DoNotTranslate,
-                None if self.value.is_empty() => EntryStatus::New,
+                None if is_value_empty => EntryStatus::New,
                 None => EntryStatus::Translated,
             },
             custom: HashMap::new(),
@@ -386,6 +396,7 @@ fn parse_plurals_resource<R: BufRead>(
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::traits::Parser;
     use crate::types::EntryStatus;
@@ -487,8 +498,9 @@ mod tests {
         </resources>
         "#;
         let format = Format::from_str(xml).unwrap();
-        assert_eq!(format.strings.len(), 1);
-        let entry = format.strings[0].to_entry();
+        let length = format.strings.len();
+        assert_eq!(length, 1);
+        let entry = format.strings.into_iter().next().unwrap().into_entry();
         assert_eq!(entry.status, EntryStatus::New);
     }
 

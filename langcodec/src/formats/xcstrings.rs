@@ -41,38 +41,47 @@ impl TryFrom<Vec<Resource>> for Format {
         let mut source_language = String::new();
         let mut version = String::new();
 
-        for resource in resources {
-            if let Some(meta_source_language) = resource.metadata.custom.get("source_language") {
-                // source_language should be modified if and only if it is empty, otherwise,
-                // it should throw an error if it differs.
-                if source_language.is_empty() {
-                    source_language = meta_source_language.clone();
-                } else if source_language != *meta_source_language {
+        for mut resource in resources {
+            // source_language
+            if source_language.is_empty() {
+                if let Some(v) = resource.metadata.custom.remove("source_language") {
+                    source_language = v; // moved, no clone
+                } else {
+                    return Err(Error::InvalidResource(
+                        "No source language found in metadata".into(),
+                    ));
+                }
+            } else if let Some(v) = resource.metadata.custom.get("source_language") {
+                if source_language != *v {
                     return Err(Error::DataMismatch(format!(
                         "Source language mismatch: expected {}, found {}",
-                        source_language, meta_source_language
+                        source_language, v
                     )));
                 }
             } else {
                 return Err(Error::InvalidResource(
-                    "No source language found in metadata".to_string(),
+                    "No source language found in metadata".into(),
                 ));
             }
 
-            if let Some(meta_version) = resource.metadata.custom.get("version") {
-                // version should be modified if and only if it is empty, otherwise,
-                // it should throw an error if it differs.
-                if version.is_empty() {
-                    version = meta_version.clone();
-                } else if version != *meta_version {
+            if version.is_empty() {
+                if let Some(v) = resource.metadata.custom.remove("version") {
+                    version = v; // move, no clone
+                } else {
+                    return Err(Error::InvalidResource(
+                        "No version found in metadata".into(),
+                    ));
+                }
+            } else if let Some(v) = resource.metadata.custom.get("version") {
+                if version != *v {
                     return Err(Error::DataMismatch(format!(
                         "Version mismatch: expected {}, found {}",
-                        version, meta_version
+                        version, v
                     )));
                 }
             } else {
                 return Err(Error::InvalidResource(
-                    "No version found in metadata".to_string(),
+                    "No version found in metadata".into(),
                 ));
             }
 

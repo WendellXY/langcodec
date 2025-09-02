@@ -54,8 +54,8 @@ pub fn convert_resources_to_format(
 ) -> Result<(), Error> {
     match output_format {
         FormatType::AndroidStrings(_) => {
-            if let Some(resource) = resources.first() {
-                AndroidStringsFormat::from(resource.clone())
+            if let Some(resource) = resources.into_iter().next() {
+                AndroidStringsFormat::from(resource)
                     .write_to(Path::new(output_path))
                     .map_err(|e| {
                         Error::conversion_error(
@@ -70,8 +70,8 @@ pub fn convert_resources_to_format(
             }
         }
         FormatType::Strings(_) => {
-            if let Some(resource) = resources.first() {
-                StringsFormat::try_from(resource.clone())
+            if let Some(resource) = resources.into_iter().next() {
+                StringsFormat::try_from(resource)
                     .and_then(|f| f.write_to(Path::new(output_path)))
                     .map_err(|e| {
                         Error::conversion_error(
@@ -891,19 +891,19 @@ mod tests {
         // Read back as Android
         let android = crate::formats::AndroidStringsFormat::read_from(&output).unwrap();
         assert_eq!(android.plurals.len(), 1);
-        let p = &android.plurals[0];
+        let p = android.plurals.into_iter().next().unwrap();
         assert_eq!(p.name, "apples");
         // Should include at least 'one' and 'other'
         let mut qs: Vec<_> = p
             .items
-            .iter()
+            .into_iter()
             .map(|i| match i.quantity {
-                PluralCategory::One => ("one", i.value.clone()),
-                PluralCategory::Other => ("other", i.value.clone()),
-                PluralCategory::Zero => ("zero", i.value.clone()),
-                PluralCategory::Two => ("two", i.value.clone()),
-                PluralCategory::Few => ("few", i.value.clone()),
-                PluralCategory::Many => ("many", i.value.clone()),
+                PluralCategory::One => ("one", i.value),
+                PluralCategory::Other => ("other", i.value),
+                PluralCategory::Zero => ("zero", i.value),
+                PluralCategory::Two => ("two", i.value),
+                PluralCategory::Few => ("few", i.value),
+                PluralCategory::Many => ("many", i.value),
             })
             .collect();
         qs.sort_by(|a, b| a.0.cmp(b.0));

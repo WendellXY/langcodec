@@ -509,11 +509,12 @@ pub fn read_resources_from_any_input(
                 });
 
             if let Some(lang) = lang_from_filename {
-                // Try with explicit format and language
+                let err_prefix = format!("Failed to read input with language '{}': ", lang);
+
                 let format_type = if input.ends_with(".strings") {
-                    langcodec::formats::FormatType::Strings(Some(lang.clone()))
+                    langcodec::formats::FormatType::Strings(Some(lang))
                 } else if input.ends_with(".xml") {
-                    langcodec::formats::FormatType::AndroidStrings(Some(lang.clone()))
+                    langcodec::formats::FormatType::AndroidStrings(Some(lang))
                 } else if input.ends_with(".xcstrings") {
                     langcodec::formats::FormatType::Xcstrings
                 } else if input.ends_with(".csv") {
@@ -525,10 +526,9 @@ pub fn read_resources_from_any_input(
                 };
 
                 let mut codec = Codec::new();
-                codec.read_file_by_type(input, format_type).map_err(|e2| {
-                    format!("Failed to read input with language '{}': {}", lang, e2)
-                })?;
-                return Ok(codec.resources);
+                codec
+                    .read_file_by_type(input, format_type)
+                    .map_err(|e2| format!("{err_prefix}{e2}"))?;
             } else {
                 eprintln!("Standard format detection failed: {}", e);
             }

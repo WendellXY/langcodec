@@ -110,7 +110,7 @@ impl From<Format> for Resource {
                 domain: String::from(""),
                 custom: HashMap::new(),
             },
-            entries: value.pairs.iter().map(Pair::to_entry).collect(),
+            entries: value.pairs.into_iter().map(Pair::into_entry).collect(),
         }
     }
 }
@@ -119,14 +119,12 @@ impl TryFrom<Resource> for Format {
     type Error = Error;
 
     fn try_from(value: Resource) -> Result<Self, Self::Error> {
-        let language = value.metadata.language.clone();
-
-        let pairs = value
-            .entries
-            .iter()
-            .map(|entry| Pair::try_from(entry.clone()))
+        let Resource { metadata, entries } = value;
+        let language = metadata.language;
+        let pairs = entries
+            .into_iter()
+            .map(Pair::try_from)
             .collect::<Result<Vec<_>, _>>()?;
-
         Ok(Format { language, pairs })
     }
 }
@@ -150,12 +148,20 @@ pub struct Pair {
 }
 
 impl Pair {
-    fn to_entry(&self) -> Entry {
+    fn into_entry(self) -> Entry {
+        let Pair {
+            key,
+            value,
+            comment,
+        } = self;
+
+        let is_pair_value_empty = value.is_empty();
+
         Entry {
-            id: self.key.clone(),
-            value: Translation::Singular(self.value.clone()),
-            comment: self.comment.clone(),
-            status: if self.value.is_empty() {
+            id: key,
+            value: Translation::Singular(value),
+            comment,
+            status: if is_pair_value_empty {
                 EntryStatus::New
             } else {
                 EntryStatus::Translated
@@ -687,7 +693,7 @@ mod tests {
         assert_eq!(pair.key, "empty");
         assert_eq!(pair.value, "");
         // Should be marked as New status in Entry
-        let entry = pair.to_entry();
+        let entry = pair.clone().into_entry();
         assert_eq!(entry.status, EntryStatus::New);
     }
 
