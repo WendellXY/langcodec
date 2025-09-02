@@ -356,3 +356,38 @@ fn test_edit_set_multiple_inputs_with_output_is_error() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("cannot be used with multiple input files"));
 }
+
+#[test]
+fn test_edit_set_continue_on_error() {
+    let temp_dir = TempDir::new().unwrap();
+    let good = temp_dir.path().join("good.strings");
+    let bad = temp_dir.path().join("missing.strings");
+    fs::write(&good, "\"hello\" = \"Hello\";\n").unwrap();
+
+    let out = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "edit",
+            "set",
+            "-i",
+            good.to_str().unwrap(),
+            "-i",
+            bad.to_str().unwrap(),
+            "-k",
+            "welcome",
+            "-v",
+            "Welcome!",
+            "--continue-on-error",
+        ])
+        .output()
+        .unwrap();
+
+    // Expect non-zero (some files failed), but the good file should be updated
+    assert!(
+        !out.status.success(),
+        "expected non-zero exit when some files fail"
+    );
+    let updated = fs::read_to_string(&good).unwrap();
+    assert!(updated.contains("\"welcome\""));
+}

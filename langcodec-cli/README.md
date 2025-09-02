@@ -86,6 +86,7 @@ Options:
 - --status: translated|needs_review|new|do_not_translate|stale.
 - --output/-o: Optional output path. Not allowed with multiple inputs.
 - --dry-run: Print what would change and exit without writing.
+- --continue-on-error: Process all inputs; report failures at the end (non-zero exit if any fail).
 
 Supported formats: .strings, .xml (Android), .xcstrings, .csv, .tsv. Custom JSON/YAML/.langcodec edit is currently not enabled.
 

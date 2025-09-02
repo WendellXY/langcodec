@@ -78,7 +78,6 @@ fn write_back(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone)]
 pub struct EditSetOptions {
     pub inputs: Vec<String>,
@@ -89,6 +88,7 @@ pub struct EditSetOptions {
     pub status: Option<String>,
     pub output: Option<String>,
     pub dry_run: bool,
+    pub continue_on_error: bool,
 }
 
 pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
@@ -103,6 +103,23 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
         return Err("--output cannot be used with multiple input files".to_string());
     }
 
+    // Report missing literal inputs (patterns without glob meta that don't exist)
+    fn has_glob_meta(s: &str) -> bool {
+        s.bytes().any(|b| matches!(b, b'*' | b'?' | b'[' | b'{'))
+    }
+    let mut failures: Vec<(String, String)> = Vec::new();
+    for original in &opts.inputs {
+        if !has_glob_meta(original) && !Path::new(original).is_file() {
+            let msg = format!("Input file does not exist: {}", original);
+            if opts.continue_on_error {
+                eprintln!("❌ {}", msg);
+                failures.push((original.clone(), msg));
+            } else {
+                return Err(msg);
+            }
+        }
+    }
+
     for input_path in expanded {
         // Validate per-file
         let mut vctx = ValidationContext::new().with_input_file(input_path.clone());
@@ -112,10 +129,18 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
         if let Some(o) = &opts.output {
             vctx = vctx.with_output_file(o.clone());
         }
-        validate_context(&vctx)
-            .map_err(|e| format!("Input validation failed for '{}': {}", input_path, e))?;
+        if let Err(e) = validate_context(&vctx) {
+            let msg = format!("Input validation failed for '{}': {}", input_path, e);
+            if opts.continue_on_error {
+                eprintln!("❌ {}", msg);
+                failures.push((input_path.clone(), msg));
+                continue;
+            } else {
+                return Err(msg);
+            }
+        }
 
-        apply_set_to_file(
+        if let Err(e) = apply_set_to_file(
             &input_path,
             &opts.lang,
             &opts.key,
@@ -124,10 +149,23 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
             &opts.status,
             opts.output.as_ref(),
             opts.dry_run,
-        )?;
+        ) {
+            let msg = e.to_string();
+            if opts.continue_on_error {
+                eprintln!("❌ {}", msg);
+                failures.push((input_path.clone(), msg));
+                continue;
+            } else {
+                return Err(msg);
+            }
+        }
     }
 
-    Ok(())
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{} file(s) failed. See errors above.", failures.len()))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

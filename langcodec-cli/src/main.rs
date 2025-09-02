@@ -199,6 +199,10 @@ enum EditCommands {
         /// Preview changes without writing
         #[arg(long, default_value_t = false)]
         dry_run: bool,
+
+        /// Continue processing remaining files when a file fails
+        #[arg(long, default_value_t = false)]
+        continue_on_error: bool,
     },
 }
 
@@ -257,6 +261,7 @@ fn main() {
                 status,
                 output,
                 dry_run,
+                continue_on_error,
             } => {
                 let opts = EditSetOptions {
                     inputs,
@@ -267,6 +272,7 @@ fn main() {
                     status,
                     output,
                     dry_run,
+                    continue_on_error,
                 };
 
                 if let Err(e) = run_edit_set_command(opts) {
