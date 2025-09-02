@@ -107,20 +107,30 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
     fn has_glob_meta(s: &str) -> bool {
         s.bytes().any(|b| matches!(b, b'*' | b'?' | b'[' | b'{'))
     }
+    use std::collections::HashSet;
     let mut failures: Vec<(String, String)> = Vec::new();
+    let mut skip_missing: HashSet<String> = HashSet::new();
     for original in &opts.inputs {
         if !has_glob_meta(original) && !Path::new(original).is_file() {
             let msg = format!("Input file does not exist: {}", original);
             if opts.continue_on_error {
                 eprintln!("❌ {}", msg);
                 failures.push((original.clone(), msg));
+                skip_missing.insert(original.clone());
             } else {
                 return Err(msg);
             }
         }
     }
 
+    let mut processed_count: usize = 0;
+    let mut success_count: usize = 0;
+
     for input_path in expanded {
+        if skip_missing.contains(&input_path) {
+            continue;
+        }
+        processed_count += 1;
         // Validate per-file
         let mut vctx = ValidationContext::new().with_input_file(input_path.clone());
         if let Some(l) = &opts.lang {
@@ -136,6 +146,12 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
                 failures.push((input_path.clone(), msg));
                 continue;
             } else {
+                println!(
+                    "Summary: processed {}; success: {}; failed: {}",
+                    processed_count,
+                    success_count,
+                    failures.len() + 1
+                );
                 return Err(msg);
             }
         }
@@ -156,16 +172,27 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
                 failures.push((input_path.clone(), msg));
                 continue;
             } else {
+                println!(
+                    "Summary: processed {}; success: {}; failed: {}",
+                    processed_count,
+                    success_count,
+                    failures.len() + 1
+                );
                 return Err(msg);
             }
+        } else {
+            success_count += 1;
         }
     }
 
-    if failures.is_empty() {
-        Ok(())
-    } else {
-        Err(format!("{} file(s) failed. See errors above.", failures.len()))
-    }
+    println!(
+        "Summary: processed {}; success: {}; failed: {}",
+        processed_count,
+        success_count,
+        failures.len()
+    );
+
+    if failures.is_empty() { Ok(()) } else { Err(format!("{} file(s) failed. See errors above.", failures.len())) }
 }
 
 #[allow(clippy::too_many_arguments)]
