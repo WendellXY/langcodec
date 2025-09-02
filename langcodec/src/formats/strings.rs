@@ -130,7 +130,10 @@ impl Parser for Format {
                     return None; // Invalid line format
                 }
 
-                let key = parts[0].trim().trim_matches('"').to_string();
+                let key = parts[0]
+                    .trim()
+                    .trim_matches('"')
+                    .to_string();
                 // Take the right-hand side up to the terminating semicolon, ignoring any inline comments afterward
                 let rhs = parts[1].trim();
                 let rhs_before_semicolon = if let Some(idx) = rhs.find(';') {
@@ -166,7 +169,7 @@ impl Parser for Format {
                         }
                         if let Some(end_pos) = last_quote_pos {
                             // Safe slicing at UTF-8 boundaries because we only slice on quote bytes
-                            value = rhs_trimmed[1..end_pos].to_string();
+                            value = unescape_strings_minimal(&rhs_trimmed[1..end_pos]);
                         } else {
                             // Malformed line without closing quote; treat as empty
                             value = String::new();
@@ -384,6 +387,54 @@ fn escape_strings_token(s: &str) -> String {
     out
 }
 
+// Unescape a minimal set of sequences used in .strings values so we don't double-escape on write.
+// We intentionally only handle: \" -> ", \\ -> \\, \' -> '
+// Other escapes like \n, \t are left as-is to preserve author intent and our one-line normalization.
+fn unescape_strings_minimal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            // Handle double-backslash + apostrophe (\\') => '\'' normalized to just '\''
+            if let Some('\\') = chars.peek() {
+                // consume the extra backslash
+                chars.next();
+                if let Some('\'') = chars.peek() {
+                    // consume apostrophe and emit just apostrophe
+                    chars.next();
+                    out.push('\'');
+                    continue;
+                } else {
+                    // emit a single backslash and continue processing next char normally
+                    out.push('\\');
+                    continue;
+                }
+            }
+            match chars.peek() {
+                Some('"') => {
+                    out.push('"');
+                    chars.next();
+                }
+                Some('\\') => {
+                    out.push('\\');
+                    chars.next();
+                }
+                Some('\'') => {
+                    out.push('\'');
+                    chars.next();
+                }
+                _ => {
+                    // Leave unknown escapes as-is
+                    out.push('\\');
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 impl std::fmt::Display for Pair {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let key = escape_strings_token(&self.key);
@@ -455,6 +506,31 @@ mod tests {
         // Ensure escapes are present
         assert!(out_str.contains("\"greet\\\"key\\\\with\\nline\""));
         assert!(out_str.contains("\"He said: \\\"hi\\\"\\\\and newline\\n\""));
+    }
+
+    #[test]
+    fn test_unescape_minimal_apostrophe_and_backslash() {
+        let content = r#"
+        "key1" = "Can\'t accept";
+        "key2" = "Can\\'t accept";
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 2);
+        assert_eq!(parsed.pairs[0].value, "Can't accept");
+        assert_eq!(parsed.pairs[1].value, "Can't accept");
+
+        // Writing back should not introduce extra backslashes before apostrophes
+        let mut out = Vec::new();
+        parsed.to_writer(&mut out).unwrap();
+        let out_str = String::from_utf8(out).unwrap();
+        assert!(out_str.contains("\"key1\" = \"Can't accept\";"));
+        assert!(out_str.contains("\"key2\" = \"Can't accept\";"));
+    }
+
+    #[test]
+    fn test_unescape_minimal_func_direct() {
+        assert_eq!(super::unescape_strings_minimal("Can\\'t"), "Can't");
+        assert_eq!(super::unescape_strings_minimal("He said: \\\"hi\\\""), "He said: \"hi\"");
     }
 
     #[test]
