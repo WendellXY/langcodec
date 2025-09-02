@@ -405,15 +405,12 @@ fn normalize_value_newlines(raw: &str) -> String {
     }
     let mut out = String::new();
     for (idx, line) in raw.split('\n').enumerate() {
-        let piece = if idx == 0 {
-            line.to_string()
-        } else {
-            line.trim_start().to_string()
-        };
         if idx > 0 {
             out.push_str(r"\n");
         }
-        out.push_str(&piece);
+        // Preserve leading spaces exactly as-is; escape literal tab characters as \t.
+        let segment = line.replace('\t', "\\t");
+        out.push_str(&segment);
     }
     out
 }
@@ -630,7 +627,7 @@ mod tests {
         let content = r#"
         /* Multiline value */
         "multiline" = "This is line 1.
-            This is line 2.
+            \t\tThis is line 2.
             This is line 3.";
         "#;
         let parsed = Format::from_str(content).unwrap();
@@ -640,8 +637,23 @@ mod tests {
         // Should be joined with \n and trimmed of leading spaces on each line
         assert_eq!(
             pair.value,
-            "This is line 1.\\nThis is line 2.\\nThis is line 3."
+            "This is line 1.\\n            \\t\\tThis is line 2.\\n            This is line 3."
         );
+    }
+
+    #[test]
+    fn test_multiline_value_with_tabs_and_embedded_newlines() {
+        let content =
+            "\"multiline\" = \"This is line 1.\n\t\tThis is line\n\t\t\t2.This is line\n3.\";";
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 1);
+        let pair = &parsed.pairs[0];
+        assert_eq!(pair.key, "multiline");
+        assert_eq!(
+            pair.value,
+            r#"This is line 1.\n\t\tThis is line\n\t\t\t2.This is line\n3."#
+        );
+        assert!(pair.comment.is_none());
     }
 
     #[test]
