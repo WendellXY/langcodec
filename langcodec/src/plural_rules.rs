@@ -386,8 +386,14 @@ mod tests {
         let added = autofix_fill_missing_from_other_resource(&mut resource);
         assert!(added >= 1);
         // First entry should be NeedsReview
-        assert!(matches!(resource.entries[0].status, EntryStatus::NeedsReview));
+        assert!(matches!(
+            resource.entries[0].status,
+            EntryStatus::NeedsReview
+        ));
         // Second entry should remain Translated
-        assert!(matches!(resource.entries[1].status, EntryStatus::Translated));
+        assert!(matches!(
+            resource.entries[1].status,
+            EntryStatus::Translated
+        ));
     }
 }

@@ -11,7 +11,7 @@ mod view;
 
 use crate::convert::{ConvertOptions, run_unified_convert_command, try_custom_format_view};
 use crate::debug::run_debug_command;
-use crate::edit::{run_edit_set_command, EditSetOptions};
+use crate::edit::{EditSetOptions, run_edit_set_command};
 use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::validation::{ValidationContext, validate_context};
 use crate::view::print_view;
@@ -168,9 +168,9 @@ enum EditCommands {
     /// - Empty or omitted --value → remove
     /// - Otherwise → update
     Set {
-        /// The input file to modify
-        #[arg(short, long)]
-        input: String,
+        /// The input files to modify (supports glob patterns). Quote patterns to avoid shell expansion.
+        #[arg(short, long, num_args = 1.., help = "Input files. Supports glob patterns. Quote patterns to avoid slow shell-side expansion (e.g., '/path/**/*/Localizable.strings').")]
+        inputs: Vec<String>,
 
         /// Language code (required for single-language formats when multiple resources present)
         #[arg(short, long)]
@@ -249,7 +249,7 @@ fn main() {
         }
         Commands::Edit { command } => match command {
             EditCommands::Set {
-                input,
+                inputs,
                 lang,
                 key,
                 value,
@@ -258,21 +258,8 @@ fn main() {
                 output,
                 dry_run,
             } => {
-                // Validation
-                let mut context = ValidationContext::new().with_input_file(input.clone());
-                if let Some(lc) = &lang {
-                    context = context.with_language_code(lc.clone());
-                }
-                if let Some(out) = &output {
-                    context = context.with_output_file(out.clone());
-                }
-                if let Err(e) = validate_context(&context) {
-                    eprintln!("❌ Validation failed: {}", e);
-                    std::process::exit(1);
-                }
-
                 let opts = EditSetOptions {
-                    input,
+                    inputs,
                     lang,
                     key,
                     value,
@@ -282,8 +269,7 @@ fn main() {
                     dry_run,
                 };
 
-                if let Err(e) = run_edit_set_command(opts)
-                {
+                if let Err(e) = run_edit_set_command(opts) {
                     eprintln!("❌ Edit failed: {}", e);
                     std::process::exit(1);
                 }

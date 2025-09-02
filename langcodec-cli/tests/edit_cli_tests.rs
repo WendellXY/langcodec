@@ -238,7 +238,11 @@ fn test_edit_set_with_output_path() {
         .output()
         .unwrap();
 
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(output_file.exists());
     let out_content = fs::read_to_string(&output_file).unwrap();
     assert!(out_content.contains("\"new_key\""));
@@ -254,4 +258,101 @@ fn test_main_help_lists_edit() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("edit"));
+}
+
+#[test]
+fn test_edit_set_multiple_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let file1 = temp_dir.path().join("a.strings");
+    let file2 = temp_dir.path().join("b.strings");
+    fs::write(&file1, "\"hello\" = \"Hello\";\n").unwrap();
+    fs::write(&file2, "\"hello\" = \"Hello\";\n").unwrap();
+
+    let out = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "edit",
+            "set",
+            "-i",
+            file1.to_str().unwrap(),
+            "-i",
+            file2.to_str().unwrap(),
+            "-k",
+            "welcome",
+            "-v",
+            "Welcome!",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let c1 = fs::read_to_string(&file1).unwrap();
+    let c2 = fs::read_to_string(&file2).unwrap();
+    assert!(c1.contains("\"welcome\""));
+    assert!(c2.contains("\"welcome\""));
+}
+
+#[test]
+fn test_edit_set_glob_pattern() {
+    let temp_dir = TempDir::new().unwrap();
+    let dir = temp_dir.path();
+    let f1 = dir.join("a.strings");
+    let f2 = dir.join("b.strings");
+    fs::write(&f1, "\"hello\" = \"Hello\";\n").unwrap();
+    fs::write(&f2, "\"hello\" = \"Hello\";\n").unwrap();
+
+    let pattern = format!("{}/*.strings", dir.to_string_lossy());
+    let out = Command::new("cargo")
+        .args([
+            "run", "--", "edit", "set", "-i", &pattern, "-k", "added", "-v", "Yes",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(fs::read_to_string(&f1).unwrap().contains("\"added\""));
+    assert!(fs::read_to_string(&f2).unwrap().contains("\"added\""));
+}
+
+#[test]
+fn test_edit_set_multiple_inputs_with_output_is_error() {
+    let temp_dir = TempDir::new().unwrap();
+    let f1 = temp_dir.path().join("a.strings");
+    let f2 = temp_dir.path().join("b.strings");
+    let out_file = temp_dir.path().join("out.strings");
+    fs::write(&f1, "\"hello\" = \"Hello\";\n").unwrap();
+    fs::write(&f2, "\"hello\" = \"Hello\";\n").unwrap();
+
+    let out = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "edit",
+            "set",
+            "-i",
+            f1.to_str().unwrap(),
+            "-i",
+            f2.to_str().unwrap(),
+            "-k",
+            "x",
+            "-v",
+            "y",
+            "-o",
+            out_file.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "expected failure when using --output with multiple inputs"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("cannot be used with multiple input files"));
 }

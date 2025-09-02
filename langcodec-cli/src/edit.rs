@@ -1,5 +1,6 @@
-use crate::validation::{validate_context, ValidationContext};
-use langcodec::{formats::FormatType, Codec, Resource, Translation};
+use crate::path_glob;
+use crate::validation::{ValidationContext, validate_context};
+use langcodec::{Codec, Resource, Translation, formats::FormatType};
 use std::path::Path;
 
 fn parse_status_opt(
@@ -80,7 +81,7 @@ fn write_back(
 #[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone)]
 pub struct EditSetOptions {
-    pub input: String,
+    pub inputs: Vec<String>,
     pub lang: Option<String>,
     pub key: String,
     pub value: Option<String>,
@@ -91,21 +92,58 @@ pub struct EditSetOptions {
 }
 
 pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
-    // Validate basic context
-    let mut vctx = ValidationContext::new().with_input_file(opts.input.clone());
-    if let Some(l) = &opts.lang {
-        vctx = vctx.with_language_code(l.clone());
+    // Expand globs for inputs
+    let expanded = path_glob::expand_input_globs(&opts.inputs)
+        .map_err(|e| format!("Failed to expand input patterns: {}", e))?;
+    if expanded.is_empty() {
+        return Err("No input files matched the provided patterns".to_string());
     }
-    if let Some(o) = &opts.output {
-        vctx = vctx.with_output_file(o.clone());
-    }
-    validate_context(&vctx).map_err(|e| e.to_string())?;
 
-    // Load input
+    if expanded.len() > 1 && opts.output.is_some() {
+        return Err("--output cannot be used with multiple input files".to_string());
+    }
+
+    for input_path in expanded {
+        // Validate per-file
+        let mut vctx = ValidationContext::new().with_input_file(input_path.clone());
+        if let Some(l) = &opts.lang {
+            vctx = vctx.with_language_code(l.clone());
+        }
+        if let Some(o) = &opts.output {
+            vctx = vctx.with_output_file(o.clone());
+        }
+        validate_context(&vctx)
+            .map_err(|e| format!("Input validation failed for '{}': {}", input_path, e))?;
+
+        apply_set_to_file(
+            &input_path,
+            &opts.lang,
+            &opts.key,
+            &opts.value,
+            &opts.comment,
+            &opts.status,
+            opts.output.as_ref(),
+            opts.dry_run,
+        )?;
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_set_to_file(
+    input: &str,
+    lang: &Option<String>,
+    key: &str,
+    value: &Option<String>,
+    comment: &Option<String>,
+    status: &Option<String>,
+    output: Option<&String>,
+    dry_run: bool,
+) -> Result<(), String> {
     let mut codec = Codec::new();
-    if let Err(e) = codec.read_file_by_extension(&opts.input, opts.lang.clone()) {
-        // Graceful hint for unsupported or custom formats
-        let ext = Path::new(&opts.input)
+    if let Err(e) = codec.read_file_by_extension(input, lang.clone()) {
+        let ext = Path::new(input)
             .extension()
             .and_then(|s| s.to_str())
             .unwrap_or("");
@@ -115,129 +153,121 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
                     .to_string(),
             );
         }
-        return Err(format!("Failed to read input: {}", e));
+        return Err(format!("Failed to read input '{}': {}", input, e));
     }
 
-    // Determine operation: remove if value is None or Some("")
-    let is_remove = opts
-        .value
-        .as_deref()
-        .map(|s| s.is_empty())
-        .unwrap_or(true);
-    let status_parsed = parse_status_opt(&opts.status)?;
+    let is_remove = value.as_deref().map(|s| s.is_empty()).unwrap_or(true);
+    let status_parsed = parse_status_opt(status)?;
 
     if is_remove {
-        // Remove entry if present; treat missing as a no-op
-        if let Some(ref l) = opts.lang {
-            if codec.has_entry(&opts.key, l) {
-                if opts.dry_run {
-                    println!("DRY-RUN: Would remove '{}' from {}", opts.key, l);
+        if let Some(l) = lang.as_deref() {
+            if codec.has_entry(key, l) {
+                if dry_run {
+                    println!("DRY-RUN: Would remove '{}' from {} ({})", key, l, input);
                 } else {
-                    codec
-                        .remove_entry(&opts.key, l)
-                        .map_err(|e| e.to_string())?;
-                    println!("✅ Removed '{}' from {}", opts.key, l);
+                    codec.remove_entry(key, l).map_err(|e| e.to_string())?;
+                    println!("✅ Removed '{}' from {} ({})", key, l, input);
                 }
             } else {
                 println!(
-                    "ℹ️  Key '{}' not found in {}; nothing to remove",
-                    opts.key, l
+                    "ℹ️  Key '{}' not found in {} ({}); nothing to remove",
+                    key, l, input
                 );
             }
         } else {
-            // No language specified: allow removal only if single resource present
-            let res = pick_single_resource_mut(&mut codec, &opts.lang)?;
+            let res = pick_single_resource_mut(&mut codec, lang)?;
             let before = res.entries.len();
-            let will_remove = res.entries.iter().any(|e| e.id == opts.key);
-            if opts.dry_run {
+            let will_remove = res.entries.iter().any(|e| e.id == key);
+            if dry_run {
                 if will_remove {
-                    println!("DRY-RUN: Would remove '{}'", opts.key);
+                    println!("DRY-RUN: Would remove '{}' ({})", key, input);
                 } else {
                     println!(
-                        "ℹ️  Key '{}' not present; nothing to remove",
-                        opts.key
+                        "ℹ️  Key '{}' not present ({}); nothing to remove",
+                        key, input
                     );
                 }
             } else {
-                res.entries.retain(|e| e.id != opts.key);
+                res.entries.retain(|e| e.id != key);
                 if res.entries.len() < before {
-                    println!("✅ Removed '{}'", opts.key);
+                    println!("✅ Removed '{}' ({})", key, input);
                 } else {
                     println!(
-                        "ℹ️  Key '{}' not present; nothing to remove",
-                        opts.key
+                        "ℹ️  Key '{}' not present ({}); nothing to remove",
+                        key, input
                     );
                 }
             }
         }
     } else {
-        // Add or update
         let resolved_lang_owned: String;
-        let lref: &str = if let Some(l) = opts.lang.as_deref() {
+        let lref: &str = if let Some(l) = lang.as_deref() {
             l
         } else if codec.resources.len() == 1 {
             resolved_lang_owned = codec.resources[0].metadata.language.clone();
             resolved_lang_owned.as_str()
         } else {
-            return Err("--lang is required for set on multi-language files".to_string());
+            return Err(format!(
+                "--lang is required for set on multi-language files ({})",
+                input
+            ));
         };
-        let val = opts.value.clone().unwrap_or_default();
-        let exists = codec.has_entry(&opts.key, lref);
+        let val = value.clone().unwrap_or_default();
+        let exists = codec.has_entry(key, lref);
         if exists {
             let old = codec
-                .find_entry(&opts.key, lref)
+                .find_entry(key, lref)
                 .map(|e| match &e.value {
                     Translation::Singular(s) => s.clone(),
                     Translation::Plural(p) => p.id.clone(),
                 })
                 .unwrap_or_default();
-            if opts.dry_run {
+            if dry_run {
                 println!(
-                    "DRY-RUN: Would update '{}' in {}: '{}' -> '{}'",
-                    opts.key, lref, old, val
+                    "DRY-RUN: Would update '{}' in {}: '{}' -> '{}' ({})",
+                    key, lref, old, val, input
                 );
             } else {
                 codec
                     .update_translation(
-                        &opts.key,
+                        key,
                         lref,
                         Translation::Singular(val.clone()),
                         status_parsed.clone(),
                     )
                     .map_err(|e| e.to_string())?;
-                if opts.comment.is_some()
-                    && let Some(entry) = codec.find_entry_mut(&opts.key, lref)
+                if comment.is_some()
+                    && let Some(entry) = codec.find_entry_mut(key, lref)
                 {
-                    entry.comment = opts.comment.clone();
+                    entry.comment = comment.clone();
                 }
-                println!("✅ Updated '{}' in {}", opts.key, lref);
+                println!("✅ Updated '{}' in {} ({})", key, lref, input);
             }
-        } else if opts.dry_run {
+        } else if dry_run {
             println!(
-                "DRY-RUN: Would add '{}' to {} with value '{}'",
-                opts.key, lref, val
+                "DRY-RUN: Would add '{}' to {} with value '{}' ({})",
+                key, lref, val, input
             );
         } else {
             codec
                 .add_entry(
-                    &opts.key,
+                    key,
                     lref,
                     Translation::Singular(val.clone()),
-                    opts.comment.clone(),
+                    comment.clone(),
                     status_parsed.clone(),
                 )
                 .map_err(|e| e.to_string())?;
-            println!("✅ Added '{}' to {}", opts.key, lref);
+            println!("✅ Added '{}' to {} ({})", key, lref, input);
         }
     }
 
-    // Write back unless dry-run
-    if !opts.dry_run {
-        write_back(&codec, &opts.input, &opts.output, &opts.lang)?;
-        if let Some(out) = &opts.output {
+    if !dry_run {
+        write_back(&codec, input, &output.cloned(), lang)?;
+        if let Some(out) = output {
             println!("📄 Wrote changes to {}", out);
         } else {
-            println!("📄 Updated {} in place", opts.input);
+            println!("📄 Updated {} in place", input);
         }
     }
 
