@@ -553,7 +553,10 @@ mod tests {
     #[test]
     fn test_unescape_minimal_func_direct() {
         assert_eq!(super::unescape_strings_minimal("Can\\'t"), "Can't");
-        assert_eq!(super::unescape_strings_minimal("He said: \\\"hi\\\""), "He said: \"hi\"");
+        assert_eq!(
+            super::unescape_strings_minimal("He said: \\\"hi\\\""),
+            "He said: \"hi\""
+        );
     }
 
     #[test]
@@ -608,6 +611,25 @@ mod tests {
         // Should be marked as New status in Entry
         let entry = pair.to_entry();
         assert_eq!(entry.status, EntryStatus::New);
+    }
+
+    #[test]
+    fn test_preserve_trailing_spaces() {
+        let content = r#"
+        "key1" = "Value with trailing space ";
+        "key2" = "Another value with trailing spaces   ";
+        "key3" = "No trailing spaces";
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 3);
+
+        let pair1 = &parsed.pairs[0];
+        let pair2 = &parsed.pairs[1];
+        let pair3 = &parsed.pairs[2];
+
+        assert_eq!(pair1.value, "Value with trailing space ");
+        assert_eq!(pair2.value, "Another value with trailing spaces   ");
+        assert_eq!(pair3.value, "No trailing spaces");
     }
 
     #[test]
