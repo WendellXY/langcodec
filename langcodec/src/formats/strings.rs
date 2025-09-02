@@ -40,9 +40,10 @@ impl Parser for Format {
             .map_err(|_| Error::InvalidResource("Invalid UTF-8 in .strings file".to_string()))?;
 
         // Parse content
+        let header_language = extract_header_language(&content).unwrap_or_default();
         let (pairs, _warnings) = parse_strings_content(&content);
         Ok(Format {
-            language: String::new(),
+            language: header_language,
             pairs,
         })
     }
@@ -175,12 +176,20 @@ fn parse_strings_content(content: &str) -> (Vec<Pair>, Vec<String>) {
     let mut pairs: Vec<Pair> = Vec::new();
     let warnings: Vec<String> = Vec::new();
     let mut pending_comment: Option<String> = None;
+    let mut have_seen_pair = false;
 
     while i < len {
         let (ni, _saw_newline) = skip_whitespace(bytes, i);
         i = ni;
         if i >= len {
             break;
+        }
+
+        // If we're at the top of the file (no pairs yet), detect and skip the auto-generated header
+        if !have_seen_pair && let Some(next_i) = try_skip_langcodec_header(bytes, i) {
+            i = next_i;
+            pending_comment = None;
+            continue;
         }
 
         // Comments
@@ -231,6 +240,7 @@ fn parse_strings_content(content: &str) -> (Vec<Pair>, Vec<String>) {
                         comment: pending_comment.take(),
                     };
                     pairs.push(pair);
+                    have_seen_pair = true;
                     continue;
                 }
             }
@@ -300,6 +310,60 @@ fn parse_block_comment(bytes: &[u8], i: usize) -> (usize, String) {
     }
     let comment = String::from_utf8_lossy(&bytes[i..j.min(bytes.len())]).to_string();
     (j, comment)
+}
+
+// Detect and skip the standard langcodec header block at the start of the file.
+// Returns Some(new_index) if a header was skipped, or None otherwise.
+fn try_skip_langcodec_header(bytes: &[u8], mut i: usize) -> Option<usize> {
+    let start = i;
+    let mut saw_header_marker = false;
+    // We look for consecutive comment lines starting with // and possibly a block containing
+    // a line beginning with //: Language:
+    while i < bytes.len() {
+        // Allow blank lines within header
+        let (ni, _nl) = skip_whitespace(bytes, i);
+        i = ni;
+        if i >= bytes.len() {
+            break;
+        }
+        if starts_with(bytes, i, b"//:") || starts_with(bytes, i, b"//") {
+            if starts_with(bytes, i, b"//:") {
+                saw_header_marker = true;
+            }
+            // consume to end of line
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        break;
+    }
+    if saw_header_marker && i > start {
+        Some(i)
+    } else {
+        None
+    }
+}
+
+fn extract_header_language(content: &str) -> Option<String> {
+    // Look within the first ~50 lines for a header language line
+    for line in content.lines().take(50) {
+        let trimmed = line.trim_start();
+        // Accept forms like: //: Language: xx or // : Language: xx
+        if let Some(rest) = trimmed
+            .strip_prefix("//:")
+            .or_else(|| trimmed.strip_prefix("// :"))
+        {
+            let rest = rest.trim_start();
+            if let Some(lang_part) = rest.strip_prefix("Language:") {
+                let lang = lang_part.trim();
+                if !lang.is_empty() {
+                    return Some(lang.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 // Parses a quoted string starting at byte index i (which must point to '"').
