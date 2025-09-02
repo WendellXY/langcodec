@@ -3,7 +3,7 @@
 Universal localization toolkit: library + CLI for Apple/Android/CSV/TSV.
 
 - Library crate (`langcodec`): parse, write, convert, merge with a unified model
-- CLI crate (`langcodec-cli`): convert, merge, view, stats, debug
+- CLI crate (`langcodec-cli`): convert, merge, view, stats, debug, edit
 
 ---
 
@@ -57,6 +57,7 @@ This is a `0.4.0` release available on [crates.io](https://crates.io/crates/lang
 ### CLI Highlights
 
 - Convert: `langcodec convert -i input.strings -o strings.xml`
+- Edit (add/update/remove): `langcodec edit set -i 'locales/**/*.strings' -k welcome -v "Hello"` (use `--dry-run` to preview)
 - View: `langcodec view -i strings.xml --full`
 - Stats (JSON): `langcodec stats -i Localizable.xcstrings --json`
   - See full options: langcodec-cli/README.md#stats
@@ -88,6 +89,7 @@ This is a `0.4.0` release available on [crates.io](https://crates.io/crates/lang
 - All commands support Apple `.strings`, `.xcstrings`, Android `strings.xml`, and CSV.
 - The convert command also supports JSON files with key-value pairs.
 - The CLI will error if you try to merge files of different formats.
+- Edit supports multiple inputs and glob patterns. When multiple inputs are provided, edits are applied in-place and `--output` is not allowed.
 - Android path inference: `values/strings.xml` (no qualifier) defaults to English (`en`).
 - When converting to `.xcstrings`, if `source_language` or `version` metadata is missing, the CLI defaults them to `en` and `1.0` respectively (overridable via flags).
 
