@@ -126,7 +126,15 @@ pub fn run_edit_set_command(
         }
     } else {
         // Add or update
-        let lref = lang.as_deref().ok_or_else(|| "--lang is required for set on multi-language files".to_string())?;
+        let resolved_lang_owned: String;
+        let lref: &str = if let Some(l) = lang.as_deref() {
+            l
+        } else if codec.resources.len() == 1 {
+            resolved_lang_owned = codec.resources[0].metadata.language.clone();
+            resolved_lang_owned.as_str()
+        } else {
+            return Err("--lang is required for set on multi-language files".to_string());
+        };
         let val = value.unwrap_or_default();
         let exists = codec.has_entry(&key, lref);
         if exists {
