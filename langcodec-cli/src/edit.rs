@@ -132,14 +132,14 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
         }
         processed_count += 1;
         // Validate per-file
-        let mut vctx = ValidationContext::new().with_input_file(input_path.clone());
+        let mut validation_context = ValidationContext::new().with_input_file(input_path.clone());
         if let Some(l) = &opts.lang {
-            vctx = vctx.with_language_code(l.clone());
+            validation_context = validation_context.with_language_code(l.clone());
         }
         if let Some(o) = &opts.output {
-            vctx = vctx.with_output_file(o.clone());
+            validation_context = validation_context.with_output_file(o.clone());
         }
-        if let Err(e) = validate_context(&vctx) {
+        if let Err(e) = validate_context(&validation_context) {
             let msg = format!("Input validation failed for '{}': {}", input_path, e);
             if opts.continue_on_error {
                 eprintln!("❌ {}", msg);
@@ -273,7 +273,7 @@ fn apply_set_to_file(
         }
     } else {
         let resolved_lang_owned: String;
-        let lref: &str = if let Some(l) = lang.as_deref() {
+        let lang_ref: &str = if let Some(l) = lang.as_deref() {
             l
         } else if codec.resources.len() == 1 {
             resolved_lang_owned = codec.resources[0].metadata.language.clone();
@@ -285,10 +285,10 @@ fn apply_set_to_file(
             ));
         };
         let val = value.clone().unwrap_or_default();
-        let exists = codec.has_entry(key, lref);
+        let exists = codec.has_entry(key, lang_ref);
         if exists {
             let old = codec
-                .find_entry(key, lref)
+                .find_entry(key, lang_ref)
                 .map(|e| match &e.value {
                     Translation::Singular(s) => s.clone(),
                     Translation::Plural(p) => p.id.clone(),
@@ -297,40 +297,40 @@ fn apply_set_to_file(
             if dry_run {
                 println!(
                     "DRY-RUN: Would update '{}' in {}: '{}' -> '{}' ({})",
-                    key, lref, old, val, input
+                    key, lang_ref, old, val, input
                 );
             } else {
                 codec
                     .update_translation(
                         key,
-                        lref,
+                        lang_ref,
                         Translation::Singular(val.clone()),
                         status_parsed.clone(),
                     )
                     .map_err(|e| e.to_string())?;
                 if comment.is_some()
-                    && let Some(entry) = codec.find_entry_mut(key, lref)
+                    && let Some(entry) = codec.find_entry_mut(key, lang_ref)
                 {
                     entry.comment = comment.clone();
                 }
-                println!("✅ Updated '{}' in {} ({})", key, lref, input);
+                println!("✅ Updated '{}' in {} ({})", key, lang_ref, input);
             }
         } else if dry_run {
             println!(
                 "DRY-RUN: Would add '{}' to {} with value '{}' ({})",
-                key, lref, val, input
+                key, lang_ref, val, input
             );
         } else {
             codec
                 .add_entry(
                     key,
-                    lref,
+                    lang_ref,
                     Translation::Singular(val.clone()),
                     comment.clone(),
                     status_parsed.clone(),
                 )
                 .map_err(|e| e.to_string())?;
-            println!("✅ Added '{}' to {} ({})", key, lref, input);
+            println!("✅ Added '{}' to {} ({})", key, lang_ref, input);
         }
     }
 

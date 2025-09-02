@@ -58,6 +58,38 @@ To add support for a new localization format:
 - Add examples in doc comments
 - Update the format support table in README.md
 
+## Commit message style
+
+Follow the Conventional Commits specification to keep history readable and enable automated changelog tooling. See the official docs: <https://www.conventionalcommits.org/en/v1.0.0/>.
+
+- Use the format: `<type>(<scope>): <subject>`
+- type: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+- scope (optional): one of lib, cli, formats, formats/android, formats/strings, formats/xcstrings, formats/csv, formats/tsv, transformers, validation, docs, tests
+- subject: imperative mood, lowercase, ≤ 72 characters, no trailing period
+- Separate body from subject with a blank line; explain motivation and impact
+- Reference issues in the body or footer (e.g., Refs #123 or Fixes #123)
+- Breaking changes: use `feat!:` or `fix!:` in the subject, and include a `BREAKING CHANGE:` footer
+
+Examples:
+
+```text
+feat(cli): add --check_plurals to view command
+
+fix(formats/android): escape apostrophes correctly in strings.xml
+
+refactor(lib): simplify plural rules evaluation
+
+chore: update dependencies
+
+feat!: replace plural category API
+
+feat(cli): add stats --json output
+
+Provide machine-readable stats for CI consumers and human-readable summary by default.
+
+BREAKING CHANGE: stats subcommand no longer prints totals by default; use --json.
+```
+
 ## Submitting Changes
 
 **1. Create a feature branch:**
@@ -70,7 +102,7 @@ To add support for a new localization format:
 
  ```bash
  git add .
- git commit -m "Add: brief description of changes"
+ git commit -m "feat: brief description of changes"
  ```
 
 **3. Push and create a pull request:**
