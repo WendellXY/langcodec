@@ -192,7 +192,14 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
         failures.len()
     );
 
-    if failures.is_empty() { Ok(()) } else { Err(format!("{} file(s) failed. See errors above.", failures.len())) }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} file(s) failed. See errors above.",
+            failures.len()
+        ))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
