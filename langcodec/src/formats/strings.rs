@@ -169,7 +169,7 @@ impl Parser for Format {
                         }
                         if let Some(end_pos) = last_quote_pos {
                             // Safe slicing at UTF-8 boundaries because we only slice on quote bytes
-                            value = unescape_strings_minimal(&rhs_trimmed[1..end_pos]);
+                            value = rhs_trimmed[1..end_pos].to_string();
                         } else {
                             // Malformed line without closing quote; treat as empty
                             value = String::new();
@@ -374,15 +374,38 @@ impl Pair {
 // Escape a .strings token for safe emission inside quotes
 fn escape_strings_token(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
-    for ch in s.chars() {
+    let mut i = 0;
+    let chars: Vec<char> = s.chars().collect();
+    while i < chars.len() {
+        let ch = chars[i];
         match ch {
             '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
+            '\\' => {
+                // Count run of backslashes
+                let mut run = 1usize;
+                while i + run < chars.len() && chars[i + run] == '\\' {
+                    run += 1;
+                }
+                let next = chars.get(i + run).copied();
+                if matches!(next, Some('\'')) {
+                    // Backslashes immediately before apostrophe: preserve count exactly
+                    for _ in 0..run {
+                        out.push('\\');
+                    }
+                } else {
+                    // Else, escape backslashes normally (double each)
+                    for _ in 0..run {
+                        out.push_str("\\\\");
+                    }
+                }
+                i += run - 1; // advance to last of run; loop will increment one more
+            }
             '\n' => out.push_str("\\n"),
             '\t' => out.push_str("\\t"),
             '\r' => out.push_str("\\r"),
             _ => out.push(ch),
         }
+        i += 1;
     }
     out
 }
@@ -516,15 +539,15 @@ mod tests {
         "#;
         let parsed = Format::from_str(content).unwrap();
         assert_eq!(parsed.pairs.len(), 2);
-        assert_eq!(parsed.pairs[0].value, "Can't accept");
-        assert_eq!(parsed.pairs[1].value, "Can't accept");
+        assert_eq!(parsed.pairs[0].value, r#"Can\'t accept"#);
+        assert_eq!(parsed.pairs[1].value, r#"Can\\'t accept"#);
 
         // Writing back should not introduce extra backslashes before apostrophes
         let mut out = Vec::new();
         parsed.to_writer(&mut out).unwrap();
         let out_str = String::from_utf8(out).unwrap();
-        assert!(out_str.contains("\"key1\" = \"Can't accept\";"));
-        assert!(out_str.contains("\"key2\" = \"Can't accept\";"));
+        assert!(out_str.contains(r#""key1" = "Can\'t accept";"#));
+        assert!(out_str.contains(r#""key2" = "Can\\'t accept";"#));
     }
 
     #[test]
