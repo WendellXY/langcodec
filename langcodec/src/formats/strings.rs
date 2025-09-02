@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Read;
+// keep imports minimal; actual Read trait is used via fully qualified call above
 use std::path::Path;
 
 use indoc::indoc;
@@ -26,182 +26,24 @@ pub struct Format {
     pub pairs: Vec<Pair>,
 }
 
-impl Format {
-    pub fn multiline_values_to_one_line(content: &mut String) {
-        // Copy of content to operate on
-        let orig = content.clone();
-        let mut result = String::with_capacity(orig.len());
-
-        // State for parsing
-        let mut chars = orig.chars().peekable();
-        let mut inside_value = false;
-        let mut value_buf = String::new();
-
-        while let Some(c) = chars.next() {
-            if !inside_value {
-                // Look for start of a value: " = "
-                result.push(c);
-                if c == '=' {
-                    // Seek first quote after '='
-                    while let Some(&d) = chars.peek() {
-                        result.push(d);
-                        chars.next();
-                        if d == '"' {
-                            inside_value = true;
-                            value_buf.clear();
-                            break;
-                        }
-                    }
-                }
-            } else {
-                // Inside value (quoted string)
-                if c == '"' {
-                    // Check if this quote is escaped
-                    let prev_backslashes =
-                        value_buf.chars().rev().take_while(|&x| x == '\\').count();
-                    if prev_backslashes % 2 == 0 {
-                        // Closing quote (not escaped)
-                        inside_value = false;
-                        // Replace newlines with \n, remove leading spaces after each
-                        let value_one_line = value_buf
-                            .lines()
-                            .map(str::trim_start)
-                            .collect::<Vec<_>>()
-                            .join(r"\n");
-                        result.push_str(&value_one_line);
-                        result.push('"');
-                        value_buf.clear();
-                    } else {
-                        value_buf.push('"');
-                    }
-                } else {
-                    value_buf.push(c);
-                }
-            }
-        }
-
-        *content = result;
-    }
-}
-
 impl Parser for Format {
     /// Creates a new `Format` instance with the specified language and pairs.
     ///
     /// The `language` parameter would be empty, since the .strings format does
     /// not contain any metadata about the language.
     fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, Error> {
-        let mut file_content = reader.lines().collect::<Result<Vec<_>, _>>()?.join("\n");
+        // Read entire input into a string (UTF-8 expected here; UTF-16 handled in read_from)
+        let mut reader = reader;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut reader, &mut bytes).map_err(Error::Io)?;
+        let content = String::from_utf8(bytes)
+            .map_err(|_| Error::InvalidResource("Invalid UTF-8 in .strings file".to_string()))?;
 
-        Format::multiline_values_to_one_line(&mut file_content);
-
-        // For simplicity, we assume there are no multi-line comments and in-line comments in the file.
-        let lines = file_content.lines().collect::<Vec<_>>();
-
-        let mut header = HashMap::<String, String>::new();
-
-        let mut last_comment: Option<&str> = None;
-
-        // strings pair pattern: "key" = "value";
-        let pairs = lines
-            .iter()
-            .filter_map(|line| {
-                let trimmed = line.trim();
-                if trimmed.starts_with("//:") {
-                    // This is a header line, we can extract metadata from it.
-                    //
-                    // Example: "//: Language: English"
-                    let parts: Vec<&str> = trimmed.splitn(3, ':').collect();
-                    if parts.len() == 3 {
-                        let key = parts[1].trim().to_string();
-                        let value = parts[2].trim().to_string();
-                        header.insert(key, value);
-                    }
-                    return None; // Skip header lines
-                } else if trimmed.is_empty()
-                    || trimmed.starts_with("/*")
-                    || trimmed.starts_with("//")
-                {
-                    last_comment = Some(trimmed);
-                    return None; // Skip empty lines and comments
-                }
-
-                let parts: Vec<&str> = trimmed.splitn(3, '=').collect();
-                if parts.len() != 2 {
-                    return None; // Invalid line format
-                }
-
-                let key = parts[0].trim().trim_matches('"').to_string();
-                // Take the right-hand side up to the terminating semicolon, ignoring any inline comments afterward
-                let rhs = parts[1].trim();
-                let rhs_before_semicolon = if let Some(idx) = rhs.find(';') {
-                    &rhs[..idx]
-                } else {
-                    rhs
-                };
-                let rhs_trimmed = rhs_before_semicolon.trim();
-
-                // Expect a quoted string value; handle empty string and ignore any trailing inline comments
-                let mut value = String::new();
-                if !rhs_trimmed.is_empty() {
-                    if rhs_trimmed.starts_with('"') {
-                        // Find the last unescaped quote to close the value
-                        let mut last_quote_pos: Option<usize> = None;
-                        let bytes = rhs_trimmed.as_bytes();
-                        let mut i = 1; // start after the first quote
-                        while i < bytes.len() {
-                            if bytes[i] == b'"' {
-                                // count preceding backslashes
-                                let mut backslashes = 0;
-                                let mut j = i;
-                                while j > 0 && bytes[j - 1] == b'\\' {
-                                    backslashes += 1;
-                                    j -= 1;
-                                }
-                                if backslashes % 2 == 0 {
-                                    last_quote_pos = Some(i);
-                                    break;
-                                }
-                            }
-                            i += 1;
-                        }
-                        if let Some(end_pos) = last_quote_pos {
-                            // Safe slicing at UTF-8 boundaries because we only slice on quote bytes
-                            value = rhs_trimmed[1..end_pos].to_string();
-                        } else {
-                            // Malformed line without closing quote; treat as empty
-                            value = String::new();
-                        }
-                    } else {
-                        // Not a quoted value; treat as empty to be permissive
-                        value = String::new();
-                    }
-                }
-
-                let comment = match last_comment {
-                    Some(comment) if comment.starts_with("/*") || comment.starts_with("//") => {
-                        Some(comment.trim().to_string())
-                    }
-                    _ => None,
-                };
-
-                // Clear the last_comment after using it
-                if comment.is_some() {
-                    last_comment = None;
-                }
-
-                Some(Pair {
-                    key,
-                    value,
-                    comment,
-                })
-            })
-            .collect();
-
-        // Extract language from header if available
-        let language = &header.get("Language").cloned().unwrap_or_default();
-
+        // Parse content
+        let header_language = extract_header_language(&content).unwrap_or_default();
+        let (pairs, _warnings) = parse_strings_content(&content);
         Ok(Format {
-            language: language.to_string(), // .strings format does not have a language field
+            language: header_language,
             pairs,
         })
     }
@@ -227,8 +69,15 @@ impl Parser for Format {
         content.push_str(&header);
 
         for pair in &self.pairs {
-            content.push_str(&pair.to_string());
-            content.push('\n');
+            if let Some(comment) = &pair.comment {
+                let trimmed = comment.trim_end_matches(['\n', '\r']);
+                content.push_str(trimmed);
+                content.push('\n');
+            }
+
+            let key = escape_strings_token(&pair.key);
+            let value = escape_strings_token(&pair.value);
+            content.push_str(&format!("\"{}\" = \"{}\";\n", key, value));
         }
 
         writer.write_all(content.as_bytes()).map_err(Error::Io)
@@ -245,9 +94,10 @@ impl Parser for Format {
             .bom_override(true)
             .build(file);
 
-        let mut decoded = String::new();
-        decoder.read_to_string(&mut decoded).map_err(Error::Io)?;
-
+        let mut decoded_bytes = Vec::new();
+        std::io::Read::read_to_end(&mut decoder, &mut decoded_bytes).map_err(Error::Io)?;
+        let decoded = String::from_utf8(decoded_bytes)
+            .map_err(|_| Error::InvalidResource("Invalid UTF-8 in .strings file".to_string()))?;
         Self::from_str(&decoded)
     }
 }
@@ -315,13 +165,340 @@ impl Pair {
     }
 }
 
+// ----------------------
+// Internal helpers
+// ----------------------
+
+fn parse_strings_content(content: &str) -> (Vec<Pair>, Vec<String>) {
+    let bytes = content.as_bytes();
+    let mut i = 0usize;
+    let len = bytes.len();
+    let mut pairs: Vec<Pair> = Vec::new();
+    let warnings: Vec<String> = Vec::new();
+    let mut pending_comment: Option<String> = None;
+    let mut have_seen_pair = false;
+
+    while i < len {
+        let (ni, _saw_newline) = skip_whitespace(bytes, i);
+        i = ni;
+        if i >= len {
+            break;
+        }
+
+        // If we're at the top of the file (no pairs yet), detect and skip the auto-generated header
+        if !have_seen_pair && let Some(next_i) = try_skip_langcodec_header(bytes, i) {
+            i = next_i;
+            pending_comment = None;
+            continue;
+        }
+
+        // Comments
+        if starts_with(bytes, i, b"//") {
+            let (nj, comment) = parse_line_comment(bytes, i);
+            pending_comment = Some(comment);
+            i = nj;
+            continue;
+        }
+        if starts_with(bytes, i, b"/*") {
+            let (nj, comment) = parse_block_comment(bytes, i);
+            pending_comment = Some(comment);
+            i = nj;
+            continue;
+        }
+
+        // Key-Value pair: "key" = "value";
+        if let Some((j, key)) = parse_quoted_utf8(content, bytes, i) {
+            i = j;
+            let (ni2, _) = skip_inline_ws(bytes, i);
+            i = ni2;
+            if i < len && bytes[i] == b'=' {
+                i += 1; // consume '='
+                let (ni3, _) = skip_inline_ws(bytes, i);
+                i = ni3;
+                if let Some((jv, value_raw)) = parse_quoted_utf8(content, bytes, i) {
+                    i = jv;
+                    // seek semicolon, ignoring spaces and tabs only
+                    let (ni4, _) = skip_inline_ws(bytes, i);
+                    i = ni4;
+                    // Consume until ';' if present
+                    if i < len && bytes[i] == b';' {
+                        i += 1; // consume ';'
+                    } else {
+                        // try to find ';' ahead on the same or following lines
+                        while i < len && bytes[i] != b';' && bytes[i] != b'\n' {
+                            i += 1;
+                        }
+                        if i < len && bytes[i] == b';' {
+                            i += 1;
+                        }
+                    }
+
+                    let value = normalize_value_newlines(&value_raw);
+                    let pair = Pair {
+                        key,
+                        value,
+                        comment: pending_comment.take(),
+                    };
+                    pairs.push(pair);
+                    have_seen_pair = true;
+                    continue;
+                }
+            }
+        }
+
+        // If we reach here, consume until next newline to avoid infinite loop
+        while i < len && bytes[i] != b'\n' {
+            i += 1;
+        }
+        // newline will be skipped on next iteration
+    }
+
+    (pairs, warnings)
+}
+
+fn starts_with(hay: &[u8], i: usize, needle: &[u8]) -> bool {
+    hay.len() >= i + needle.len() && &hay[i..i + needle.len()] == needle
+}
+
+fn skip_whitespace(bytes: &[u8], mut i: usize) -> (usize, bool) {
+    let mut saw_newline = false;
+    while i < bytes.len() {
+        match bytes[i] {
+            b' ' | b'\t' | 0x0C | 0x0D => i += 1, // spaces, tabs, form feed, carriage return
+            b'\n' => {
+                saw_newline = true;
+                i += 1;
+            }
+            _ => break,
+        }
+    }
+    (i, saw_newline)
+}
+
+fn skip_inline_ws(bytes: &[u8], mut i: usize) -> (usize, bool) {
+    let mut saw_newline = false;
+    while i < bytes.len() {
+        match bytes[i] {
+            b' ' | b'\t' | 0x0C | 0x0D => i += 1,
+            b'\n' => {
+                saw_newline = true;
+                i += 1;
+            }
+            _ => break,
+        }
+    }
+    (i, saw_newline)
+}
+
+fn parse_line_comment(bytes: &[u8], i: usize) -> (usize, String) {
+    let mut j = i;
+    while j < bytes.len() && bytes[j] != b'\n' {
+        j += 1;
+    }
+    let comment = String::from_utf8_lossy(&bytes[i..j]).to_string();
+    (j, comment)
+}
+
+fn parse_block_comment(bytes: &[u8], i: usize) -> (usize, String) {
+    let mut j = i + 2; // after /*
+    while j + 1 < bytes.len() {
+        if bytes[j] == b'*' && bytes[j + 1] == b'/' {
+            j += 2;
+            break;
+        }
+        j += 1;
+    }
+    let comment = String::from_utf8_lossy(&bytes[i..j.min(bytes.len())]).to_string();
+    (j, comment)
+}
+
+// Detect and skip the standard langcodec header block at the start of the file.
+// Returns Some(new_index) if a header was skipped, or None otherwise.
+fn try_skip_langcodec_header(bytes: &[u8], mut i: usize) -> Option<usize> {
+    let start = i;
+    let mut saw_header_marker = false;
+    // We look for consecutive comment lines starting with // and possibly a block containing
+    // a line beginning with //: Language:
+    while i < bytes.len() {
+        // Allow blank lines within header
+        let (ni, _nl) = skip_whitespace(bytes, i);
+        i = ni;
+        if i >= bytes.len() {
+            break;
+        }
+        if starts_with(bytes, i, b"//:") || starts_with(bytes, i, b"//") {
+            if starts_with(bytes, i, b"//:") {
+                saw_header_marker = true;
+            }
+            // consume to end of line
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        break;
+    }
+    if saw_header_marker && i > start {
+        Some(i)
+    } else {
+        None
+    }
+}
+
+fn extract_header_language(content: &str) -> Option<String> {
+    // Look within the first ~50 lines for a header language line
+    for line in content.lines().take(50) {
+        let trimmed = line.trim_start();
+        // Accept forms like: //: Language: xx or // : Language: xx
+        if let Some(rest) = trimmed
+            .strip_prefix("//:")
+            .or_else(|| trimmed.strip_prefix("// :"))
+        {
+            let rest = rest.trim_start();
+            if let Some(lang_part) = rest.strip_prefix("Language:") {
+                let lang = lang_part.trim();
+                if !lang.is_empty() {
+                    return Some(lang.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+// Parses a quoted string starting at byte index i (which must point to '"').
+// Returns (byte_index_after_closing_quote, substring content as UTF-8) without the surrounding quotes,
+// preserving backslashes and non-ASCII characters exactly as in the source.
+fn parse_quoted_utf8(source: &str, bytes: &[u8], i: usize) -> Option<(usize, String)> {
+    if i >= bytes.len() || bytes[i] != b'"' {
+        return None;
+    }
+    let start = i + 1; // start of content inside quotes
+    let mut j = start;
+    let mut consecutive_backslashes = 0usize;
+    while j < bytes.len() {
+        let b = bytes[j];
+        if b == b'\\' {
+            consecutive_backslashes += 1;
+            j += 1;
+            continue;
+        }
+        if b == b'"' {
+            // If number of preceding backslashes is even, the quote terminates the string
+            if consecutive_backslashes % 2 == 0 {
+                let end = j;
+                let s = &source[start..end];
+                return Some((j + 1, s.to_string()));
+            }
+            // else, it's an escaped quote, continue scanning
+        }
+        // reset backslash count on any non-backslash byte
+        consecutive_backslashes = 0;
+        j += 1;
+    }
+    None
+}
+
+fn normalize_value_newlines(raw: &str) -> String {
+    if !raw.contains('\n') {
+        return raw.to_string();
+    }
+    let mut out = String::new();
+    for (idx, line) in raw.split('\n').enumerate() {
+        let piece = if idx == 0 {
+            line.to_string()
+        } else {
+            line.trim_start().to_string()
+        };
+        if idx > 0 {
+            out.push_str(r"\n");
+        }
+        out.push_str(&piece);
+    }
+    out
+}
+
+fn escape_strings_token(s: &str) -> String {
+    // Escape quotes and literal newlines. Preserve recognized escape sequences (\n, \t, \r, \" , \' , \\) as-is.
+    let mut out = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0usize;
+    while i < chars.len() {
+        let ch = chars[i];
+        match ch {
+            '"' => {
+                out.push('\\');
+                out.push('"');
+                i += 1;
+            }
+            '\n' => {
+                out.push('\\');
+                out.push('n');
+                i += 1;
+            }
+            '\\' => {
+                // Handle runs of backslashes with lookahead
+                let mut j = i;
+                while j < chars.len() && chars[j] == '\\' {
+                    j += 1;
+                }
+                let next_char = if j < chars.len() {
+                    Some(chars[j])
+                } else {
+                    None
+                };
+
+                match next_char {
+                    Some('\'') => {
+                        // Preserve run when followed by apostrophe
+                        for _ in i..j {
+                            out.push('\\');
+                        }
+                        out.push('\'');
+                        i = j + 1;
+                    }
+                    Some('n') | Some('t') | Some('r') | Some('"') | Some('\\') => {
+                        // Recognized escape sequence: preserve exactly one run of backslashes and the escape char as-is
+                        for _ in i..j {
+                            out.push('\\');
+                        }
+                        out.push(next_char.unwrap());
+                        i = j + 1;
+                    }
+                    Some(other) => {
+                        // Unrecognized escape: double each backslash to preserve literal backslashes, then the next char
+                        for _ in i..j {
+                            out.push('\\');
+                            out.push('\\');
+                        }
+                        out.push(other);
+                        i = j + 1;
+                    }
+                    None => {
+                        // Trailing backslashes at end of string: double them
+                        for _ in i..j {
+                            out.push('\\');
+                            out.push('\\');
+                        }
+                        i = j;
+                    }
+                }
+            }
+            _ => {
+                out.push(ch);
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
 impl TryFrom<Entry> for Pair {
     type Error = Error;
 
     fn try_from(entry: Entry) -> Result<Self, Self::Error> {
-        // Strings format only supports singular translations
-        // with plain text values.
-        match Translation::plain_translation(entry.value) {
+        // Strings format only supports singular translations. Preserve the value verbatim.
+        match entry.value {
             Translation::Singular(value) => Ok(Pair {
                 key: entry.id,
                 value,
@@ -365,34 +542,6 @@ impl Pair {
         } else {
             String::new()
         }
-    }
-}
-
-// Escape a .strings token for safe emission inside quotes
-fn escape_strings_token(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for ch in s.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            '\r' => out.push_str("\\r"),
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
-impl std::fmt::Display for Pair {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let key = escape_strings_token(&self.key);
-        let value = escape_strings_token(&self.value);
-        let mut result = format!("\"{}\" = \"{}\";", key, value);
-        if let Some(comment) = &self.comment {
-            result.insert_str(0, &format!("{}\n", comment));
-        }
-        write!(f, "{}", result)
     }
 }
 
@@ -458,6 +607,25 @@ mod tests {
     }
 
     #[test]
+    fn test_unescape_minimal_apostrophe_and_backslash() {
+        let content = r#"
+        "key1" = "Can\'t accept";
+        "key2" = "Can\\'t accept";
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 2);
+        assert_eq!(parsed.pairs[0].value, r#"Can\'t accept"#);
+        assert_eq!(parsed.pairs[1].value, r#"Can\\'t accept"#);
+
+        // Writing back should not introduce extra backslashes before apostrophes
+        let mut out = Vec::new();
+        parsed.to_writer(&mut out).unwrap();
+        let out_str = String::from_utf8(out).unwrap();
+        assert!(out_str.contains(r#""key1" = "Can\'t accept";"#));
+        assert!(out_str.contains(r#""key2" = "Can\\'t accept";"#));
+    }
+
+    #[test]
     fn test_multiline_value_with_embedded_newlines_and_whitespace() {
         let content = r#"
         /* Multiline value */
@@ -509,6 +677,28 @@ mod tests {
         // Should be marked as New status in Entry
         let entry = pair.to_entry();
         assert_eq!(entry.status, EntryStatus::New);
+    }
+
+    #[test]
+    fn test_preserve_trailing_spaces() {
+        let content = r#"
+        "key1" = "Value with trailing space ";
+        "key2" = "Another value with trailing spaces   ";
+        "key3" = "No trailing spaces";
+        "key4" = "过去一天 ";
+        "#;
+        let parsed = Format::from_str(content).unwrap();
+        assert_eq!(parsed.pairs.len(), 4);
+
+        let pair1 = &parsed.pairs[0];
+        let pair2 = &parsed.pairs[1];
+        let pair3 = &parsed.pairs[2];
+        let pair4 = &parsed.pairs[3];
+
+        assert_eq!(pair1.value, "Value with trailing space ");
+        assert_eq!(pair2.value, "Another value with trailing spaces   ");
+        assert_eq!(pair3.value, "No trailing spaces");
+        assert_eq!(pair4.value, "过去一天 ");
     }
 
     #[test]

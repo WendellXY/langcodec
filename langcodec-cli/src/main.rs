@@ -1,5 +1,6 @@
 mod convert;
 mod debug;
+mod edit;
 mod formats;
 mod merge;
 mod path_glob;
@@ -10,6 +11,7 @@ mod view;
 
 use crate::convert::{ConvertOptions, run_unified_convert_command, try_custom_format_view};
 use crate::debug::run_debug_command;
+use crate::edit::{EditSetOptions, run_edit_set_command};
 use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::validation::{ValidationContext, validate_context};
 use crate::view::print_view;
@@ -59,6 +61,17 @@ enum Commands {
         /// Language codes to include in output (e.g., "en", "fr"). Can be specified multiple times or as comma-separated values (e.g., "--include-lang en,fr,zh-hans"). If specified, only these languages will be included. Only affects .langcodec output format.
         #[arg(long, value_name = "LANG", value_delimiter = ',')]
         include_lang: Vec<String>,
+    },
+
+    /// Edit localization files in-place.
+    ///
+    /// The `set` action unifies add/update/remove:
+    /// - If the key does not exist, it is added
+    /// - If `--value` is an empty string or omitted, the key is removed
+    /// - Otherwise the key is updated
+    Edit {
+        #[command(subcommand)]
+        command: EditCommands,
     },
 
     /// View localization files.
@@ -146,6 +159,53 @@ enum Commands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum EditCommands {
+    /// Set a key's value (add/update/remove unified).
+    ///
+    /// Behavior:
+    /// - Missing key → add
+    /// - Empty or omitted --value → remove
+    /// - Otherwise → update
+    Set {
+        /// The input files to modify (supports glob patterns). Quote patterns to avoid shell expansion.
+        #[arg(short, long, num_args = 1.., help = "Input files. Supports glob patterns. Quote patterns to avoid slow shell-side expansion (e.g., '/path/**/*/Localizable.strings').")]
+        inputs: Vec<String>,
+
+        /// Language code (required for single-language formats when multiple resources present)
+        #[arg(short, long)]
+        lang: Option<String>,
+
+        /// Entry key to set
+        #[arg(short, long)]
+        key: String,
+
+        /// New value. If omitted or empty, the entry will be removed.
+        #[arg(short, long)]
+        value: Option<String>,
+
+        /// Optional translator comment
+        #[arg(long)]
+        comment: Option<String>,
+
+        /// Optional status: translated|needs_review|new|do_not_translate|stale
+        #[arg(long)]
+        status: Option<String>,
+
+        /// Optional output file; if omitted, writes in-place to input
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Preview changes without writing
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Continue processing remaining files when a file fails
+        #[arg(long, default_value_t = false)]
+        continue_on_error: bool,
+    },
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -191,6 +251,36 @@ fn main() {
                 },
             );
         }
+        Commands::Edit { command } => match command {
+            EditCommands::Set {
+                inputs,
+                lang,
+                key,
+                value,
+                comment,
+                status,
+                output,
+                dry_run,
+                continue_on_error,
+            } => {
+                let opts = EditSetOptions {
+                    inputs,
+                    lang,
+                    key,
+                    value,
+                    comment,
+                    status,
+                    output,
+                    dry_run,
+                    continue_on_error,
+                };
+
+                if let Err(e) = run_edit_set_command(opts) {
+                    eprintln!("❌ Edit failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        },
         Commands::View {
             input,
             lang,
