@@ -35,7 +35,7 @@ jobs:
 
       - name: Verify CLI
         run: |
-          langcodec-cli --version
+          langcodec --help
 
       - name: Build
         run: cargo build --verbose
