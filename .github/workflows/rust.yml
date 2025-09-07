@@ -35,7 +35,6 @@ jobs:
 
       - name: Verify CLI
         run: |
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           langcodec-cli --version
 
       - name: Build
