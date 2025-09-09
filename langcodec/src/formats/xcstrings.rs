@@ -95,6 +95,7 @@ impl TryFrom<Vec<Resource>> for Format {
                             comment: item.comment,
                             extraction_state: item.extraction_state,
                             should_translate: item.should_translate,
+                            is_comment_auto_generated: item.is_comment_auto_generated,
                         })
                         .localizations
                         .extend(item.localizations);
@@ -168,6 +169,8 @@ pub struct Item {
     pub extraction_state: Option<ExtractionState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub should_translate: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_comment_auto_generated: Option<bool>,
 }
 
 impl Item {
@@ -219,11 +222,17 @@ impl Item {
             .get("extraction_state")
             .and_then(|s| s.parse::<ExtractionState>().ok());
 
+        let is_comment_auto_generated = entry
+            .custom
+            .get("is_comment_auto_generated")
+            .and_then(|s| s.parse::<bool>().ok());
+
         Some(Item {
             localizations,
             comment: entry.comment,
             extraction_state,
             should_translate,
+            is_comment_auto_generated,
         })
     }
 }
