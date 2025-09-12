@@ -429,10 +429,11 @@ mod tests {
             <string name="multiple_lines">Hello\n\n
 World
             </string>
+            <string name="some_non_ascii">你好</string>
         </resources>
         "#;
         let format = Format::from_str(xml).unwrap();
-        assert_eq!(format.strings.len(), 4);
+        assert_eq!(format.strings.len(), 5);
         let hello = &format.strings[0];
         assert_eq!(hello.name, "hello");
         assert_eq!(hello.value, "Hello");
@@ -449,6 +450,10 @@ World
         assert_eq!(multiple_lines.name, "multiple_lines");
         assert_eq!(multiple_lines.value, r#"Hello\n\n\nWorld\n    "#);
         assert_eq!(multiple_lines.translatable, None);
+        let some_non_ascii = &format.strings[4];
+        assert_eq!(some_non_ascii.name, "some_non_ascii");
+        assert_eq!(some_non_ascii.value, "你好");
+        assert_eq!(some_non_ascii.translatable, None);
     }
 
     #[test]

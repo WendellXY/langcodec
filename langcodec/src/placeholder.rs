@@ -228,6 +228,9 @@ mod tests {
         let s = "Hello %1$@, you have %2$d items and %s extra";
         let sig = signature(s);
         assert_eq!(sig, vec!["1$s", "2$d", "s"]);
+        let s = "你好,%s";
+        let sig = signature(s);
+        assert_eq!(sig, vec!["s"]);
     }
 
     #[test]
