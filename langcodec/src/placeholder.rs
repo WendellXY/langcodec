@@ -129,7 +129,7 @@ pub fn normalize_placeholders(input: &str) -> String {
 /// Convert canonical/Android-style string placeholders to iOS-style.
 /// - %s   -> %@
 /// - %1$s -> %1$@
-/// Leaves numeric specifiers (e.g., %d, %u, %ld) unchanged.
+///   Leaves numeric specifiers (e.g., %d, %u, %ld) unchanged.
 pub fn to_ios_placeholders(input: &str) -> String {
     let bytes = input.as_bytes();
     let mut i = 0usize;
@@ -182,7 +182,13 @@ pub fn to_ios_placeholders(input: &str) -> String {
             out.push('%');
             if had_positional {
                 // copy the digits we saw
-                out.push_str(&input[start_digits..(if start_digits < j { j - 1 } else { start_digits })]);
+                out.push_str(
+                    &input[start_digits..(if start_digits < j {
+                        j - 1
+                    } else {
+                        start_digits
+                    })],
+                );
                 out.push('$');
             }
             out.push('@');
