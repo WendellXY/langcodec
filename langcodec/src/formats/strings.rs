@@ -504,7 +504,7 @@ impl TryFrom<Entry> for Pair {
         match entry.value {
             Translation::Singular(value) => Ok(Pair {
                 key: entry.id,
-                value,
+                value: crate::placeholder::to_ios_placeholders(&value),
                 comment: entry.comment,
             }),
             Translation::Plural(_) => Err(Error::DataMismatch(
@@ -626,6 +626,28 @@ mod tests {
         let out_str = String::from_utf8(out).unwrap();
         assert!(out_str.contains(r#""key1" = "Can\'t accept";"#));
         assert!(out_str.contains(r#""key2" = "Can\\'t accept";"#));
+    }
+
+    #[test]
+    fn test_strings_writer_ios_placeholder_conversion() {
+        // Build a Resource with Android-style placeholders and ensure writer converts to iOS style
+        let resource = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: String::new(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "g".to_string(),
+                value: Translation::Singular("Hi %1$s and %s".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        };
+        let fmt = Format::try_from(resource).unwrap();
+        assert_eq!(fmt.pairs.len(), 1);
+        assert_eq!(fmt.pairs[0].value, "Hi %1$@ and %@");
     }
 
     #[test]

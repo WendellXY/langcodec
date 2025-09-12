@@ -186,7 +186,7 @@ impl Item {
                     Localization {
                         string_unit: Some(StringUnit {
                             state: entry.status,
-                            value,
+                            value: crate::placeholder::to_ios_placeholders(&value),
                         }),
                         variations: None,
                     },
@@ -200,7 +200,7 @@ impl Item {
                         PluralVariation {
                             string_unit: Some(StringUnit {
                                 state: entry.status.clone(),
-                                value,
+                                value: crate::placeholder::to_ios_placeholders(&value),
                             }),
                         },
                     );
@@ -343,4 +343,70 @@ impl Variations {
 pub struct PluralVariation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub string_unit: Option<StringUnit>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ios_placeholder_conversion_in_writer() {
+        // Build resources that contain Android-style placeholders
+        let res = Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: String::new(),
+                custom: {
+                    let mut m = HashMap::new();
+                    m.insert("source_language".into(), "en".into());
+                    m.insert("version".into(), "1.0".into());
+                    m
+                },
+            },
+            entries: vec![
+                Entry {
+                    id: "greet".into(),
+                    value: Translation::Singular("Hello %1$s and %s".into()),
+                    comment: None,
+                    status: EntryStatus::Translated,
+                    custom: HashMap::new(),
+                },
+                Entry {
+                    id: "files".into(),
+                    value: Translation::Plural(Plural {
+                        id: "files".into(),
+                        forms: {
+                            let mut f = std::collections::BTreeMap::new();
+                            f.insert(PluralCategory::One, "%1$s file".into());
+                            f.insert(PluralCategory::Other, "%1$s files".into());
+                            f
+                        },
+                    }),
+                    comment: None,
+                    status: EntryStatus::Translated,
+                    custom: HashMap::new(),
+                },
+            ],
+        };
+
+        let fmt = Format::try_from(vec![res]).expect("xcstrings from resources");
+        // greet
+        let item = fmt.strings.get("greet").expect("greet item");
+        let en = item.localizations.get("en").expect("en loc");
+        let val = en.string_unit.as_ref().unwrap().value.clone();
+        assert!(val.contains("%1$@") && val.contains("%@"));
+
+        // plurals
+        let files = fmt.strings.get("files").expect("files item");
+        let en_p = files.localizations.get("en").expect("en loc");
+        let plural_map = en_p.variations.as_ref().unwrap().plural.as_ref().unwrap();
+        assert!(plural_map
+            .get(&PluralCategory::One)
+            .unwrap()
+            .string_unit
+            .as_ref()
+            .unwrap()
+            .value
+            .contains("%1$@"));
+    }
 }

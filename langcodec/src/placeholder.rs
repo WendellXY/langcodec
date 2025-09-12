@@ -126,6 +126,77 @@ pub fn normalize_placeholders(input: &str) -> String {
     out.replace("%lu", "%u")
 }
 
+/// Convert canonical/Android-style string placeholders to iOS-style.
+/// - %s   -> %@
+/// - %1$s -> %1$@
+/// Leaves numeric specifiers (e.g., %d, %u, %ld) unchanged.
+pub fn to_ios_placeholders(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut i = 0usize;
+    let mut out = String::with_capacity(input.len());
+    while i < bytes.len() {
+        if bytes[i] != b'%' {
+            out.push(bytes[i] as char);
+            i += 1;
+            continue;
+        }
+        // Escaped percent '%%'
+        if i + 1 < bytes.len() && bytes[i + 1] == b'%' {
+            out.push('%');
+            out.push('%');
+            i += 2;
+            continue;
+        }
+
+        // Examine potential placeholder
+        let mut j = i + 1;
+        // Optional positional index digits+$
+        let start_digits = j;
+        while j < bytes.len() && bytes[j].is_ascii_digit() {
+            j += 1;
+        }
+        let mut had_positional = false;
+        if j > start_digits && j < bytes.len() && bytes[j] == b'$' {
+            had_positional = true;
+            j += 1; // skip '$'
+        } else {
+            // reset if not positional
+            j = i + 1;
+        }
+
+        // Optional length modifiers (l/ll). We will drop them when converting %s -> %@.
+        let mut k = j;
+        while k < bytes.len() && bytes[k] == b'l' {
+            k += 1;
+        }
+        if k >= bytes.len() {
+            // not a complete placeholder, copy '%' and advance
+            out.push('%');
+            i += 1;
+            continue;
+        }
+
+        let ty = bytes[k] as char;
+        if ty == 's' {
+            // Emit converted iOS placeholder
+            out.push('%');
+            if had_positional {
+                // copy the digits we saw
+                out.push_str(&input[start_digits..(if start_digits < j { j - 1 } else { start_digits })]);
+                out.push('$');
+            }
+            out.push('@');
+            i = k + 1;
+            continue;
+        }
+
+        // Not a string placeholder, emit one byte and continue (simple path)
+        out.push('%');
+        i += 1;
+    }
+    out
+}
+
 /// Build a normalized signature (sequence of tokens) for comparison.
 pub fn signature(input: &str) -> Vec<String> {
     extract_placeholders(&normalize_placeholders(input))
