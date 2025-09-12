@@ -22,16 +22,8 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Cache Rust builds
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-binstall
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-binstall
-
       - name: Install langcodec-cli (prebuilt if available)
-        run: cargo binstall -y langcodec-cli
+        run: cargo install langcodec-cli
 
       - name: Verify CLI
         run: |
