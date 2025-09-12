@@ -1,6 +1,6 @@
 use std::fs;
-use std::process::Command;
 use std::path::PathBuf;
+use std::process::Command;
 use tempfile::TempDir;
 
 // Ensure non-ASCII (UTF-8) text survives CLI conversions involving Android <-> .strings
@@ -31,7 +31,11 @@ fn test_non_ascii_android_to_strings_and_back() {
             p.pop(); // leave langcodec-cli, go to workspace root
             p.push("target");
             p.push("debug");
-            p.push(if cfg!(windows) { "langcodec.exe" } else { "langcodec" });
+            p.push(if cfg!(windows) {
+                "langcodec.exe"
+            } else {
+                "langcodec"
+            });
             p
         });
 
