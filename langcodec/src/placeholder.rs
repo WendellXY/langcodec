@@ -114,8 +114,13 @@ pub fn normalize_placeholders(input: &str) -> String {
                 continue;
             }
         }
-        tmp.push(bytes[i] as char);
-        i += 1;
+        // Copy the next full UTF-8 character, not just one byte
+        let ch = input[i..]
+            .chars()
+            .next()
+            .expect("valid UTF-8 slicing while scanning placeholders");
+        tmp.push(ch);
+        i += ch.len_utf8();
     }
 
     // Simple iOS object -> string
@@ -136,8 +141,13 @@ pub fn to_ios_placeholders(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     while i < bytes.len() {
         if bytes[i] != b'%' {
-            out.push(bytes[i] as char);
-            i += 1;
+            // Copy the next full UTF-8 character
+            let ch = input[i..]
+                .chars()
+                .next()
+                .expect("valid UTF-8 slicing while converting placeholders");
+            out.push(ch);
+            i += ch.len_utf8();
             continue;
         }
         // Escaped percent '%%'
@@ -196,7 +206,7 @@ pub fn to_ios_placeholders(input: &str) -> String {
             continue;
         }
 
-        // Not a string placeholder, emit one byte and continue (simple path)
+        // Not a string placeholder, emit '%' and advance one byte; the rest will be handled in next iterations
         out.push('%');
         i += 1;
     }
