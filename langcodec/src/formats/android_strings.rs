@@ -32,7 +32,9 @@ impl Parser for Format {
     /// Parse from any reader.
     fn from_reader<R: BufRead>(reader: R) -> Result<Self, Error> {
         let mut xml_reader = Reader::from_reader(reader);
-        xml_reader.config_mut().trim_text(true);
+        // Preserve whitespace inside text nodes so multi-line strings and
+        // indentation are kept exactly as authored in XML.
+        xml_reader.config_mut().trim_text(false);
 
         let mut buf = Vec::new();
         let mut string_resources = Vec::new();
@@ -296,20 +298,36 @@ fn parse_string_resource<R: BufRead>(
         name.ok_or_else(|| Error::InvalidResource("string tag missing 'name'".to_string()))?;
 
     let mut buf = Vec::new();
-    // Read until text or end
-    let value = loop {
+    // Read and accumulate all text nodes until we reach the end of this <string> element
+    let mut value = String::new();
+    loop {
         match xml_reader.read_event_into(&mut buf) {
             Ok(Event::Text(e)) => {
-                let v = e.unescape().map_err(Error::XmlParse)?.to_string();
-                break v;
+                value.push_str(e.unescape().map_err(Error::XmlParse)?.as_ref());
             }
-            Ok(Event::End(_)) => break String::new(),
+            Ok(Event::End(ref end)) if end.name().as_ref() == b"string" => break,
             Ok(Event::Eof) => return Err(Error::InvalidResource("Unexpected EOF".to_string())),
             Ok(_) => (),
             Err(e) => return Err(Error::XmlParse(e)),
         }
         buf.clear();
-    };
+    }
+
+    // Normalize: if the content ends with a newline followed only by indentation
+    // spaces, collapse that trailing indentation to 4 spaces to avoid
+    // propagating XML pretty-print indentation.
+    if let Some(pos) = value.rfind('\n') {
+        let tail = &value[pos + 1..];
+        if !tail.is_empty() && tail.chars().all(|c| c == ' ' || c == '\t') {
+            value.truncate(pos + 1);
+            value.push_str("    ");
+        }
+    }
+
+    // Convert actual newlines into literal "\\n" sequences for internal consistency
+    if value.contains('\n') {
+        value = value.split('\n').collect::<Vec<_>>().join("\\n");
+    }
     Ok(StringResource {
         name,
         value,
@@ -408,10 +426,13 @@ mod tests {
             <string name="hello">Hello</string>
             <string name="bye" translatable="false">Goodbye</string>
             <string name="empty"></string>
+            <string name="multiple_lines">Hello\n\n
+World
+            </string>
         </resources>
         "#;
         let format = Format::from_str(xml).unwrap();
-        assert_eq!(format.strings.len(), 3);
+        assert_eq!(format.strings.len(), 4);
         let hello = &format.strings[0];
         assert_eq!(hello.name, "hello");
         assert_eq!(hello.value, "Hello");
@@ -424,6 +445,10 @@ mod tests {
         assert_eq!(empty.name, "empty");
         assert_eq!(empty.value, "");
         assert_eq!(empty.translatable, None);
+        let multiple_lines = &format.strings[3];
+        assert_eq!(multiple_lines.name, "multiple_lines");
+        assert_eq!(multiple_lines.value, r#"Hello\n\n\nWorld\n    "#);
+        assert_eq!(multiple_lines.translatable, None);
     }
 
     #[test]
