@@ -1,7 +1,7 @@
 use crate::formats::parse_custom_format;
 use crate::transformers::custom_format_to_resource;
 
-use langcodec::Codec;
+use langcodec::{Codec, Plural, Translation};
 use std::fs::File;
 use std::io::{self, Write};
 
@@ -38,6 +38,24 @@ pub fn run_debug_command(input: String, lang: Option<String>, output: Option<Str
         // Continue anyway for debug purposes
     } else {
         eprintln!("✅ Resources validated successfully");
+    }
+
+    // Replace \\n with \n in the resources
+    for resource in &mut codec.resources {
+        for entry in &mut resource.entries {
+            entry.value = match &entry.value {
+                Translation::Singular(v) => Translation::Singular(v.replace("\\n", "\n")),
+                Translation::Plural(p) => Translation::Plural(Plural {
+                    id: p.id.clone(),
+                    forms: p
+                        .forms
+                        .clone()
+                        .into_iter()
+                        .map(|(k, v)| (k, v.replace("\\n", "\n")))
+                        .collect(),
+                }),
+            };
+        }
     }
 
     // Convert to JSON
