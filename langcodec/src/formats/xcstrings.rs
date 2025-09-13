@@ -183,36 +183,20 @@ impl Item {
             Translation::Singular(value) => {
                 localizations.insert(
                     language,
-                    Localization {
-                        string_unit: Some(StringUnit {
-                            state: entry.status,
-                            value: crate::placeholder::to_ios_placeholders(&value),
-                        }),
-                        variations: None,
-                    },
+                    Localization::from(StringUnit::new(entry.status, &value)),
                 );
             }
             Translation::Plural(plural) => {
-                let mut plural_map = HashMap::new();
-                for (category, value) in plural.forms {
-                    plural_map.insert(
-                        category,
-                        PluralVariation {
-                            string_unit: Some(StringUnit {
-                                state: entry.status.clone(),
-                                value: crate::placeholder::to_ios_placeholders(&value),
-                            }),
-                        },
-                    );
-                }
                 localizations.insert(
                     language,
-                    Localization {
-                        string_unit: None,
-                        variations: Some(Variations {
-                            plural: Some(plural_map),
-                        }),
-                    },
+                    Localization::from(Variations::new(plural.forms.iter().map(
+                        |(category, value)| {
+                            (
+                                category.clone(),
+                                PluralVariation::new(entry.status.clone(), value),
+                            )
+                        },
+                    ))),
                 );
             }
         }
@@ -283,6 +267,24 @@ pub struct Localization {
     pub variations: Option<Variations>,
 }
 
+impl From<StringUnit> for Localization {
+    fn from(string_unit: StringUnit) -> Self {
+        Localization {
+            string_unit: Some(string_unit),
+            variations: None,
+        }
+    }
+}
+
+impl From<Variations> for Localization {
+    fn from(variations: Variations) -> Self {
+        Localization {
+            string_unit: None,
+            variations: Some(variations),
+        }
+    }
+}
+
 impl Localization {
     fn to_translation(&self) -> Option<Translation> {
         match (self.string_unit.as_ref(), self.variations.as_ref()) {
@@ -318,10 +320,28 @@ pub struct StringUnit {
     pub value: String,
 }
 
+impl StringUnit {
+    pub fn new(state: EntryStatus, value: &str) -> Self {
+        Self {
+            state,
+            value: crate::placeholder::to_ios_placeholders(value).replace("\\n", "\n"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Variations {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plural: Option<HashMap<PluralCategory, PluralVariation>>,
+}
+
+impl Variations {
+    pub fn new(plural: impl Iterator<Item = (PluralCategory, PluralVariation)>) -> Self {
+        let plural = plural.collect();
+        Self {
+            plural: Some(plural),
+        }
+    }
 }
 
 impl Variations {
@@ -343,6 +363,14 @@ impl Variations {
 pub struct PluralVariation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub string_unit: Option<StringUnit>,
+}
+
+impl PluralVariation {
+    pub fn new(state: EntryStatus, value: &str) -> Self {
+        Self {
+            string_unit: Some(StringUnit::new(state, value)),
+        }
+    }
 }
 
 #[cfg(test)]
