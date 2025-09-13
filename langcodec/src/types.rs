@@ -46,14 +46,98 @@ pub struct Resource {
 }
 
 impl Resource {
-    pub(crate) fn add_entry(&mut self, entry: Entry) {
+    /// Add an entry to the resource.
+    ///
+    /// ```rust
+    /// use langcodec::types::{Resource, Entry, Translation, EntryStatus, Metadata};
+    /// use std::collections::HashMap;
+    ///
+    /// let mut resource = Resource {
+    ///     metadata: Metadata {
+    ///         language: "en".to_string(),
+    ///         domain: "test".to_string(),
+    ///         custom: HashMap::new(),
+    ///     },
+    ///     entries: Vec::new(),
+    /// };
+    /// resource.add_entry(Entry {
+    ///     id: "hello".to_string(),
+    ///     value: Translation::Singular("Hello".to_string()),
+    ///     status: EntryStatus::Translated,
+    ///     comment: None,
+    ///     custom: HashMap::new(),
+    /// });
+    /// ```
+    ///
+    /// # Returns
+    ///
+    /// The added entry.
+    pub fn add_entry(&mut self, entry: Entry) {
         self.entries.push(entry);
     }
 
+    /// Find an entry by its id.
+    ///
+    /// ```rust
+    /// use langcodec::types::{Resource, Entry, Translation, EntryStatus, Metadata};
+    /// use std::collections::HashMap;
+    ///
+    /// let mut resource = Resource {
+    ///     metadata: Metadata {
+    ///         language: "en".to_string(),
+    ///         domain: "test".to_string(),
+    ///         custom: HashMap::new(),
+    ///     },
+    ///     entries: Vec::new(),
+    /// };
+    /// resource.add_entry(Entry {
+    ///     id: "hello".to_string(),
+    ///     value: Translation::Singular("Hello".to_string()),
+    ///     status: EntryStatus::Translated,
+    ///     comment: None,
+    ///     custom: HashMap::new(),
+    /// });
+    /// let entry = resource.find_entry("hello").unwrap();
+    /// assert_eq!(entry.value, Translation::Singular("Hello".to_string()));
+    /// assert_eq!(entry.status, EntryStatus::Translated);
+    /// assert_eq!(entry.comment, None);
+    /// ```
     pub fn find_entry(&self, id: &str) -> Option<&Entry> {
         self.entries.iter().find(|e| e.id == id)
     }
 
+    /// Find a mutable entry by its id.
+    ///
+    /// ```rust
+    /// use langcodec::types::{Resource, Entry, Translation, EntryStatus, Metadata};
+    /// use std::collections::HashMap;
+    ///
+    /// let mut resource = Resource {
+    ///     metadata: Metadata {
+    ///         language: "en".to_string(),
+    ///         domain: "test".to_string(),
+    ///         custom: HashMap::new(),
+    ///     },
+    ///     entries: Vec::new(),
+    /// };
+    /// resource.add_entry(Entry {
+    ///     id: "hello".to_string(),
+    ///     value: Translation::Singular("Hello".to_string()),
+    ///     status: EntryStatus::Translated,
+    ///     comment: None,
+    ///     custom: HashMap::new(),
+    /// });
+    /// let entry = resource.find_entry_mut("hello").unwrap();
+    /// assert_eq!(entry.value, Translation::Singular("Hello".to_string()));
+    /// assert_eq!(entry.status, EntryStatus::Translated);
+    /// assert_eq!(entry.comment, None);
+    /// entry.value = Translation::Singular("Hello, World!".to_string());
+    /// entry.status = EntryStatus::NeedsReview;
+    /// entry.comment = Some("Hello, World!".to_string());
+    /// assert_eq!(entry.value, Translation::Singular("Hello, World!".to_string()));
+    /// assert_eq!(entry.status, EntryStatus::NeedsReview);
+    /// assert_eq!(entry.comment, Some("Hello, World!".to_string()));
+    /// ```
     pub fn find_entry_mut(&mut self, id: &str) -> Option<&mut Entry> {
         self.entries.iter_mut().find(|e| e.id == id)
     }
