@@ -154,10 +154,8 @@ impl Codec {
     pub fn find_entries(&self, key: &str) -> Vec<(&Resource, &Entry)> {
         let mut results = Vec::new();
         for resource in &self.resources {
-            for entry in &resource.entries {
-                if entry.id == key {
-                    results.push((resource, entry));
-                }
+            if let Some(entry) = resource.find_entry(key) {
+                results.push((resource, entry));
             }
         }
         results
@@ -187,10 +185,7 @@ impl Codec {
     /// }
     /// ```
     pub fn find_entry(&self, key: &str, language: &str) -> Option<&Entry> {
-        self.get_by_language(language)?
-            .entries
-            .iter()
-            .find(|entry| entry.id == key)
+        self.get_by_language(language)?.find_entry(key)
     }
 
     /// Finds a mutable entry by its key in a specific language.
@@ -219,10 +214,7 @@ impl Codec {
     /// }
     /// ```
     pub fn find_entry_mut(&mut self, key: &str, language: &str) -> Option<&mut Entry> {
-        self.get_mut_by_language(language)?
-            .entries
-            .iter_mut()
-            .find(|entry| entry.id == key)
+        self.get_mut_by_language(language)?.find_entry_mut(key)
     }
 
     /// Updates a translation for a specific key and language.

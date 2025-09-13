@@ -50,6 +50,14 @@ impl Resource {
         self.entries.push(entry);
     }
 
+    pub fn find_entry(&self, id: &str) -> Option<&Entry> {
+        self.entries.iter().find(|e| e.id == id)
+    }
+
+    pub fn find_entry_mut(&mut self, id: &str) -> Option<&mut Entry> {
+        self.entries.iter_mut().find(|e| e.id == id)
+    }
+
     pub fn parse_language_identifier(&self) -> Option<LanguageIdentifier> {
         self.metadata.language.parse().ok()
     }

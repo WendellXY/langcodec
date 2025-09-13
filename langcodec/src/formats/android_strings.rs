@@ -454,6 +454,29 @@ World
         assert_eq!(some_non_ascii.name, "some_non_ascii");
         assert_eq!(some_non_ascii.value, "你好");
         assert_eq!(some_non_ascii.translatable, None);
+
+        let resource = Resource::from(format);
+        assert_eq!(resource.entries.len(), 5);
+        let entry = &resource.entries[0];
+        assert_eq!(entry.id, "hello");
+        assert_eq!(entry.value, Translation::Singular("Hello".to_string()));
+        assert_eq!(entry.status, EntryStatus::Translated);
+        assert_eq!(entry.comment, None);
+
+        let entry = resource.find_entry("hello").unwrap();
+        assert_eq!(entry.value, Translation::Singular("Hello".to_string()));
+        assert_eq!(entry.status, EntryStatus::Translated);
+        assert_eq!(entry.comment, None);
+
+        let entry = resource.find_entry("multiple_lines").unwrap();
+        assert_eq!(entry.value, Translation::Singular("Hello\\n\\n\\nWorld\\n    ".to_string()));
+        assert_eq!(entry.status, EntryStatus::Translated);
+        assert_eq!(entry.comment, None);
+
+        let entry = resource.find_entry("some_non_ascii").unwrap();
+        assert_eq!(entry.value, Translation::Singular("你好".to_string()));
+        assert_eq!(entry.status, EntryStatus::Translated);
+        assert_eq!(entry.comment, None);
     }
 
     #[test]
