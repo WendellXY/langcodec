@@ -391,7 +391,7 @@ fn parse_quoted_utf8(source: &str, bytes: &[u8], i: usize) -> Option<(usize, Str
         }
         if b == b'"' {
             // If number of preceding backslashes is even, the quote terminates the string
-            if consecutive_backslashes % 2 == 0 {
+            if consecutive_backslashes.is_multiple_of(2) {
                 let end = j;
                 let s = &source[start..end];
                 return Some((j + 1, s.to_string()));
