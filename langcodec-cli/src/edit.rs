@@ -290,6 +290,7 @@ fn apply_set_to_file(
             let old = codec
                 .find_entry(key, lang_ref)
                 .map(|e| match &e.value {
+                    Translation::Empty => String::new(),
                     Translation::Singular(s) => s.clone(),
                     Translation::Plural(p) => p.id.clone(),
                 })

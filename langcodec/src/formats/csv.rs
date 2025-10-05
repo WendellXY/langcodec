@@ -208,6 +208,7 @@ impl TryFrom<Vec<Resource>> for Format {
             for resource in &resources {
                 if let Some(entry) = resource.entries.iter().find(|e| e.id == record.key) {
                     let value = match &entry.value {
+                        Translation::Empty => String::new(),
                         Translation::Singular(v) => v.clone(),
                         Translation::Plural(_) => String::new(), // Plurals not supported
                     };

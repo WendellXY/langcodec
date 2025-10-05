@@ -67,6 +67,9 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
             }
 
             match &entry.value {
+                langcodec::types::Translation::Empty => {
+                    println!("    Type: Empty");
+                }
                 langcodec::types::Translation::Singular(value) => {
                     println!("    Type: Singular");
                     if full {

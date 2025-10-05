@@ -210,6 +210,7 @@ impl Item {
         let should_translate = Some(entry.status != EntryStatus::DoNotTranslate);
 
         match entry.value {
+            Translation::Empty => {} // Do nothing
             Translation::Singular(value) => {
                 localizations.insert(
                     language,

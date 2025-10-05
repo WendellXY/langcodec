@@ -182,6 +182,7 @@ fn test_langcodec_output_structure() {
             assert!(!entry.id.is_empty(), "Entry should have id");
             // Value should be either Singular or Plural
             match &entry.value {
+                langcodec::Translation::Empty => {}
                 langcodec::Translation::Singular(s) => {
                     assert!(!s.is_empty(), "Singular value should not be empty")
                 }
