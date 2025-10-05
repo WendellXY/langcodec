@@ -149,7 +149,7 @@ impl TryFrom<Format> for Vec<Resource> {
                             })
                             .add_entry(Entry {
                                 id: id.clone(),
-                                value: Translation::Singular("".to_string()),
+                                value: Translation::Empty,
                                 comment: item.comment.clone(),
                                 status: EntryStatus::Translated,
                                 custom: custom.clone(),
