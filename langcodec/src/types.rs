@@ -228,6 +228,9 @@ impl Display for Entry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Translation {
+    /// The translation is empty.
+    Empty,
+
     /// A single translation without plural forms.
     Singular(String),
 
@@ -238,6 +241,7 @@ pub enum Translation {
 impl Translation {
     pub fn plain_translation(translation: Translation) -> Translation {
         match translation {
+            Translation::Empty => Translation::Empty,
             Translation::Singular(value) => {
                 Translation::Singular(make_plain_translation_string(value))
             }
@@ -259,6 +263,7 @@ impl Translation {
 
     pub fn plain_translation_string(&self) -> String {
         match self {
+            Translation::Empty => String::new(),
             Translation::Singular(value) => make_plain_translation_string(value.clone()),
             Translation::Plural(plural) => {
                 // Return the plural ID, not the first form
@@ -271,6 +276,7 @@ impl Translation {
 impl Display for Translation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Translation::Empty => write!(f, "Empty"),
             Translation::Singular(value) => write!(f, "{}", value),
             Translation::Plural(plural) => write!(f, "{}", plural.id), // Displaying only the ID for brevity
         }

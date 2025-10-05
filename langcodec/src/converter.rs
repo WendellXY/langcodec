@@ -260,6 +260,9 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
         for res in &mut resources {
             for entry in &mut res.entries {
                 match &mut entry.value {
+                    crate::types::Translation::Empty => {
+                        continue;
+                    }
                     crate::types::Translation::Singular(v) => {
                         *v = normalize_placeholders(v);
                     }

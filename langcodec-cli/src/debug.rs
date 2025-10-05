@@ -44,6 +44,7 @@ pub fn run_debug_command(input: String, lang: Option<String>, output: Option<Str
     for resource in &mut codec.resources {
         for entry in &mut resource.entries {
             entry.value = match &entry.value {
+                Translation::Empty => Translation::Empty,
                 Translation::Singular(v) => Translation::Singular(v.replace("\\n", "\n")),
                 Translation::Plural(p) => Translation::Plural(Plural {
                     id: p.id.clone(),

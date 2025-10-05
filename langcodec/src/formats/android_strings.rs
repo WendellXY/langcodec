@@ -135,6 +135,7 @@ impl From<Resource> for Format {
         let mut plurals = Vec::new();
         for entry in value.entries {
             match entry.value {
+                Translation::Empty => {} // Do nothing
                 Translation::Singular(_) => strings.push(StringResource::from_entry(&entry)),
                 Translation::Plural(p) => {
                     let mut items: Vec<PluralItem> = p
@@ -250,6 +251,7 @@ impl StringResource {
         StringResource {
             name: entry.id.clone(),
             value: match &entry.value {
+                Translation::Empty => String::new(),
                 Translation::Singular(v) => v.clone(),
                 Translation::Plural(_) => String::new(), // Plurals not supported in strings.xml
             },
@@ -469,7 +471,10 @@ World
         assert_eq!(entry.comment, None);
 
         let entry = resource.find_entry("multiple_lines").unwrap();
-        assert_eq!(entry.value, Translation::Singular("Hello\\n\\n\\nWorld\\n    ".to_string()));
+        assert_eq!(
+            entry.value,
+            Translation::Singular("Hello\\n\\n\\nWorld\\n    ".to_string())
+        );
         assert_eq!(entry.status, EntryStatus::Translated);
         assert_eq!(entry.comment, None);
 

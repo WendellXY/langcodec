@@ -502,6 +502,11 @@ impl TryFrom<Entry> for Pair {
     fn try_from(entry: Entry) -> Result<Self, Self::Error> {
         // Strings format only supports singular translations. Preserve the value verbatim.
         match entry.value {
+            Translation::Empty => Ok(Pair {
+                key: entry.id,
+                value: String::new(),
+                comment: entry.comment,
+            }),
             Translation::Singular(value) => Ok(Pair {
                 key: entry.id,
                 value: crate::placeholder::to_ios_placeholders(&value),
