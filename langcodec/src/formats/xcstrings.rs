@@ -129,6 +129,36 @@ impl TryFrom<Format> for Vec<Resource> {
                 custom.insert("extraction_state".to_string(), extraction_state.to_string());
             }
 
+            if item.localizations.is_empty() {
+                if item.should_translate.unwrap_or(true) {
+                    // If the item is empty and should be translated, add a new entry for each language
+                    //
+                    // This method requires that all languages are already present in the resource map, in
+                    // other words, the translated items must be presented above the untranslated items.
+                    let lang_codes = resource_map.keys().cloned().collect::<Vec<_>>();
+                    for lang_code in lang_codes {
+                        resource_map
+                            .entry(lang_code.clone())
+                            .or_insert(Resource {
+                                metadata: Metadata {
+                                    language: lang_code.clone(),
+                                    domain: String::default(),
+                                    custom: custom_meta.clone(),
+                                },
+                                entries: Vec::new(),
+                            })
+                            .add_entry(Entry {
+                                id: id.clone(),
+                                value: Translation::Singular("".to_string()),
+                                comment: item.comment.clone(),
+                                status: EntryStatus::Translated,
+                                custom: custom.clone(),
+                            });
+                    }
+                }
+                continue;
+            }
+
             for (lang_code, localization) in item.localizations {
                 if let Some(translation) = localization.to_translation() {
                     let lang_code = lang_code.to_string();
