@@ -1,6 +1,7 @@
 use crate::convert::read_resources_from_any_input;
 use crate::validation::{validate_file_path, validate_language_code, validate_output_path};
 use langcodec::{Codec, Resource, Translation, formats::FormatType};
+use serde_json::json;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -10,6 +11,10 @@ pub struct SyncOptions {
     pub output: Option<String>,
     pub lang: Option<String>,
     pub match_lang: Option<String>,
+    pub report_json: Option<String>,
+    pub fail_on_unmatched: bool,
+    pub fail_on_ambiguous: bool,
+    pub strict: bool,
     pub dry_run: bool,
 }
 
@@ -263,6 +268,39 @@ fn write_back(
     }
 }
 
+fn write_report(
+    path: &str,
+    options: &SyncOptions,
+    match_lang: &str,
+    stats: &SyncStats,
+) -> Result<(), String> {
+    let report = json!({
+        "source": options.source,
+        "target": options.target,
+        "output": options.output,
+        "lang": options.lang,
+        "match_lang": match_lang,
+        "strict": options.strict,
+        "fail_on_unmatched": options.fail_on_unmatched,
+        "fail_on_ambiguous": options.fail_on_ambiguous,
+        "dry_run": options.dry_run,
+        "summary": {
+            "total_entries": stats.total_entries,
+            "updated": stats.updated,
+            "unchanged": stats.unchanged,
+            "fallback_matches": stats.fallback_matches,
+            "skipped_unmatched": stats.skipped_unmatched,
+            "skipped_missing_language": stats.skipped_missing_language,
+            "skipped_ambiguous_fallback": stats.skipped_ambiguous_fallback,
+            "skipped_type_mismatch": stats.skipped_type_mismatch
+        }
+    });
+
+    let text = serde_json::to_string_pretty(&report)
+        .map_err(|e| format!("Failed to serialize report JSON: {}", e))?;
+    std::fs::write(path, text).map_err(|e| format!("Failed to write report JSON '{}': {}", path, e))
+}
+
 pub fn run_sync_command(opts: SyncOptions) -> Result<(), String> {
     validate_file_path(&opts.source)?;
     validate_file_path(&opts.target)?;
@@ -275,8 +313,11 @@ pub fn run_sync_command(opts: SyncOptions) -> Result<(), String> {
     if let Some(match_lang) = &opts.match_lang {
         validate_language_code(match_lang)?;
     }
+    if let Some(report_path) = &opts.report_json {
+        validate_output_path(report_path)?;
+    }
 
-    let source_resources = read_resources_from_any_input(&opts.source, None)?;
+    let source_resources = read_resources_from_any_input(&opts.source, None, opts.strict)?;
     let source_codec = Codec {
         resources: source_resources,
     };
@@ -391,6 +432,26 @@ pub fn run_sync_command(opts: SyncOptions) -> Result<(), String> {
         stats.skipped_ambiguous_fallback
     );
     println!("Skipped (type mismatch): {}", stats.skipped_type_mismatch);
+
+    if let Some(report_path) = &opts.report_json {
+        write_report(report_path, &opts, &match_lang, &stats)?;
+        println!("Report JSON written: {}", report_path);
+    }
+
+    let fail_on_unmatched = opts.fail_on_unmatched || opts.strict;
+    let fail_on_ambiguous = opts.fail_on_ambiguous || opts.strict;
+    if (fail_on_unmatched && stats.skipped_unmatched > 0)
+        || (fail_on_ambiguous && stats.skipped_ambiguous_fallback > 0)
+    {
+        let mut reasons = Vec::new();
+        if fail_on_unmatched && stats.skipped_unmatched > 0 {
+            reasons.push(format!("unmatched={}", stats.skipped_unmatched));
+        }
+        if fail_on_ambiguous && stats.skipped_ambiguous_fallback > 0 {
+            reasons.push(format!("ambiguous={}", stats.skipped_ambiguous_fallback));
+        }
+        return Err(format!("Sync policy failure ({})", reasons.join(", ")));
+    }
 
     if opts.dry_run {
         println!("Dry-run mode: no files were written");

@@ -54,6 +54,11 @@ Matching rules:
 - fallback: use `--match-lang` translation (default inferred/en) to match source entries
 - never adds new keys to target
 
+CI-oriented options:
+- `--report-json <path>` write sync summary as JSON
+- `--fail-on-unmatched` return non-zero when unmatched entries exist
+- `--fail-on-ambiguous` return non-zero when fallback matching is ambiguous
+
 ### view
 
 ```sh

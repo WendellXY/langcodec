@@ -445,6 +445,7 @@ fn test_main_help_command() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("langcodec"));
     assert!(stdout.contains("convert"));
+    assert!(stdout.contains("diff"));
     assert!(stdout.contains("merge"));
     assert!(stdout.contains("sync"));
     assert!(stdout.contains("view"));
