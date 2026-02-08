@@ -6,7 +6,7 @@ Thank you for your interest in contributing to langcodec! This document provides
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust 1.85 or later (Edition 2024 compatible)
 - Git
 
 ### Development Setup
@@ -22,7 +22,7 @@ cd langcodec
 
 ```bash
 cargo test
-cargo clippy
+cargo clippy --all-targets --all-features
 ```
 
 ## Development Guidelines

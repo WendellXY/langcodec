@@ -1,6 +1,6 @@
 [workspace]
 members = [
     "langcodec",     # Library crate
-    "langcodec-cli", # CLI crate (to be added)
+    "langcodec-cli", # CLI crate
 ]
 resolver = "2"

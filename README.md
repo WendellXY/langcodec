@@ -9,14 +9,14 @@ Universal localization toolkit: library + CLI for Apple/Android/CSV/TSV.
 
 ## Status
 
-This is a `0.4.0` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, APIs may evolve. Contributions and feedback are very welcome!
+This is a `0.6.4` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, APIs may evolve. Contributions and feedback are very welcome!
 
 ---
 
 ## Installation
 
 - CLI: `cargo install langcodec-cli`
-- Lib: add `langcodec = "0.4.0"` to your `Cargo.toml`
+- Lib: add `langcodec = "0.6.4"` to your `Cargo.toml`
 
 ---
 
@@ -86,8 +86,8 @@ This is a `0.4.0` release available on [crates.io](https://crates.io/crates/lang
 #### Notes
 
 - For CSV/TSV single-language files, the language code (`--lang`) may be required.
-- All commands support Apple `.strings`, `.xcstrings`, Android `strings.xml`, and CSV.
-- The convert command also supports JSON files with key-value pairs.
+- All commands support Apple `.strings`, `.xcstrings`, Android `strings.xml`, CSV, and TSV.
+- The convert command also supports custom JSON/YAML input formats.
 - The CLI will error if you try to merge files of different formats.
 - Edit supports multiple inputs and glob patterns. When multiple inputs are provided, edits are applied in-place and `--output` is not allowed.
 - Android path inference: `values/strings.xml` (no qualifier) defaults to English (`en`).
@@ -134,7 +134,7 @@ Sample test files for all supported formats are located in `tests/data/lib/` and
 
 Contributions are welcome!
 Please open issues for bugs, suggestions, or new format support.
-See [CONTRIBUTING.md](CONTRIBUTING.md) (to be written) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 

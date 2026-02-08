@@ -304,9 +304,11 @@ fn test_validate_whitespace_handling() {
     // Test that whitespace is handled properly in format validation
     let result1 = validate_custom_format("  json-language-map  ");
     let result2 = validate_standard_format("  xcstrings  ");
+    let result3 = validate_standard_format("  tsv  ");
 
     assert!(result1.is_ok());
     assert!(result2.is_ok());
+    assert!(result3.is_ok());
 }
 
 #[test]

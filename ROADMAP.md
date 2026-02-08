@@ -25,7 +25,7 @@ Legend: [ ] todo, [x] done, [~] in progress
 - [~] Plural rules engine
   - [x] CLDR‑driven required category sets per locale (few/many/etc.)
   - [x] Validation pass: flag missing categories per key+locale
-  - [~] CLI: `view --check-plurals` and `validate` output
+  - [x] CLI: `view --check-plurals` output
 - [ ] Strict vs. permissive parsing
   - [ ] Global setting in lib; CLI `--strict` flag
   - [ ] Consistent error surfaces with actionable context
@@ -63,7 +63,7 @@ For each new format:
 - [x] `stats` subcommand
   - [x] Per‑language counts by `EntryStatus`
   - [x] Completion percent (excludes DoNotTranslate)
-  - [ ] Missing plurals (depends on plural rules engine in M1)
+  - [x] Missing plurals
 - [ ] `normalize` subcommand
   - [ ] Canonicalize whitespace, escapes, key casing; optional rules
 - [ ] Filters and export
@@ -93,16 +93,16 @@ For each new format:
 
 ## Testing Strategy
 
-- [ ] Start with unit tests near each format parser/writer
+- [x] Start with unit tests near each format parser/writer
 - [ ] Add conversion matrix tests for common paths (strings↔android↔xcstrings↔csv/tsv)
 - [ ] Property tests where feasible (e.g., round‑trip invariants)
 - [ ] Large sample corpora in `tests/data/` for regression
 
 ## Contribution Guide Enhancements
 
-- [ ] Add coding standards and commit message conventions
-- [ ] Issue templates for formats vs CLI vs core
-- [ ] Local dev quickstart and common cargo commands
+- [x] Add coding standards and commit message conventions
+- [x] Issue templates for formats vs CLI vs core
+- [x] Local dev quickstart and common cargo commands
 
 ## Release Checklist (per minor)
 

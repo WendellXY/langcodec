@@ -579,6 +579,42 @@ fn test_convert_command_output_to_csv() {
 }
 
 #[test]
+fn test_convert_command_output_to_tsv() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("test.json");
+    let output_file = temp_dir.path().join("output.tsv");
+
+    let json_content = r#"{
+        "key": "hello_world",
+        "en": "Hello, World!",
+        "fr": "Bonjour, le monde!"
+    }"#;
+
+    fs::write(&input_file, json_content).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "convert",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--output-format",
+            "tsv",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(output_file.exists());
+
+    let output_content = fs::read_to_string(&output_file).unwrap();
+    assert!(output_content.contains("key\ten\tfr"));
+}
+
+#[test]
 fn test_convert_command_output_to_strings() {
     let temp_dir = TempDir::new().unwrap();
     let input_file = temp_dir.path().join("test.json");
@@ -642,6 +678,41 @@ fn test_convert_command_output_to_android() {
 
     assert!(output.status.success());
     assert!(output_file.exists());
+}
+
+#[test]
+fn test_convert_command_with_tsv_input_format() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("input.tsv");
+    let output_file = temp_dir.path().join("output.xcstrings");
+
+    let tsv_content = "key\ten\tfr\nhello_world\tHello, World!\tBonjour, le monde!\n";
+    fs::write(&input_file, tsv_content).unwrap();
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "convert",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--input-format",
+            "tsv",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "Command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output_file.exists());
+
+    let output_content = fs::read_to_string(&output_file).unwrap();
+    assert!(output_content.contains("hello_world"));
 }
 
 #[test]
