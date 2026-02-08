@@ -3,7 +3,7 @@
 Universal localization toolkit: library + CLI for Apple/Android/CSV/TSV.
 
 - Library crate (`langcodec`): parse, write, convert, merge with a unified model
-- CLI crate (`langcodec-cli`): convert, merge, sync, view, stats, debug, edit
+- CLI crate (`langcodec-cli`): convert, diff, merge, sync, view, stats, debug, edit
 
 ---
 
@@ -57,6 +57,7 @@ This is a `0.6.4` release available on [crates.io](https://crates.io/crates/lang
 ### CLI Highlights
 
 - Convert: `langcodec convert -i input.strings -o strings.xml`
+- Diff: `langcodec diff --source A.xcstrings --target B.xcstrings --json`
 - Edit (add/update/remove): `langcodec edit set -i 'locales/**/*.strings' -k welcome -v "Hello"` (use `--dry-run` to preview)
 - Sync existing keys only: `langcodec sync --source A.xcstrings --target B.xcstrings --match-lang en`
 - View: `langcodec view -i strings.xml --full`

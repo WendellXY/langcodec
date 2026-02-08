@@ -3,7 +3,7 @@
 Universal CLI for converting, inspecting, merging, and editing localization files.
 
 - Formats: Apple `.strings`, `.xcstrings`, Android `strings.xml`, CSV, TSV
-- Commands: convert, merge, sync, view, stats, debug, edit
+- Commands: convert, diff, merge, sync, view, stats, debug, edit
 
 ## Install
 
@@ -27,6 +27,17 @@ Auto-detects formats from extensions. For JSON/YAML custom formats, see `--input
 ```sh
 langcodec merge -i a.strings -i b.strings -o merged.strings --lang en --strategy last
 ```
+
+### diff
+
+Compare source file A against target file B.
+
+```sh
+langcodec diff --source A.xcstrings --target B.xcstrings
+langcodec diff --source A.csv --target B.csv --json --output diff_report.json
+```
+
+Outputs added/removed/changed keys by language.
 
 ### sync
 
