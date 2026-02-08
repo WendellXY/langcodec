@@ -16,7 +16,12 @@ pub struct ConvertOptions {
     pub include_lang: Vec<String>,
 }
 
-pub fn run_unified_convert_command(input: String, output: String, options: ConvertOptions) {
+pub fn run_unified_convert_command(
+    input: String,
+    output: String,
+    options: ConvertOptions,
+    strict: bool,
+) {
     // Special handling: when targeting xcstrings, ensure required metadata exists.
     // If source_language/version are missing, default to en/1.0 respectively.
     let wants_xcstrings = output.ends_with(".xcstrings")
@@ -26,7 +31,7 @@ pub fn run_unified_convert_command(input: String, output: String, options: Conve
             .is_some_and(|s| s.eq_ignore_ascii_case("xcstrings"));
     if wants_xcstrings {
         println!("Converting to xcstrings with default sourceLanguage if missing...");
-        match read_resources_from_any_input(&input, options.input_format.as_ref()).and_then(
+        match read_resources_from_any_input(&input, options.input_format.as_ref(), strict).and_then(
             |mut resources| {
                 // Determine source_language priority: explicit flag > metadata > default
                 let source_language = options
@@ -110,7 +115,7 @@ pub fn run_unified_convert_command(input: String, output: String, options: Conve
             "Converting input to .langcodec (Resource JSON array){}...",
             filter_msg
         );
-        match read_resources_from_any_input(&input, options.input_format.as_ref()).and_then(
+        match read_resources_from_any_input(&input, options.input_format.as_ref(), strict).and_then(
             |resources| {
                 // Apply language filtering
                 let filtered_resources = resources
@@ -177,6 +182,46 @@ pub fn run_unified_convert_command(input: String, output: String, options: Conve
                 std::process::exit(1);
             }
         }
+    }
+
+    if strict {
+        if let (Some(input_fmt), Some(output_fmt)) = (
+            options.input_format.as_deref(),
+            options.output_format.as_deref(),
+        ) {
+            println!("Strict mode: converting with explicit format hints only...");
+            if let Err(e) = try_explicit_format_conversion(&input, &output, input_fmt, output_fmt) {
+                println!("❌ Strict conversion failed");
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            println!("✅ Successfully converted in strict mode");
+            return;
+        }
+
+        if input.ends_with(".json")
+            || input.ends_with(".yaml")
+            || input.ends_with(".yml")
+            || input.ends_with(".langcodec")
+        {
+            println!("Strict mode: converting custom format without fallback...");
+            if let Err(e) = try_custom_format_conversion(&input, &output, &options.input_format) {
+                println!("❌ Strict conversion failed");
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+            println!("✅ Successfully converted in strict mode");
+            return;
+        }
+
+        println!("Strict mode: converting using extension-based standard formats only...");
+        if let Err(e) = convert_auto(&input, &output) {
+            println!("❌ Strict conversion failed");
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+        println!("✅ Successfully converted in strict mode");
+        return;
     }
 
     // Strategy 1: Try standard lib crate conversion first
@@ -433,7 +478,67 @@ fn write_resources_as_langcodec(
 pub fn read_resources_from_any_input(
     input: &str,
     input_format_hint: Option<&String>,
+    strict: bool,
 ) -> Result<Vec<langcodec::Resource>, String> {
+    if strict {
+        if let Some(fmt) = input_format_hint {
+            let fmt_lower = fmt.to_lowercase();
+            let maybe_std = match fmt_lower.as_str() {
+                "strings" => Some(langcodec::formats::FormatType::Strings(None)),
+                "android" | "androidstrings" => {
+                    Some(langcodec::formats::FormatType::AndroidStrings(None))
+                }
+                "xcstrings" => Some(langcodec::formats::FormatType::Xcstrings),
+                "csv" => Some(langcodec::formats::FormatType::CSV),
+                "tsv" => Some(langcodec::formats::FormatType::TSV),
+                _ => None,
+            };
+
+            if let Some(std_fmt) = maybe_std {
+                let mut codec = Codec::new();
+                codec
+                    .read_file_by_type(input, std_fmt)
+                    .map_err(|e| format!("Failed to read input with explicit format: {}", e))?;
+                return Ok(codec.resources);
+            }
+
+            let custom_format = parse_custom_format(fmt)?;
+            let resources = custom_format_to_resource(input.to_string(), custom_format)?;
+            return Ok(resources);
+        }
+
+        if input.ends_with(".strings")
+            || input.ends_with(".xml")
+            || input.ends_with(".xcstrings")
+            || input.ends_with(".csv")
+            || input.ends_with(".tsv")
+        {
+            let mut codec = Codec::new();
+            codec
+                .read_file_by_extension(input, None)
+                .map_err(|e| format!("Failed to read input: {}", e))?;
+            return Ok(codec.resources);
+        }
+
+        if input.ends_with(".json")
+            || input.ends_with(".yaml")
+            || input.ends_with(".yml")
+            || input.ends_with(".langcodec")
+        {
+            validate_custom_format_file(input)?;
+            let file_content = std::fs::read_to_string(input)
+                .map_err(|e| format!("Error reading file {}: {}", input, e))?;
+            let custom_format = formats::validate_custom_format_content(input, &file_content)?;
+            let resources = custom_format_to_resource(input.to_string(), custom_format)?;
+            return Ok(resources);
+        }
+
+        return Err(format!(
+            "Unsupported input format or file extension: '{}'. Supported formats: .strings, .xml, .xcstrings, .csv, .tsv, .json, .yaml, .yml, .langcodec",
+            input
+        ));
+    }
+
     // First: if explicit input format is provided and is a standard format, use it
     if let Some(fmt) = input_format_hint {
         let fmt_lower = fmt.to_lowercase();

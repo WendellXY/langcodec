@@ -23,6 +23,7 @@ pub fn run_merge_command(
     lang: Option<String>,
     source_language_override: Option<String>,
     version_override: Option<String>,
+    strict: bool,
 ) {
     if inputs.is_empty() {
         eprintln!("Error: At least one input file is required.");
@@ -33,7 +34,7 @@ pub fn run_merge_command(
     println!("Reading {} input files...", inputs.len());
     let read_results: Vec<Result<Codec, String>> = inputs
         .par_iter()
-        .map(|input| read_input_to_codec(input, lang.clone()))
+        .map(|input| read_input_to_codec(input, lang.clone(), strict))
         .collect();
 
     let mut input_codecs: Vec<Codec> = Vec::with_capacity(read_results.len());
@@ -151,7 +152,36 @@ pub fn run_merge_command(
 fn read_input_to_resources(
     input: &str,
     lang: Option<String>,
+    strict: bool,
 ) -> Result<Vec<langcodec::Resource>, String> {
+    if strict {
+        if input.ends_with(".json") || input.ends_with(".yaml") || input.ends_with(".yml") {
+            crate::validation::validate_custom_format_file(input)
+                .map_err(|e| format!("Failed to validate {}: {}", input, e))?;
+
+            let file_content = std::fs::read_to_string(input)
+                .map_err(|e| format!("Error reading file {}: {}", input, e))?;
+
+            crate::formats::validate_custom_format_content(input, &file_content)
+                .map_err(|e| format!("Invalid custom format {}: {}", input, e))?;
+
+            let resources = custom_format_to_resource(
+                input.to_string(),
+                parse_custom_format("json-language-map")
+                    .map_err(|e| format!("Failed to parse custom format: {}", e))?,
+            )
+            .map_err(|e| format!("Failed to convert custom format {}: {}", input, e))?;
+
+            return Ok(resources);
+        }
+
+        let mut local_codec = Codec::new();
+        local_codec
+            .read_file_by_extension(input, lang)
+            .map_err(|e| format!("Error reading {}: {}", input, e))?;
+        return Ok(local_codec.resources);
+    }
+
     // Try standard format via lib crate (uses extension + language inference)
     {
         let mut local_codec = Codec::new();
@@ -189,7 +219,7 @@ fn read_input_to_resources(
 }
 
 /// Read a single input into a Codec (wrapper over read_input_to_resources)
-fn read_input_to_codec(input: &str, lang: Option<String>) -> Result<Codec, String> {
-    let resources = read_input_to_resources(input, lang)?;
+fn read_input_to_codec(input: &str, lang: Option<String>, strict: bool) -> Result<Codec, String> {
+    let resources = read_input_to_resources(input, lang, strict)?;
     Ok(Codec { resources })
 }

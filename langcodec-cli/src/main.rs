@@ -1,5 +1,6 @@
 mod convert;
 mod debug;
+mod diff;
 mod edit;
 mod formats;
 mod merge;
@@ -12,6 +13,7 @@ mod view;
 
 use crate::convert::{ConvertOptions, run_unified_convert_command, try_custom_format_view};
 use crate::debug::run_debug_command;
+use crate::diff::{DiffOptions, run_diff_command};
 use crate::edit::{EditSetOptions, run_edit_set_command};
 use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::sync::{SyncOptions, run_sync_command};
@@ -25,6 +27,10 @@ use langcodec::Codec;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    /// Enable strict mode (disables parser fallbacks and enforces stricter failures)
+    #[arg(long, global = true, default_value_t = false)]
+    strict: bool,
+
     #[command(subcommand)]
     commands: Commands,
 }
@@ -76,6 +82,29 @@ enum Commands {
         command: EditCommands,
     },
 
+    /// Compare two localization files and report added/removed/changed keys by language.
+    Diff {
+        /// Source localization file (A)
+        #[arg(short = 's', long)]
+        source: String,
+
+        /// Target localization file (B)
+        #[arg(short = 't', long)]
+        target: String,
+
+        /// Optional language code to filter by
+        #[arg(short, long)]
+        lang: Option<String>,
+
+        /// Output JSON instead of human-readable text
+        #[arg(long)]
+        json: bool,
+
+        /// Optional output file path (defaults to stdout)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
     /// Sync existing entries from a source file into a target file.
     ///
     /// Behavior:
@@ -104,6 +133,18 @@ enum Commands {
         /// Language used for translation-based fallback matching (e.g., "en")
         #[arg(long)]
         match_lang: Option<String>,
+
+        /// Write machine-readable sync report JSON to a file
+        #[arg(long)]
+        report_json: Option<String>,
+
+        /// Fail when target entries cannot be matched to source
+        #[arg(long, default_value_t = false)]
+        fail_on_unmatched: bool,
+
+        /// Fail when fallback matching is ambiguous
+        #[arg(long, default_value_t = false)]
+        fail_on_ambiguous: bool,
 
         /// Preview changes without writing
         #[arg(long, default_value_t = false)]
@@ -244,6 +285,7 @@ enum EditCommands {
 
 fn main() {
     let args = Args::parse();
+    let strict = args.strict;
 
     match args.commands {
         Commands::Convert {
@@ -285,6 +327,7 @@ fn main() {
                     exclude_lang,
                     include_lang,
                 },
+                strict,
             );
         }
         Commands::Edit { command } => match command {
@@ -317,12 +360,48 @@ fn main() {
                 }
             }
         },
+        Commands::Diff {
+            source,
+            target,
+            lang,
+            json,
+            output,
+        } => {
+            let mut context = ValidationContext::new()
+                .with_input_file(source.clone())
+                .with_input_file(target.clone());
+            if let Some(lang_code) = &lang {
+                context = context.with_language_code(lang_code.clone());
+            }
+            if let Some(output_path) = &output {
+                context = context.with_output_file(output_path.clone());
+            }
+            if let Err(e) = validate_context(&context) {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+
+            if let Err(e) = run_diff_command(DiffOptions {
+                source,
+                target,
+                lang,
+                json,
+                output,
+                strict,
+            }) {
+                eprintln!("❌ Diff failed: {}", e);
+                std::process::exit(1);
+            }
+        }
         Commands::Sync {
             source,
             target,
             output,
             lang,
             match_lang,
+            report_json,
+            fail_on_unmatched,
+            fail_on_ambiguous,
             dry_run,
         } => {
             let mut context = ValidationContext::new()
@@ -351,6 +430,10 @@ fn main() {
                 output,
                 lang,
                 match_lang,
+                report_json,
+                fail_on_unmatched,
+                fail_on_ambiguous,
+                strict,
                 dry_run,
             }) {
                 eprintln!("❌ Sync failed: {}", e);
@@ -376,18 +459,24 @@ fn main() {
                 std::process::exit(1);
             }
 
-            // Read the input file using the traditional method
             let mut codec = Codec::new();
-
-            // Try standard format first
-            if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
-                // Standard format succeeded
-            } else if input.ends_with(".json")
+            let is_custom_ext = input.ends_with(".json")
                 || input.ends_with(".yaml")
                 || input.ends_with(".yml")
-                || input.ends_with(".langcodec")
-            {
-                // Try custom format for JSON/YAML/langcodec files
+                || input.ends_with(".langcodec");
+            if strict {
+                if is_custom_ext {
+                    if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
+                        eprintln!("Failed to read file: {}", e);
+                        std::process::exit(1);
+                    }
+                } else if let Err(e) = codec.read_file_by_extension(&input, lang.clone()) {
+                    eprintln!("Failed to read file: {}", e);
+                    std::process::exit(1);
+                }
+            } else if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
+                // Standard format succeeded
+            } else if is_custom_ext {
                 if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
                     eprintln!("Failed to read file: {}", e);
                     std::process::exit(1);
@@ -456,6 +545,7 @@ fn main() {
                 lang,
                 source_language,
                 version,
+                strict,
             );
         }
         Commands::Debug {
@@ -479,7 +569,7 @@ fn main() {
                 std::process::exit(1);
             }
 
-            run_debug_command(input, lang, output);
+            run_debug_command(input, lang, output, strict);
         }
         Commands::Completions { shell } => {
             let mut cmd = Args::command();
@@ -497,15 +587,24 @@ fn main() {
                 std::process::exit(1);
             }
 
-            // Load file using the same logic as view
             let mut codec = Codec::new();
-            if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
-                // ok
-            } else if input.ends_with(".json")
+            let is_custom_ext = input.ends_with(".json")
                 || input.ends_with(".yaml")
                 || input.ends_with(".yml")
-                || input.ends_with(".langcodec")
-            {
+                || input.ends_with(".langcodec");
+            if strict {
+                if is_custom_ext {
+                    if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
+                        eprintln!("Failed to read file: {}", e);
+                        std::process::exit(1);
+                    }
+                } else if let Err(e) = codec.read_file_by_extension(&input, lang.clone()) {
+                    eprintln!("Failed to read file: {}", e);
+                    std::process::exit(1);
+                }
+            } else if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
+                // ok
+            } else if is_custom_ext {
                 if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
                     eprintln!("Failed to read file: {}", e);
                     std::process::exit(1);

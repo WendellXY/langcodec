@@ -6,14 +6,32 @@ use std::fs::File;
 use std::io::{self, Write};
 
 /// Run the debug command: read a localization file and output as JSON.
-pub fn run_debug_command(input: String, lang: Option<String>, output: Option<String>) {
+pub fn run_debug_command(
+    input: String,
+    lang: Option<String>,
+    output: Option<String>,
+    strict: bool,
+) {
     // Read the input file
     eprintln!("Reading input file...");
     let mut codec = Codec::new();
-    // Try standard format first
-    if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
+    let is_custom_ext =
+        input.ends_with(".json") || input.ends_with(".yaml") || input.ends_with(".yml");
+    if strict {
+        if is_custom_ext {
+            if let Err(e) = try_custom_format_debug(&input, lang.clone(), &mut codec) {
+                eprintln!("❌ Error reading input file");
+                eprintln!("Error reading {}: {}", input, e);
+                std::process::exit(1);
+            }
+        } else if let Err(e) = codec.read_file_by_extension(&input, lang.clone()) {
+            eprintln!("❌ Error reading input file");
+            eprintln!("Error reading {}: {}", input, e);
+            std::process::exit(1);
+        }
+    } else if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
         // Standard format succeeded
-    } else if input.ends_with(".json") || input.ends_with(".yaml") || input.ends_with(".yml") {
+    } else if is_custom_ext {
         // Try custom format for JSON/YAML files
         if let Err(e) = try_custom_format_debug(&input, lang.clone(), &mut codec) {
             eprintln!("❌ Error reading input file");

@@ -126,6 +126,7 @@ Supported formats: .strings, .xml (Android), .xcstrings, .csv, .tsv. Custom JSON
 - Android plurals `<plurals>` are supported.
 - Language inference: `en.lproj/Localizable.strings`, `values-es/strings.xml`, base `values/` → `en` by default.
 - Globbing: use quotes for patterns in merge and edit (e.g., `'**/*.xml'`).
+- Global strict mode: add `--strict` before any subcommand to disable parser fallbacks and enforce stricter failures.
 
 ## License
 

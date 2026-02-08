@@ -99,3 +99,101 @@ welcome,Old Welcome
     let after = fs::read_to_string(&target).unwrap();
     assert_eq!(before, after);
 }
+
+#[test]
+fn test_sync_report_json_written() {
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("source.csv");
+    let target = temp_dir.path().join("target.csv");
+    let report = temp_dir.path().join("sync_report.json");
+
+    fs::write(&source, "key,en\nwelcome,Welcome\n").unwrap();
+    fs::write(&target, "key,en\nwelcome,Old Welcome\n").unwrap();
+
+    let out = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "sync",
+            "--source",
+            source.to_str().unwrap(),
+            "--target",
+            target.to_str().unwrap(),
+            "--report-json",
+            report.to_str().unwrap(),
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(report.exists());
+}
+
+#[test]
+fn test_sync_fail_on_unmatched_exits_nonzero() {
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("source.csv");
+    let target = temp_dir.path().join("target.csv");
+
+    fs::write(&source, "key,en\nwelcome,Welcome\n").unwrap();
+    fs::write(&target, "key,en\nnot_in_source,Old\n").unwrap();
+
+    let out = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "sync",
+            "--source",
+            source.to_str().unwrap(),
+            "--target",
+            target.to_str().unwrap(),
+            "--fail-on-unmatched",
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        !out.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn test_sync_strict_fails_on_unmatched_by_default() {
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("source.csv");
+    let target = temp_dir.path().join("target.csv");
+
+    fs::write(&source, "key,en\nwelcome,Welcome\n").unwrap();
+    fs::write(&target, "key,en\nnot_in_source,Old\n").unwrap();
+
+    let out = Command::new("cargo")
+        .args([
+            "run",
+            "--",
+            "--strict",
+            "sync",
+            "--source",
+            source.to_str().unwrap(),
+            "--target",
+            target.to_str().unwrap(),
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        !out.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
