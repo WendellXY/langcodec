@@ -446,6 +446,7 @@ fn test_main_help_command() {
     assert!(stdout.contains("langcodec"));
     assert!(stdout.contains("convert"));
     assert!(stdout.contains("merge"));
+    assert!(stdout.contains("sync"));
     assert!(stdout.contains("view"));
     assert!(stdout.contains("debug"));
 }

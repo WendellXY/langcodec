@@ -5,6 +5,7 @@ mod formats;
 mod merge;
 mod path_glob;
 mod stats;
+mod sync;
 mod transformers;
 mod validation;
 mod view;
@@ -13,7 +14,8 @@ use crate::convert::{ConvertOptions, run_unified_convert_command, try_custom_for
 use crate::debug::run_debug_command;
 use crate::edit::{EditSetOptions, run_edit_set_command};
 use crate::merge::{ConflictStrategy, run_merge_command};
-use crate::validation::{ValidationContext, validate_context};
+use crate::sync::{SyncOptions, run_sync_command};
+use crate::validation::{ValidationContext, validate_context, validate_language_code};
 use crate::view::print_view;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
@@ -72,6 +74,40 @@ enum Commands {
     Edit {
         #[command(subcommand)]
         command: EditCommands,
+    },
+
+    /// Sync existing entries from a source file into a target file.
+    ///
+    /// Behavior:
+    /// - Only updates entries that already exist in target
+    /// - Never adds new keys to target
+    /// - Matches by key first
+    /// - Fallback matching by source-language translation (`--match-lang`, default: inferred/en)
+    #[command(verbatim_doc_comment)]
+    Sync {
+        /// Source localization file (A): values are copied from here
+        #[arg(short = 's', long)]
+        source: String,
+
+        /// Target localization file (B): existing entries are updated here
+        #[arg(short = 't', long)]
+        target: String,
+
+        /// Optional output path (default: write back to --target)
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Restrict updates to a single target language (e.g., "fr")
+        #[arg(short, long)]
+        lang: Option<String>,
+
+        /// Language used for translation-based fallback matching (e.g., "en")
+        #[arg(long)]
+        match_lang: Option<String>,
+
+        /// Preview changes without writing
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
     },
 
     /// View localization files.
@@ -281,6 +317,46 @@ fn main() {
                 }
             }
         },
+        Commands::Sync {
+            source,
+            target,
+            output,
+            lang,
+            match_lang,
+            dry_run,
+        } => {
+            let mut context = ValidationContext::new()
+                .with_input_file(source.clone())
+                .with_input_file(target.clone());
+            if let Some(output_path) = &output {
+                context = context.with_output_file(output_path.clone());
+            }
+            if let Some(lang_code) = &lang {
+                context = context.with_language_code(lang_code.clone());
+            }
+            if let Err(e) = validate_context(&context) {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+            if let Some(match_lang_code) = &match_lang
+                && let Err(e) = validate_language_code(match_lang_code)
+            {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+
+            if let Err(e) = run_sync_command(SyncOptions {
+                source,
+                target,
+                output,
+                lang,
+                match_lang,
+                dry_run,
+            }) {
+                eprintln!("❌ Sync failed: {}", e);
+                std::process::exit(1);
+            }
+        }
         Commands::View {
             input,
             lang,
