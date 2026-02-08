@@ -1,8 +1,6 @@
 use crate::convert::read_resources_from_any_input;
 use crate::validation::{validate_file_path, validate_language_code, validate_output_path};
-use langcodec::{Resource, Translation};
-use serde_json::json;
-use std::collections::{BTreeMap, BTreeSet};
+use langcodec::{DiffOptions as LibDiffOptions, DiffReport, Translation, diff_resources};
 
 #[derive(Debug, Clone)]
 pub struct DiffOptions {
@@ -12,45 +10,6 @@ pub struct DiffOptions {
     pub json: bool,
     pub output: Option<String>,
     pub strict: bool,
-}
-
-#[derive(Debug, Clone)]
-struct ChangedItem {
-    key: String,
-    source: Translation,
-    target: Translation,
-}
-
-#[derive(Debug, Clone, Default)]
-struct LanguageDiff {
-    language: String,
-    added: Vec<String>,
-    removed: Vec<String>,
-    changed: Vec<ChangedItem>,
-    unchanged: usize,
-}
-
-#[derive(Debug, Clone, Default)]
-struct DiffSummary {
-    languages: usize,
-    added: usize,
-    removed: usize,
-    changed: usize,
-    unchanged: usize,
-}
-
-fn normalize_lang(lang: &str) -> String {
-    lang.trim().replace('_', "-").to_ascii_lowercase()
-}
-
-fn lang_base(lang: &str) -> &str {
-    lang.split('-').next().unwrap_or(lang)
-}
-
-fn lang_matches(resource_lang: &str, requested_lang: &str) -> bool {
-    let res = normalize_lang(resource_lang);
-    let req = normalize_lang(requested_lang);
-    res == req || lang_base(&res) == lang_base(&req)
 }
 
 fn translation_as_text(value: &Translation) -> String {
@@ -67,79 +26,6 @@ fn translation_as_text(value: &Translation) -> String {
     }
 }
 
-fn build_language_map(resources: Vec<Resource>) -> BTreeMap<String, BTreeMap<String, Translation>> {
-    let mut map: BTreeMap<String, BTreeMap<String, Translation>> = BTreeMap::new();
-    for resource in resources {
-        let lang = normalize_lang(&resource.metadata.language);
-        let entry_map = map.entry(lang).or_default();
-        for entry in resource.entries {
-            entry_map.insert(entry.id, entry.value);
-        }
-    }
-    map
-}
-
-fn collect_diff(
-    source: &BTreeMap<String, BTreeMap<String, Translation>>,
-    target: &BTreeMap<String, BTreeMap<String, Translation>>,
-    lang_filter: &Option<String>,
-) -> (DiffSummary, Vec<LanguageDiff>) {
-    let mut summary = DiffSummary::default();
-    let mut languages = BTreeSet::new();
-    languages.extend(source.keys().cloned());
-    languages.extend(target.keys().cloned());
-
-    let mut per_language = Vec::new();
-    for lang in languages {
-        if let Some(filter) = lang_filter
-            && !lang_matches(&lang, filter)
-        {
-            continue;
-        }
-
-        let source_entries = source.get(&lang);
-        let target_entries = target.get(&lang);
-
-        let mut all_keys = BTreeSet::new();
-        if let Some(entries) = source_entries {
-            all_keys.extend(entries.keys().cloned());
-        }
-        if let Some(entries) = target_entries {
-            all_keys.extend(entries.keys().cloned());
-        }
-
-        let mut diff = LanguageDiff {
-            language: lang.clone(),
-            ..LanguageDiff::default()
-        };
-
-        for key in all_keys {
-            let source_value = source_entries.and_then(|m| m.get(&key));
-            let target_value = target_entries.and_then(|m| m.get(&key));
-            match (source_value, target_value) {
-                (Some(_), None) => diff.added.push(key),
-                (None, Some(_)) => diff.removed.push(key),
-                (Some(s), Some(t)) if s != t => diff.changed.push(ChangedItem {
-                    key,
-                    source: s.clone(),
-                    target: t.clone(),
-                }),
-                (Some(_), Some(_)) => diff.unchanged += 1,
-                (None, None) => {}
-            }
-        }
-
-        summary.languages += 1;
-        summary.added += diff.added.len();
-        summary.removed += diff.removed.len();
-        summary.changed += diff.changed.len();
-        summary.unchanged += diff.unchanged;
-        per_language.push(diff);
-    }
-
-    (summary, per_language)
-}
-
 fn print_or_write(output: Option<&String>, content: &str) -> Result<(), String> {
     if let Some(path) = output {
         std::fs::write(path, content).map_err(|e| format!("Failed to write {}: {}", path, e))?;
@@ -150,16 +36,19 @@ fn print_or_write(output: Option<&String>, content: &str) -> Result<(), String> 
     Ok(())
 }
 
-fn render_human(summary: &DiffSummary, per_language: &[LanguageDiff]) -> String {
+fn render_human(report: &DiffReport) -> String {
     let mut lines = Vec::new();
     lines.push("=== Diff ===".to_string());
-    lines.push(format!("Languages: {}", summary.languages));
+    lines.push(format!("Languages: {}", report.summary.languages));
     lines.push(format!(
         "Totals: added={}, removed={}, changed={}, unchanged={}",
-        summary.added, summary.removed, summary.changed, summary.unchanged
+        report.summary.added,
+        report.summary.removed,
+        report.summary.changed,
+        report.summary.unchanged
     ));
 
-    for lang in per_language {
+    for lang in &report.languages {
         lines.push(format!("\nLanguage: {}", lang.language));
         lines.push(format!("  added: {}", lang.added.len()));
         lines.push(format!("  removed: {}", lang.removed.len()));
@@ -188,15 +77,16 @@ fn render_human(summary: &DiffSummary, per_language: &[LanguageDiff]) -> String 
     lines.join("\n")
 }
 
-fn render_json(summary: &DiffSummary, per_language: &[LanguageDiff]) -> Result<String, String> {
-    let languages_json: Vec<_> = per_language
+fn render_json(report: &DiffReport) -> Result<String, String> {
+    let languages_json: Vec<_> = report
+        .languages
         .iter()
         .map(|lang| {
             let changed: Vec<_> = lang
                 .changed
                 .iter()
                 .map(|item| {
-                    json!({
+                    serde_json::json!({
                         "key": item.key,
                         "source": item.source,
                         "target": item.target,
@@ -204,7 +94,7 @@ fn render_json(summary: &DiffSummary, per_language: &[LanguageDiff]) -> Result<S
                 })
                 .collect();
 
-            json!({
+            serde_json::json!({
                 "language": lang.language,
                 "counts": {
                     "added": lang.added.len(),
@@ -219,18 +109,18 @@ fn render_json(summary: &DiffSummary, per_language: &[LanguageDiff]) -> Result<S
         })
         .collect();
 
-    let report = json!({
+    let payload = serde_json::json!({
         "summary": {
-            "languages": summary.languages,
-            "added": summary.added,
-            "removed": summary.removed,
-            "changed": summary.changed,
-            "unchanged": summary.unchanged,
+            "languages": report.summary.languages,
+            "added": report.summary.added,
+            "removed": report.summary.removed,
+            "changed": report.summary.changed,
+            "unchanged": report.summary.unchanged,
         },
         "languages": languages_json,
     });
 
-    serde_json::to_string_pretty(&report)
+    serde_json::to_string_pretty(&payload)
         .map_err(|e| format!("Failed to serialize diff report JSON: {}", e))
 }
 
@@ -247,15 +137,19 @@ pub fn run_diff_command(opts: DiffOptions) -> Result<(), String> {
     let source_resources = read_resources_from_any_input(&opts.source, None, opts.strict)?;
     let target_resources = read_resources_from_any_input(&opts.target, None, opts.strict)?;
 
-    let source_map = build_language_map(source_resources);
-    let target_map = build_language_map(target_resources);
-    let (summary, per_language) = collect_diff(&source_map, &target_map, &opts.lang);
+    let report = diff_resources(
+        &source_resources,
+        &target_resources,
+        &LibDiffOptions {
+            language_filter: opts.lang.clone(),
+        },
+    );
 
     if opts.json {
-        let rendered = render_json(&summary, &per_language)?;
+        let rendered = render_json(&report)?;
         print_or_write(opts.output.as_ref(), &rendered)?;
     } else {
-        let rendered = render_human(&summary, &per_language);
+        let rendered = render_human(&report);
         print_or_write(opts.output.as_ref(), &rendered)?;
     }
 

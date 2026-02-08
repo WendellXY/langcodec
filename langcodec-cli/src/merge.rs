@@ -1,7 +1,7 @@
 use crate::formats::parse_custom_format;
 use crate::transformers::custom_format_to_resource;
 
-use langcodec::{Codec, converter};
+use langcodec::{Codec, ReadOptions, converter};
 use rayon::prelude::*;
 
 /// Strategy for handling conflicts when merging localization files.
@@ -177,7 +177,12 @@ fn read_input_to_resources(
 
         let mut local_codec = Codec::new();
         local_codec
-            .read_file_by_extension(input, lang)
+            .read_file_by_extension_with_options(
+                input,
+                &ReadOptions::new()
+                    .with_language_hint(lang)
+                    .with_strict(true),
+            )
             .map_err(|e| format!("Error reading {}: {}", input, e))?;
         return Ok(local_codec.resources);
     }

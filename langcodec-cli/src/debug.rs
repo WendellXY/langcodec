@@ -1,7 +1,7 @@
 use crate::formats::parse_custom_format;
 use crate::transformers::custom_format_to_resource;
 
-use langcodec::{Codec, Plural, Translation};
+use langcodec::{Codec, Plural, ReadOptions, Translation};
 use std::fs::File;
 use std::io::{self, Write};
 
@@ -24,7 +24,12 @@ pub fn run_debug_command(
                 eprintln!("Error reading {}: {}", input, e);
                 std::process::exit(1);
             }
-        } else if let Err(e) = codec.read_file_by_extension(&input, lang.clone()) {
+        } else if let Err(e) = codec.read_file_by_extension_with_options(
+            &input,
+            &ReadOptions::new()
+                .with_language_hint(lang.clone())
+                .with_strict(true),
+        ) {
             eprintln!("❌ Error reading input file");
             eprintln!("Error reading {}: {}", input, e);
             std::process::exit(1);

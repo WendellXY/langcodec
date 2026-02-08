@@ -142,8 +142,11 @@ pub mod codec;
 pub mod converter;
 pub mod error;
 pub mod formats;
+pub mod operations;
 pub mod placeholder;
 pub mod plural_rules;
+pub mod provenance;
+pub mod read_options;
 pub mod traits;
 pub mod types;
 
@@ -156,13 +159,22 @@ pub use crate::{
         convert_with_normalization, infer_format_from_extension, infer_format_from_path,
         infer_language_from_path, merge_resources,
     },
-    error::Error,
+    error::{Error, ErrorCode, ErrorContext, StructuredError},
     formats::FormatType,
+    operations::{
+        DiffChangedItem, DiffOptions, DiffReport, DiffSummary, LanguageDiff, SyncIssue,
+        SyncIssueKind, SyncOptions, SyncReport, diff_resources, sync_existing_entries,
+    },
     placeholder::{extract_placeholders, normalize_placeholders, signature},
     plural_rules::{
         PluralValidationReport, autofix_fill_missing_from_other_resource,
         collect_resource_plural_issues, required_categories_for_str, validate_resource_plurals,
     },
+    provenance::{
+        PROVENANCE_PREFIX, ProvenanceRecord, entry_provenance, resource_provenance,
+        set_entry_provenance, set_resource_provenance,
+    },
+    read_options::ReadOptions,
     types::{
         ConflictStrategy, Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource,
         Translation,

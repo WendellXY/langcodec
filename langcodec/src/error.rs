@@ -2,7 +2,51 @@
 //!
 //! These are returned from all fallible operations (parsing, serialization, conversion, etc.).
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+/// Stable machine-readable category for [`Error`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorCode {
+    UnknownFormat,
+    Parse,
+    XmlParse,
+    CsvParse,
+    Io,
+    DataMismatch,
+    InvalidResource,
+    UnsupportedFormat,
+    Conversion,
+    Validation,
+    MissingLanguage,
+    AmbiguousMatch,
+    PolicyViolation,
+}
+
+/// Optional structured metadata attached to an error.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ErrorContext {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub candidates: Vec<String>,
+}
+
+/// Serializable structured representation of an [`Error`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StructuredError {
+    pub code: ErrorCode,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<ErrorContext>,
+}
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -39,6 +83,19 @@ pub enum Error {
 
     #[error("validation error: {0}")]
     Validation(String),
+
+    #[error("missing language for `{path}` ({format})")]
+    MissingLanguage { path: String, format: String },
+
+    #[error("ambiguous match for key `{key}` in language `{language}`: {candidates:?}")]
+    AmbiguousMatch {
+        key: String,
+        language: String,
+        candidates: Vec<String>,
+    },
+
+    #[error("policy violation: {0}")]
+    PolicyViolation(String),
 }
 
 impl Error {
@@ -56,6 +113,69 @@ impl Error {
     /// Creates a new validation error
     pub fn validation_error(message: impl Into<String>) -> Self {
         Error::Validation(message.into())
+    }
+
+    /// Creates a new missing-language error.
+    pub fn missing_language(path: impl Into<String>, format: impl Into<String>) -> Self {
+        Error::MissingLanguage {
+            path: path.into(),
+            format: format.into(),
+        }
+    }
+
+    /// Creates a new policy violation error.
+    pub fn policy_violation(message: impl Into<String>) -> Self {
+        Error::PolicyViolation(message.into())
+    }
+
+    /// Returns a machine-readable error code.
+    pub fn error_code(&self) -> ErrorCode {
+        match self {
+            Error::UnknownFormat(_) => ErrorCode::UnknownFormat,
+            Error::Parse(_) => ErrorCode::Parse,
+            Error::XmlParse(_) => ErrorCode::XmlParse,
+            Error::CsvParse(_) => ErrorCode::CsvParse,
+            Error::Io(_) => ErrorCode::Io,
+            Error::DataMismatch(_) => ErrorCode::DataMismatch,
+            Error::InvalidResource(_) => ErrorCode::InvalidResource,
+            Error::UnsupportedFormat(_) => ErrorCode::UnsupportedFormat,
+            Error::Conversion { .. } => ErrorCode::Conversion,
+            Error::Validation(_) => ErrorCode::Validation,
+            Error::MissingLanguage { .. } => ErrorCode::MissingLanguage,
+            Error::AmbiguousMatch { .. } => ErrorCode::AmbiguousMatch,
+            Error::PolicyViolation(_) => ErrorCode::PolicyViolation,
+        }
+    }
+
+    /// Returns optional structured context for the error.
+    pub fn context(&self) -> Option<ErrorContext> {
+        match self {
+            Error::MissingLanguage { path, format } => Some(ErrorContext {
+                path: Some(path.clone()),
+                format: Some(format.clone()),
+                ..ErrorContext::default()
+            }),
+            Error::AmbiguousMatch {
+                key,
+                language,
+                candidates,
+            } => Some(ErrorContext {
+                key: Some(key.clone()),
+                language: Some(language.clone()),
+                candidates: candidates.clone(),
+                ..ErrorContext::default()
+            }),
+            _ => None,
+        }
+    }
+
+    /// Converts this error into a serializable structured shape.
+    pub fn structured(&self) -> StructuredError {
+        StructuredError {
+            code: self.error_code(),
+            message: self.to_string(),
+            context: self.context(),
+        }
     }
 }
 
@@ -140,6 +260,7 @@ mod tests {
             Error::InvalidResource("test".to_string()),
             Error::UnsupportedFormat("test".to_string()),
             Error::Validation("test".to_string()),
+            Error::PolicyViolation("test".to_string()),
         ];
 
         for error in errors {
@@ -155,5 +276,31 @@ mod tests {
         let debug = format!("{:?}", error);
         assert!(debug.contains("UnknownFormat"));
         assert!(debug.contains("test"));
+    }
+
+    #[test]
+    fn test_structured_error_for_missing_language() {
+        let error = Error::missing_language("/tmp/Localizable.strings", "strings");
+        let structured = error.structured();
+        assert_eq!(structured.code, ErrorCode::MissingLanguage);
+        assert_eq!(
+            structured.context.as_ref().and_then(|c| c.path.as_deref()),
+            Some("/tmp/Localizable.strings")
+        );
+    }
+
+    #[test]
+    fn test_structured_error_for_ambiguous_match() {
+        let error = Error::AmbiguousMatch {
+            key: "welcome".to_string(),
+            language: "fr".to_string(),
+            candidates: vec!["a".to_string(), "b".to_string()],
+        };
+        let structured = error.structured();
+        assert_eq!(structured.code, ErrorCode::AmbiguousMatch);
+        assert_eq!(
+            structured.context.as_ref().map(|c| c.candidates.clone()),
+            Some(vec!["a".to_string(), "b".to_string()])
+        );
     }
 }

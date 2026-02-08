@@ -12,6 +12,8 @@ use crate::{ConflictStrategy, merge_resources};
 use crate::{
     error::Error,
     formats::*,
+    provenance::{ProvenanceRecord, set_resource_provenance},
+    read_options::ReadOptions,
     traits::Parser,
     types::{Entry, Resource},
 };
@@ -1013,17 +1015,41 @@ impl Codec {
         path: P,
         format_type: FormatType,
     ) -> Result<(), Error> {
-        let mut language = crate::converter::infer_language_from_path(&path, &format_type)?;
-        // Fallback to explicitly provided language if inference failed
-        if language.is_none() {
-            match &format_type {
-                FormatType::Strings(lang_opt) | FormatType::AndroidStrings(lang_opt) => {
-                    if let Some(l) = lang_opt {
-                        language = Some(l.clone());
-                    }
-                }
-                _ => {}
+        self.read_file_by_type_with_options(path, format_type, &ReadOptions::default())
+    }
+
+    /// Reads a resource file given its path and explicit format type with read options.
+    pub fn read_file_by_type_with_options<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        format_type: FormatType,
+        options: &ReadOptions,
+    ) -> Result<(), Error> {
+        let inferred_language = crate::converter::infer_language_from_path(&path, &format_type)?;
+        let format_language = match &format_type {
+            FormatType::Strings(lang_opt) | FormatType::AndroidStrings(lang_opt) => {
+                lang_opt.clone()
             }
+            _ => None,
+        };
+
+        let language = options
+            .language_hint
+            .clone()
+            .or(inferred_language)
+            .or(format_language);
+        let requires_language = matches!(
+            &format_type,
+            FormatType::Strings(_) | FormatType::AndroidStrings(_)
+        );
+        let format_name = format_type.to_string();
+        let source_path = path.as_ref().to_string_lossy().to_string();
+
+        if options.strict && requires_language && language.is_none() {
+            return Err(Error::missing_language(
+                source_path.clone(),
+                format_name.clone(),
+            ));
         }
 
         let domain = path
@@ -1062,7 +1088,19 @@ impl Codec {
             new_resource
                 .metadata
                 .custom
-                .insert("format".to_string(), format_type.to_string());
+                .insert("format".to_string(), format_name.clone());
+
+            if options.attach_provenance {
+                set_resource_provenance(
+                    new_resource,
+                    &ProvenanceRecord {
+                        source_path: Some(source_path.clone()),
+                        source_format: Some(format_name.clone()),
+                        source_language: language.clone(),
+                        ..ProvenanceRecord::default()
+                    },
+                );
+            }
         }
         self.resources.append(&mut new_resources);
 
@@ -1085,9 +1123,18 @@ impl Codec {
         path: P,
         lang: Option<String>,
     ) -> Result<(), Error> {
+        self.read_file_by_extension_with_options(path, &ReadOptions::new().with_language_hint(lang))
+    }
+
+    /// Reads a resource file by inferring format from extension with read options.
+    pub fn read_file_by_extension_with_options<P: AsRef<Path>>(
+        &mut self,
+        path: P,
+        options: &ReadOptions,
+    ) -> Result<(), Error> {
         let format_type = match path.as_ref().extension().and_then(|s| s.to_str()) {
-            Some("xml") => FormatType::AndroidStrings(lang),
-            Some("strings") => FormatType::Strings(lang),
+            Some("xml") => FormatType::AndroidStrings(options.language_hint.clone()),
+            Some("strings") => FormatType::Strings(options.language_hint.clone()),
             Some("xcstrings") => FormatType::Xcstrings,
             Some("csv") => FormatType::CSV,
             Some("tsv") => FormatType::TSV,
@@ -1099,7 +1146,7 @@ impl Codec {
             }
         };
 
-        self.read_file_by_type(path, format_type)?;
+        self.read_file_by_type_with_options(path, format_type, options)?;
 
         Ok(())
     }
@@ -1953,5 +2000,43 @@ mod tests {
         };
         assert!(v.contains("%s"));
         assert!(v.contains("%1$s"));
+    }
+
+    #[test]
+    fn test_read_file_by_type_with_strict_requires_language() {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("Localizable.strings");
+        std::fs::write(&input, "\"hello\" = \"Hello\";").unwrap();
+
+        let mut codec = Codec::new();
+        let err = codec
+            .read_file_by_type_with_options(
+                &input,
+                FormatType::Strings(None),
+                &ReadOptions::new().with_strict(true),
+            )
+            .unwrap_err();
+        assert_eq!(err.error_code(), crate::ErrorCode::MissingLanguage);
+    }
+
+    #[test]
+    fn test_read_file_with_provenance() {
+        let temp = tempfile::tempdir().unwrap();
+        let lproj = temp.path().join("en.lproj");
+        std::fs::create_dir_all(&lproj).unwrap();
+        let input = lproj.join("Localizable.strings");
+        std::fs::write(&input, "\"hello\" = \"Hello\";").unwrap();
+
+        let mut codec = Codec::new();
+        codec
+            .read_file_by_extension_with_options(&input, &ReadOptions::new().with_provenance(true))
+            .unwrap();
+
+        let provenance = crate::resource_provenance(codec.resources.first().unwrap()).unwrap();
+        assert_eq!(
+            provenance.source_path,
+            Some(input.to_string_lossy().to_string())
+        );
+        assert_eq!(provenance.source_format, Some("strings".to_string()));
     }
 }

@@ -2,7 +2,7 @@ use crate::formats::{self, parse_custom_format};
 use crate::transformers::custom_format_to_resource;
 use crate::validation::{self, validate_custom_format_file};
 
-use langcodec::{Codec, convert_auto, formats::FormatType};
+use langcodec::{Codec, ReadOptions, convert_auto, formats::FormatType};
 use std::fs::File;
 use std::io::BufWriter;
 
@@ -497,7 +497,11 @@ pub fn read_resources_from_any_input(
             if let Some(std_fmt) = maybe_std {
                 let mut codec = Codec::new();
                 codec
-                    .read_file_by_type(input, std_fmt)
+                    .read_file_by_type_with_options(
+                        input,
+                        std_fmt,
+                        &ReadOptions::new().with_strict(true),
+                    )
                     .map_err(|e| format!("Failed to read input with explicit format: {}", e))?;
                 return Ok(codec.resources);
             }
@@ -515,7 +519,7 @@ pub fn read_resources_from_any_input(
         {
             let mut codec = Codec::new();
             codec
-                .read_file_by_extension(input, None)
+                .read_file_by_extension_with_options(input, &ReadOptions::new().with_strict(true))
                 .map_err(|e| format!("Failed to read input: {}", e))?;
             return Ok(codec.resources);
         }
