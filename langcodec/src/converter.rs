@@ -15,6 +15,27 @@ use crate::{
 };
 use std::path::Path;
 
+fn ensure_xcstrings_metadata(resources: &mut [Resource]) {
+    let fallback_source_language = resources
+        .iter()
+        .find(|r| !r.metadata.language.is_empty())
+        .map(|r| r.metadata.language.clone())
+        .unwrap_or_else(|| "en".to_string());
+
+    for resource in resources {
+        resource
+            .metadata
+            .custom
+            .entry("source_language".to_string())
+            .or_insert_with(|| fallback_source_language.clone());
+        resource
+            .metadata
+            .custom
+            .entry("version".to_string())
+            .or_insert_with(|| "1.0".to_string());
+    }
+}
+
 /// Convert a vector of resources to a specific output format.
 ///
 /// # Arguments
@@ -48,7 +69,7 @@ use std::path::Path;
 /// # Ok::<(), langcodec::Error>(())
 /// ```
 pub fn convert_resources_to_format(
-    resources: Vec<Resource>,
+    mut resources: Vec<Resource>,
     output_path: &str,
     output_format: FormatType,
 ) -> Result<(), Error> {
@@ -85,11 +106,14 @@ pub fn convert_resources_to_format(
                 ))
             }
         }
-        FormatType::Xcstrings => XcstringsFormat::try_from(resources)
-            .and_then(|f| f.write_to(Path::new(output_path)))
-            .map_err(|e| {
-                Error::conversion_error(format!("Error writing Xcstrings output: {}", e), None)
-            }),
+        FormatType::Xcstrings => {
+            ensure_xcstrings_metadata(&mut resources);
+            XcstringsFormat::try_from(resources)
+                .and_then(|f| f.write_to(Path::new(output_path)))
+                .map_err(|e| {
+                    Error::conversion_error(format!("Error writing Xcstrings output: {}", e), None)
+                })
+        }
         FormatType::CSV => CSVFormat::try_from(resources)
             .and_then(|f| f.write_to(Path::new(output_path)))
             .map_err(|e| Error::conversion_error(format!("Error writing CSV output: {}", e), None)),
@@ -159,6 +183,10 @@ pub fn convert<P: AsRef<Path>>(
                 res.metadata.language = l.clone();
             }
         }
+    }
+
+    if matches!(output_format, FormatType::Xcstrings) {
+        ensure_xcstrings_metadata(&mut resources);
     }
 
     // Helper to extract resource by language if present, or first one
@@ -274,6 +302,10 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
                 }
             }
         }
+    }
+
+    if matches!(output_format, FormatType::Xcstrings) {
+        ensure_xcstrings_metadata(&mut resources);
     }
 
     // Helper to extract resource by language if present, or first one
