@@ -26,8 +26,8 @@ Legend: [ ] todo, [x] done, [~] in progress
   - [x] CLDR‑driven required category sets per locale (few/many/etc.)
   - [x] Validation pass: flag missing categories per key+locale
   - [x] CLI: `view --check-plurals` output
-- [ ] Strict vs. permissive parsing
-  - [ ] Global setting in lib; CLI `--strict` flag
+- [~] Strict vs. permissive parsing
+  - [x] Global setting in lib; CLI `--strict` flag
   - [ ] Consistent error surfaces with actionable context
 - [ ] Better error context
   - [ ] Include file path and entry id for parse/convert errors
@@ -57,9 +57,9 @@ For each new format:
 
 ## M4. CLI UX
 
-- [ ] `diff` subcommand
-  - [ ] Compare two files; output added/removed/changed keys by language
-  - [ ] Machine‑readable JSON output and pretty mode
+- [x] `diff` subcommand
+  - [x] Compare two files; output added/removed/changed keys by language
+  - [x] Machine‑readable JSON output and pretty mode
 - [x] `stats` subcommand
   - [x] Per‑language counts by `EntryStatus`
   - [x] Completion percent (excludes DoNotTranslate)
@@ -107,7 +107,7 @@ For each new format:
 ## Release Checklist (per minor)
 
 - [ ] Update README Supported Formats table
-- [ ] Changelog highlights (breaking changes, new formats, CLI flags)
+- [ ] Update CHANGELOG.md highlights (breaking changes, new formats, CLI flags)
 - [ ] Version bumps in workspace `Cargo.toml` and README
 - [ ] Tag + GitHub release notes
 

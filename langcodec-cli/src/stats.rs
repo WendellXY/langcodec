@@ -28,7 +28,11 @@ fn accumulate(lang_stats: &mut LangStats, status: &EntryStatus) {
     }
 }
 
-pub fn print_stats(codec: &Codec, lang_filter: &Option<String>, json_output: bool) {
+pub fn print_stats(
+    codec: &Codec,
+    lang_filter: &Option<String>,
+    json_output: bool,
+) -> Result<(), String> {
     let resources: Vec<_> = match lang_filter {
         Some(lang) => codec
             .resources
@@ -72,8 +76,10 @@ pub fn print_stats(codec: &Codec, lang_filter: &Option<String>, json_output: boo
             "summary": summary,
             "languages": per_lang,
         });
-        println!("{}", serde_json::to_string_pretty(&body).unwrap());
-        return;
+        let rendered = serde_json::to_string_pretty(&body)
+            .map_err(|e| format!("Failed to serialize stats JSON: {}", e))?;
+        println!("{}", rendered);
+        return Ok(());
     }
 
     println!("=== Stats ===");
@@ -125,4 +131,5 @@ pub fn print_stats(codec: &Codec, lang_filter: &Option<String>, json_output: boo
             missing_plural_entries, missing_plural_categories_total
         );
     }
+    Ok(())
 }

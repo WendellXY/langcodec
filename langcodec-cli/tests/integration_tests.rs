@@ -1,6 +1,18 @@
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
+
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
+fn fixture_path(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(name)
+}
 
 #[test]
 fn test_convert_json_to_xcstrings() {
@@ -16,16 +28,11 @@ fn test_convert_json_to_xcstrings() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "convert",
-            "-i",
-            input_file.to_str().unwrap(),
-            "-o",
-            output_file.to_str().unwrap(),
-        ])
+    let output = langcodec_cmd()
+        .args(["convert", "-i"])
+        .arg(&input_file)
+        .args(["-o"])
+        .arg(&output_file)
         .output()
         .unwrap();
 
@@ -35,7 +42,6 @@ fn test_convert_json_to_xcstrings() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Verify output file exists and contains expected content
     assert!(output_file.exists());
     let output_content = fs::read_to_string(&output_file).unwrap();
     assert!(output_content.contains("hello_world"));
@@ -55,16 +61,11 @@ fr: Bonjour, le monde!"#;
 
     fs::write(&input_file, yaml_content).unwrap();
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "convert",
-            "-i",
-            input_file.to_str().unwrap(),
-            "-o",
-            output_file.to_str().unwrap(),
-        ])
+    let output = langcodec_cmd()
+        .args(["convert", "-i"])
+        .arg(&input_file)
+        .args(["-o"])
+        .arg(&output_file)
         .output()
         .unwrap();
 
@@ -74,7 +75,6 @@ fr: Bonjour, le monde!"#;
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Verify output file exists and contains expected content
     assert!(output_file.exists());
     let output_content = fs::read_to_string(&output_file).unwrap();
     assert!(output_content.contains("hello_world"));
@@ -94,16 +94,11 @@ bye,Goodbye,Au revoir,Auf Wiedersehen"#;
 
     fs::write(&input_file, csv_content).unwrap();
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "convert",
-            "-i",
-            input_file.to_str().unwrap(),
-            "-o",
-            output_file.to_str().unwrap(),
-        ])
+    let output = langcodec_cmd()
+        .args(["convert", "-i"])
+        .arg(&input_file)
+        .args(["-o"])
+        .arg(&output_file)
         .output()
         .unwrap();
 
@@ -113,7 +108,6 @@ bye,Goodbye,Au revoir,Auf Wiedersehen"#;
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Verify output file exists and contains expected content
     assert!(output_file.exists());
     let output_content = fs::read_to_string(&output_file).unwrap();
     assert!(output_content.contains("hello"));
@@ -137,18 +131,12 @@ fn test_convert_with_explicit_format() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "convert",
-            "-i",
-            input_file.to_str().unwrap(),
-            "-o",
-            output_file.to_str().unwrap(),
-            "--input-format",
-            "json-language-map",
-        ])
+    let output = langcodec_cmd()
+        .args(["convert", "-i"])
+        .arg(&input_file)
+        .args(["-o"])
+        .arg(&output_file)
+        .args(["--input-format", "json-language-map"])
         .output()
         .unwrap();
 
@@ -165,42 +153,30 @@ fn test_convert_standard_formats() {
     let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("output.xcstrings");
 
-    // Test with fixtures
-    let fixtures_dir = "tests/fixtures";
-    let strings_file = format!("{}/cli_sample1.strings", fixtures_dir);
+    let strings_file = fixture_path("cli_sample1.strings");
 
-    // Verify fixture exists
     assert!(
-        std::path::Path::new(&strings_file).exists(),
+        strings_file.exists(),
         "Fixture file not found: {}",
-        strings_file
+        strings_file.display()
     );
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "convert",
-            "-i",
-            &strings_file,
-            "-o",
-            output_file.to_str().unwrap(),
-        ])
+    let output = langcodec_cmd()
+        .args(["convert", "-i"])
+        .arg(&strings_file)
+        .args(["-o"])
+        .arg(&output_file)
         .output()
         .unwrap();
 
-    // The conversion might fail if the lib crate doesn't support the format,
-    // but we should at least get a meaningful error message
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // Check that we get a proper error message
         assert!(
             stderr.contains("Could not convert") || stderr.contains("Error"),
             "Expected error message, got: {}",
             stderr
         );
     } else {
-        // If it succeeds, verify the output file exists
         assert!(output_file.exists());
     }
 }
@@ -218,18 +194,12 @@ fn test_convert_invalid_format() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "convert",
-            "-i",
-            input_file.to_str().unwrap(),
-            "-o",
-            output_file.to_str().unwrap(),
-            "--input-format",
-            "invalid-format",
-        ])
+    let output = langcodec_cmd()
+        .args(["convert", "-i"])
+        .arg(&input_file)
+        .args(["-o"])
+        .arg(&output_file)
+        .args(["--input-format", "invalid-format"])
         .output()
         .unwrap();
 
@@ -244,24 +214,19 @@ fn test_convert_invalid_format() {
 #[test]
 fn test_convert_nonexistent_file() {
     let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("nonexistent.json");
     let output_file = temp_dir.path().join("output.xcstrings");
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "convert",
-            "-i",
-            "nonexistent.json",
-            "-o",
-            output_file.to_str().unwrap(),
-        ])
+    let output = langcodec_cmd()
+        .args(["convert", "-i"])
+        .arg(&input_file)
+        .args(["-o"])
+        .arg(&output_file)
         .output()
         .unwrap();
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // With new validation, we should get a file validation error
     assert!(stderr.contains("Input validation failed") || stderr.contains("File does not exist"));
 }
 
@@ -273,32 +238,22 @@ fn test_convert_invalid_json() {
 
     fs::write(&input_file, "{ invalid json }").unwrap();
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "convert",
-            "-i",
-            input_file.to_str().unwrap(),
-            "-o",
-            output_file.to_str().unwrap(),
-        ])
+    let output = langcodec_cmd()
+        .args(["convert", "-i"])
+        .arg(&input_file)
+        .args(["-o"])
+        .arg(&output_file)
         .output()
         .unwrap();
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    // Since JSON is not a standard format, the error should be about unknown format
-    // rather than JSON parsing error
     assert!(stderr.contains("Cannot infer input format") || stderr.contains("Error parsing JSON"));
 }
 
 #[test]
 fn test_help_command() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--help"])
-        .output()
-        .unwrap();
+    let output = langcodec_cmd().arg("--help").output().unwrap();
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -311,8 +266,8 @@ fn test_help_command() {
 
 #[test]
 fn test_convert_help() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "convert", "--help"])
+    let output = langcodec_cmd()
+        .args(["convert", "--help"])
         .output()
         .unwrap();
 

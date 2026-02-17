@@ -27,6 +27,7 @@ ignore = "0.4"
 globset = "0.4"
 
 [dev-dependencies]
+assert_cmd = "2.0"
 tempfile = "3.8"
 
 [[bin]]

@@ -9,14 +9,14 @@ Universal localization toolkit: library + CLI for Apple/Android/CSV/TSV.
 
 ## Status
 
-This is a `0.6.4` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, APIs may evolve. Contributions and feedback are very welcome!
+This is a `0.7.0` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, APIs may evolve. Contributions and feedback are very welcome!
 
 ---
 
 ## Installation
 
 - CLI: `cargo install langcodec-cli`
-- Lib: add `langcodec = "0.6.4"` to your `Cargo.toml`
+- Lib: add `langcodec = "0.7.0"` to your `Cargo.toml`
 
 ---
 
@@ -152,7 +152,3 @@ This project is licensed under the MIT License.
 - Built with love in Rust
 
 ---
-
-## Status and Roadmap
-
-`langcodec` is now available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, the API may evolve as development continues. The current focus is on expanding format support, improving the CLI experience, and building a robust ecosystem for localization tooling. We welcome your issues, feature requests, and discussions at the project's issue tracker.

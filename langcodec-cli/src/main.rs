@@ -283,6 +283,44 @@ enum EditCommands {
     },
 }
 
+fn is_custom_input_extension(input: &str) -> bool {
+    input.ends_with(".json")
+        || input.ends_with(".yaml")
+        || input.ends_with(".yml")
+        || input.ends_with(".langcodec")
+}
+
+fn load_codec_for_readonly_command(
+    input: &str,
+    lang: &Option<String>,
+    strict: bool,
+) -> Result<Codec, String> {
+    let mut codec = Codec::new();
+    let is_custom_ext = is_custom_input_extension(input);
+
+    if strict {
+        if is_custom_ext {
+            try_custom_format_view(input, lang.clone(), &mut codec)?;
+        } else {
+            codec
+                .read_file_by_extension(input, lang.clone())
+                .map_err(|e| format!("{}", e))?;
+        }
+        return Ok(codec);
+    }
+
+    if codec.read_file_by_extension(input, lang.clone()).is_ok() {
+        return Ok(codec);
+    }
+
+    if is_custom_ext {
+        try_custom_format_view(input, lang.clone(), &mut codec)?;
+        return Ok(codec);
+    }
+
+    Err("unsupported format".to_string())
+}
+
 fn main() {
     let args = Args::parse();
     let strict = args.strict;
@@ -459,32 +497,13 @@ fn main() {
                 std::process::exit(1);
             }
 
-            let mut codec = Codec::new();
-            let is_custom_ext = input.ends_with(".json")
-                || input.ends_with(".yaml")
-                || input.ends_with(".yml")
-                || input.ends_with(".langcodec");
-            if strict {
-                if is_custom_ext {
-                    if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
-                        eprintln!("Failed to read file: {}", e);
-                        std::process::exit(1);
-                    }
-                } else if let Err(e) = codec.read_file_by_extension(&input, lang.clone()) {
+            let codec = match load_codec_for_readonly_command(&input, &lang, strict) {
+                Ok(codec) => codec,
+                Err(e) => {
                     eprintln!("Failed to read file: {}", e);
                     std::process::exit(1);
                 }
-            } else if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
-                // Standard format succeeded
-            } else if is_custom_ext {
-                if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
-                    eprintln!("Failed to read file: {}", e);
-                    std::process::exit(1);
-                }
-            } else {
-                eprintln!("Failed to read file: unsupported format");
-                std::process::exit(1);
-            }
+            };
 
             print_view(&codec, &lang, full);
 
@@ -587,34 +606,18 @@ fn main() {
                 std::process::exit(1);
             }
 
-            let mut codec = Codec::new();
-            let is_custom_ext = input.ends_with(".json")
-                || input.ends_with(".yaml")
-                || input.ends_with(".yml")
-                || input.ends_with(".langcodec");
-            if strict {
-                if is_custom_ext {
-                    if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
-                        eprintln!("Failed to read file: {}", e);
-                        std::process::exit(1);
-                    }
-                } else if let Err(e) = codec.read_file_by_extension(&input, lang.clone()) {
+            let codec = match load_codec_for_readonly_command(&input, &lang, strict) {
+                Ok(codec) => codec,
+                Err(e) => {
                     eprintln!("Failed to read file: {}", e);
                     std::process::exit(1);
                 }
-            } else if let Ok(()) = codec.read_file_by_extension(&input, lang.clone()) {
-                // ok
-            } else if is_custom_ext {
-                if let Err(e) = try_custom_format_view(&input, lang.clone(), &mut codec) {
-                    eprintln!("Failed to read file: {}", e);
-                    std::process::exit(1);
-                }
-            } else {
-                eprintln!("Failed to read file: unsupported format");
+            };
+
+            if let Err(e) = stats::print_stats(&codec, &lang, json) {
+                eprintln!("❌ Stats failed: {}", e);
                 std::process::exit(1);
             }
-
-            stats::print_stats(&codec, &lang, json);
         }
     }
 }
