@@ -95,7 +95,7 @@ For each new format:
 
 - [x] Start with unit tests near each format parser/writer
 - [x] Add conversion matrix tests for common paths (strings↔android↔xcstrings↔csv/tsv)
-- [ ] Property tests where feasible (e.g., round‑trip invariants)
+- [x] Property tests where feasible (e.g., round‑trip invariants)
 - [ ] Large sample corpora in `tests/data/` for regression
 
 ## Contribution Guide Enhancements
