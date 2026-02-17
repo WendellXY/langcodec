@@ -2,6 +2,10 @@ use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
 #[test]
 fn test_cli_view_android_plurals() {
     let temp_dir = TempDir::new().unwrap();
@@ -17,16 +21,8 @@ fn test_cli_view_android_plurals() {
     "#;
     fs::write(&input_file, xml).unwrap();
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--quiet",
-            "--",
-            "view",
-            "-i",
-            input_file.to_str().unwrap(),
-            "--full",
-        ])
+    let output = langcodec_cmd()
+        .args(["view", "-i", input_file.to_str().unwrap(), "--full"])
         .output()
         .unwrap();
 

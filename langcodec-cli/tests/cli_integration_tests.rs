@@ -2,6 +2,10 @@ use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
 #[test]
 fn test_convert_command_basic() {
     let temp_dir = TempDir::new().unwrap();
@@ -16,10 +20,8 @@ fn test_convert_command_basic() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -54,10 +56,8 @@ fn test_convert_command_with_explicit_format() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -87,10 +87,8 @@ fn test_convert_command_with_language_code() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -109,10 +107,8 @@ fn test_convert_command_invalid_input_file() {
     let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("output.xcstrings");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "nonexistent.json",
@@ -139,10 +135,8 @@ fn test_convert_command_invalid_output_path() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -162,10 +156,7 @@ fn test_convert_command_invalid_output_path() {
 
 #[test]
 fn test_convert_command_missing_arguments() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "convert"])
-        .output()
-        .unwrap();
+    let output = langcodec_cmd().args(["convert"]).output().unwrap();
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -174,8 +165,8 @@ fn test_convert_command_missing_arguments() {
 
 #[test]
 fn test_convert_command_help() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "convert", "--help"])
+    let output = langcodec_cmd()
+        .args(["convert", "--help"])
         .output()
         .unwrap();
 
@@ -206,10 +197,8 @@ fn test_merge_command_basic() {
     fs::write(&input_file1, json_content1).unwrap();
     fs::write(&input_file2, json_content2).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             input_file1.to_str().unwrap(),
@@ -246,10 +235,8 @@ fn test_merge_command_with_glob_pattern() {
     // Use a glob pattern for inputs
     let pattern = format!("{}/*.strings", dir.to_string_lossy());
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             &pattern,
@@ -296,10 +283,8 @@ fn test_merge_command_with_recursive_glob_pattern() {
     // Use a recursive glob pattern for inputs
     let pattern = format!("{}/**/*.strings", dir.to_string_lossy());
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             &pattern,
@@ -342,10 +327,8 @@ fn test_merge_command_with_conflict_strategy() {
     fs::write(&input_file1, json_content1).unwrap();
     fs::write(&input_file2, json_content2).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             input_file1.to_str().unwrap(),
@@ -376,8 +359,8 @@ fn test_view_command_basic() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--", "view", "-i", input_file.to_str().unwrap()])
+    let output = langcodec_cmd()
+        .args(["view", "-i", input_file.to_str().unwrap()])
         .output()
         .unwrap();
 
@@ -401,8 +384,8 @@ fn test_view_command_with_format() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--", "view", "-i", input_file.to_str().unwrap()])
+    let output = langcodec_cmd()
+        .args(["view", "-i", input_file.to_str().unwrap()])
         .output()
         .unwrap();
 
@@ -424,8 +407,8 @@ fn test_debug_command_basic() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
-        .args(["run", "--", "debug", "-i", input_file.to_str().unwrap()])
+    let output = langcodec_cmd()
+        .args(["debug", "-i", input_file.to_str().unwrap()])
         .output()
         .unwrap();
 
@@ -436,10 +419,7 @@ fn test_debug_command_basic() {
 
 #[test]
 fn test_main_help_command() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--help"])
-        .output()
-        .unwrap();
+    let output = langcodec_cmd().args(["--help"]).output().unwrap();
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -454,10 +434,7 @@ fn test_main_help_command() {
 
 #[test]
 fn test_invalid_command() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "invalid-command"])
-        .output()
-        .unwrap();
+    let output = langcodec_cmd().args(["invalid-command"]).output().unwrap();
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -466,10 +443,7 @@ fn test_invalid_command() {
 
 #[test]
 fn test_version_command() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--version"])
-        .output()
-        .unwrap();
+    let output = langcodec_cmd().args(["--version"]).output().unwrap();
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -488,10 +462,8 @@ fr: Bonjour, le monde!"#;
 
     fs::write(&input_file, yaml_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -528,10 +500,8 @@ fn test_convert_command_with_json_array() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -561,10 +531,8 @@ fn test_convert_command_output_to_csv() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -594,10 +562,8 @@ fn test_convert_command_output_to_tsv() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -630,10 +596,8 @@ fn test_convert_command_output_to_strings() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -663,10 +627,8 @@ fn test_convert_command_output_to_android() {
 
     fs::write(&input_file, json_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -691,10 +653,8 @@ fn test_convert_command_with_tsv_input_format() {
     let tsv_content = "key\ten\tfr\nhello_world\tHello, World!\tBonjour, le monde!\n";
     fs::write(&input_file, tsv_content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             input_file.to_str().unwrap(),
@@ -734,10 +694,8 @@ fn test_merge_command_updated_behavior() {
     fs::write(&input_file1, strings_content1).unwrap();
     fs::write(&input_file2, strings_content2).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             input_file1.to_str().unwrap(),
@@ -792,10 +750,8 @@ fn test_merge_command_with_language_override() {
     fs::write(&input_file1, strings_content1).unwrap();
     fs::write(&input_file2, strings_content2).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             input_file1.to_str().unwrap(),
@@ -852,10 +808,8 @@ fn test_merge_command_multiple_languages_no_merges() {
     fs::write(&input_file1, content1).unwrap();
     fs::write(&input_file2, content2).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             input_file1.to_str().unwrap(),
@@ -911,10 +865,8 @@ fn test_merge_command_format_inference_strings() {
     fs::write(&input_file1, content1).unwrap();
     fs::write(&input_file2, content2).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             input_file1.to_str().unwrap(),
@@ -969,10 +921,8 @@ fn test_merge_command_format_inference_xml() {
     fs::write(&input_file1, content1).unwrap();
     fs::write(&input_file2, content2).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             input_file1.to_str().unwrap(),
@@ -1022,10 +972,8 @@ fn test_merge_command_single_resource_fallback() {
 
     fs::write(&input_file, content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             input_file.to_str().unwrap(),
@@ -1073,10 +1021,8 @@ fn test_merge_command_actual_fallback_behavior() {
 
     fs::write(&input_file, content).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "merge",
             "-i",
             input_file.to_str().unwrap(),

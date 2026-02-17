@@ -1,6 +1,10 @@
 use std::fs;
 use std::process::Command;
 
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
 #[test]
 fn test_langcodec_comma_separated_include() {
     // Create a test file with multiple languages
@@ -10,10 +14,8 @@ world,World,Monde,世界,Welt"#;
 
     fs::write("test_comma_include.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_comma_include.csv",
@@ -71,10 +73,8 @@ world,World,Monde,世界,Welt"#;
 
     fs::write("test_comma_exclude.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_comma_exclude.csv",
@@ -132,10 +132,8 @@ world,World,Monde,世界,Welt,Mundo"#;
 
     fs::write("test_mixed_syntax.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_mixed_syntax.csv",
@@ -196,10 +194,8 @@ world,World,Monde,世界"#;
 
     fs::write("test_comma_spaces.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_comma_spaces.csv",
@@ -249,10 +245,8 @@ world,World,World,世界,世界,Mundo"#;
 
     fs::write("test_complex_langs.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_complex_langs.csv",

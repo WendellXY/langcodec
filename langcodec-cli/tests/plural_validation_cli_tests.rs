@@ -2,6 +2,10 @@ use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
 #[test]
 fn test_cli_view_check_plurals_fails_on_missing() {
     let temp_dir = TempDir::new().unwrap();
@@ -17,11 +21,8 @@ fn test_cli_view_check_plurals_fails_on_missing() {
     "#;
     fs::write(&input_file, xml).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--quiet",
-            "--",
             "view",
             "-i",
             input_file.to_str().unwrap(),
@@ -61,11 +62,8 @@ fn test_cli_view_check_plurals_passes_when_complete() {
     "#;
     fs::write(&input_file, xml).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--quiet",
-            "--",
             "view",
             "-i",
             input_file.to_str().unwrap(),

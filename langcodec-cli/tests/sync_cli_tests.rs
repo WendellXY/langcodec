@@ -2,6 +2,10 @@ use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
 #[test]
 fn test_sync_updates_existing_entries_with_translation_fallback() {
     let temp_dir = TempDir::new().unwrap();
@@ -25,10 +29,8 @@ keep_me,Keep me,Reste pareil
     fs::write(&source, source_content).unwrap();
     fs::write(&target, target_content).unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "sync",
             "--source",
             source.to_str().unwrap(),
@@ -75,10 +77,8 @@ welcome,Old Welcome
     fs::write(&target, target_content).unwrap();
     let before = fs::read_to_string(&target).unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "sync",
             "--source",
             source.to_str().unwrap(),
@@ -110,10 +110,8 @@ fn test_sync_report_json_written() {
     fs::write(&source, "key,en\nwelcome,Welcome\n").unwrap();
     fs::write(&target, "key,en\nwelcome,Old Welcome\n").unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "sync",
             "--source",
             source.to_str().unwrap(),
@@ -143,10 +141,8 @@ fn test_sync_fail_on_unmatched_exits_nonzero() {
     fs::write(&source, "key,en\nwelcome,Welcome\n").unwrap();
     fs::write(&target, "key,en\nnot_in_source,Old\n").unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "sync",
             "--source",
             source.to_str().unwrap(),
@@ -175,10 +171,8 @@ fn test_sync_strict_fails_on_unmatched_by_default() {
     fs::write(&source, "key,en\nwelcome,Welcome\n").unwrap();
     fs::write(&target, "key,en\nnot_in_source,Old\n").unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "--strict",
             "sync",
             "--source",

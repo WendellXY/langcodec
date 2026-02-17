@@ -2,6 +2,10 @@ use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
 #[test]
 fn test_edit_set_add_update_remove_strings_in_place() {
     let temp_dir = TempDir::new().unwrap();
@@ -14,10 +18,8 @@ fn test_edit_set_add_update_remove_strings_in_place() {
     fs::write(&input_file, initial).unwrap();
 
     // Add a new key
-    let out_add = Command::new("cargo")
+    let out_add = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",
@@ -41,10 +43,8 @@ fn test_edit_set_add_update_remove_strings_in_place() {
     assert!(after_add.contains("\"Welcome!\""));
 
     // Update existing key
-    let out_update = Command::new("cargo")
+    let out_update = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",
@@ -69,10 +69,8 @@ fn test_edit_set_add_update_remove_strings_in_place() {
     assert!(after_update.contains("Welcome back!"));
 
     // Remove by omitting value
-    let out_remove = Command::new("cargo")
+    let out_remove = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",
@@ -102,10 +100,8 @@ fn test_edit_set_dry_run_add_does_not_write() {
 "#;
     fs::write(&input_file, initial).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",
@@ -136,10 +132,8 @@ fn test_edit_set_dry_run_update_does_not_write() {
     fs::write(&input_file, initial).unwrap();
 
     // First, add welcome so we can dry-run update
-    let _ = Command::new("cargo")
+    let _ = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",
@@ -154,10 +148,8 @@ fn test_edit_set_dry_run_update_does_not_write() {
 
     let before = fs::read_to_string(&input_file).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",
@@ -188,10 +180,8 @@ fn test_edit_set_dry_run_remove_does_not_write() {
 "#;
     fs::write(&input_file, initial).unwrap();
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",
@@ -220,10 +210,8 @@ fn test_edit_set_with_output_path() {
 "#;
     fs::write(&input_file, initial).unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",
@@ -251,10 +239,7 @@ fn test_edit_set_with_output_path() {
 
 #[test]
 fn test_main_help_lists_edit() {
-    let output = Command::new("cargo")
-        .args(["run", "--", "--help"])
-        .output()
-        .unwrap();
+    let output = langcodec_cmd().args(["--help"]).output().unwrap();
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("edit"));
@@ -268,10 +253,8 @@ fn test_edit_set_multiple_files() {
     fs::write(&file1, "\"hello\" = \"Hello\";\n").unwrap();
     fs::write(&file2, "\"hello\" = \"Hello\";\n").unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",
@@ -306,10 +289,8 @@ fn test_edit_set_glob_pattern() {
     fs::write(&f2, "\"hello\" = \"Hello\";\n").unwrap();
 
     let pattern = format!("{}/*.strings", dir.to_string_lossy());
-    let out = Command::new("cargo")
-        .args([
-            "run", "--", "edit", "set", "-i", &pattern, "-k", "added", "-v", "Yes",
-        ])
+    let out = langcodec_cmd()
+        .args(["edit", "set", "-i", &pattern, "-k", "added", "-v", "Yes"])
         .output()
         .unwrap();
     assert!(
@@ -330,10 +311,8 @@ fn test_edit_set_multiple_inputs_with_output_is_error() {
     fs::write(&f1, "\"hello\" = \"Hello\";\n").unwrap();
     fs::write(&f2, "\"hello\" = \"Hello\";\n").unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",
@@ -364,10 +343,8 @@ fn test_edit_set_continue_on_error() {
     let bad = temp_dir.path().join("missing.strings");
     fs::write(&good, "\"hello\" = \"Hello\";\n").unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "edit",
             "set",
             "-i",

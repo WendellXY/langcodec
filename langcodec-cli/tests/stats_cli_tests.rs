@@ -2,6 +2,10 @@ use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
 #[test]
 fn test_stats_json_on_android_strings() {
     let temp_dir = TempDir::new().unwrap();
@@ -18,16 +22,8 @@ fn test_stats_json_on_android_strings() {
     "#;
     fs::write(&input_file, xml).unwrap();
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--quiet",
-            "--",
-            "stats",
-            "-i",
-            input_file.to_str().unwrap(),
-            "--json",
-        ])
+    let output = langcodec_cmd()
+        .args(["stats", "-i", input_file.to_str().unwrap(), "--json"])
         .output()
         .unwrap();
 

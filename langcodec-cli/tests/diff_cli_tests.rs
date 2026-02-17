@@ -3,6 +3,10 @@ use std::fs;
 use std::process::Command;
 use tempfile::TempDir;
 
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
 #[test]
 fn test_diff_json_reports_added_removed_changed() {
     let temp_dir = TempDir::new().unwrap();
@@ -24,10 +28,8 @@ d,D1,FD1
     fs::write(&source, source_content).unwrap();
     fs::write(&target, target_content).unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "diff",
             "--source",
             source.to_str().unwrap(),
@@ -75,10 +77,8 @@ a,A2,FA2
     fs::write(&source, source_content).unwrap();
     fs::write(&target, target_content).unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "diff",
             "--source",
             source.to_str().unwrap(),
@@ -110,10 +110,8 @@ fn test_diff_json_writes_report_file() {
     fs::write(&source, "key,en\na,A\n").unwrap();
     fs::write(&target, "key,en\na,B\n").unwrap();
 
-    let out = Command::new("cargo")
+    let out = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "diff",
             "--source",
             source.to_str().unwrap(),

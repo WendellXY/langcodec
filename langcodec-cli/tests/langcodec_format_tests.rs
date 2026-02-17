@@ -1,15 +1,13 @@
 use std::process::Command;
 
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
 #[test]
 fn test_langcodec_format_detection() {
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--",
-            "view",
-            "-i",
-            "tests/fixtures/cli_sample.langcodec",
-        ])
+    let output = langcodec_cmd()
+        .args(["view", "-i", "tests/fixtures/cli_sample.langcodec"])
         .output()
         .expect("Failed to execute command");
 
@@ -28,10 +26,8 @@ fn test_langcodec_format_detection() {
 
 #[test]
 fn test_langcodec_to_strings_conversion() {
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "tests/fixtures/cli_sample.langcodec",
@@ -56,10 +52,8 @@ fn test_langcodec_to_strings_conversion() {
 
 #[test]
 fn test_langcodec_to_csv_conversion() {
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "tests/fixtures/cli_sample.langcodec",
@@ -85,10 +79,8 @@ fn test_langcodec_to_csv_conversion() {
 #[test]
 fn test_langcodec_format_validation() {
     // Test with explicit format specification
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "tests/fixtures/cli_sample.langcodec",

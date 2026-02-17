@@ -1,6 +1,10 @@
 use std::fs;
 use std::process::Command;
 
+fn langcodec_cmd() -> Command {
+    Command::new(assert_cmd::cargo::cargo_bin!("langcodec"))
+}
+
 #[test]
 fn test_langcodec_include_single_language() {
     // Create a test file with multiple languages
@@ -10,10 +14,8 @@ world,World,Monde,Mundo"#;
 
     fs::write("test_include_multi.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_include_multi.csv",
@@ -66,10 +68,8 @@ world,World,Monde,Mundo,Welt"#;
 
     fs::write("test_include_multi2.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_include_multi2.csv",
@@ -125,10 +125,8 @@ world,World,Monde,Mundo"#;
 
     fs::write("test_no_filter.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_no_filter.csv",
@@ -179,10 +177,8 @@ world,World,Monde"#;
 
     fs::write("test_include_nonexistent.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_include_nonexistent.csv",
@@ -230,10 +226,8 @@ world,World,Monde,Mundo,Welt"#;
 
     fs::write("test_include_exclude.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_include_exclude.csv",
@@ -297,10 +291,8 @@ world,World,Monde,Mundo"#;
 
     fs::write("test_include_exclude_same.csv", test_content).expect("Failed to create test file");
 
-    let output = Command::new("cargo")
+    let output = langcodec_cmd()
         .args([
-            "run",
-            "--",
             "convert",
             "-i",
             "test_include_exclude_same.csv",
