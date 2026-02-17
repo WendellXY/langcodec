@@ -1,0 +1,10 @@
+key,en,fr
+welcome_message,"Hello, World!","Bonjour, le monde !"
+quoted_text,"He said ""Hello""","Il a dit ""Bonjour"""
+path_windows,"C:\\Program Files\\LangCodec","C:\\Programmes\\LangCodec"
+line_break_literal,"Line1\\nLine2","Ligne1\\nLigne2"
+apostrophe_text,"Don't stop","N'arrête pas"
+xml_entities,"Use <tag> & value","Utiliser <tag> & valeur"
+comma_text,"alpha, beta, gamma","alpha, bêta, gamma"
+accent_text,"Café crème brûlée","Café crème brûlée"
+placeholder_android,"Welcome, %1$s!","Bienvenue, %1$s !"

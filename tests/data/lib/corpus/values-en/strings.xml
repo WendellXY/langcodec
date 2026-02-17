@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="welcome_message">Hello, World!</string>
+    <string name="quoted_text">He said "Hello"</string>
+    <string name="path_windows">C:\\Program Files\\LangCodec</string>
+    <string name="line_break_literal">Line1\nLine2</string>
+    <string name="apostrophe_text">Don\'t stop</string>
+    <string name="xml_entities">Use &lt;tag&gt; &amp; value</string>
+    <string name="comma_text">alpha, beta, gamma</string>
+    <string name="accent_text">Café crème brûlée</string>
+    <string name="placeholder_android">Welcome, %1$s!</string>
+</resources>

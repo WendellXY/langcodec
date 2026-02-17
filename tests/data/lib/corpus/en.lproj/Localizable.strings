@@ -1,0 +1,10 @@
+/* Edge-case corpus for regression tests */
+"welcome_message" = "Hello, World!";
+"quoted_text" = "He said \"Hello\"";
+"path_windows" = "C:\\Program Files\\LangCodec";
+"line_break_literal" = "Line1\\nLine2";
+"apostrophe_text" = "Don't stop";
+"xml_entities" = "Use <tag> & value";
+"comma_text" = "alpha, beta, gamma";
+"accent_text" = "Café crème brûlée";
+"placeholder_ios" = "Welcome, %@!";
