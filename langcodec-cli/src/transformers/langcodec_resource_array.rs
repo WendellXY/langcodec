@@ -1,6 +1,6 @@
 use std::fs;
 
-/// Transform a langcodec::Resource array JSON file to a Vec<Resource>.
+/// Transform a `langcodec::Resource` array JSON file to a `Vec<langcodec::Resource>`.
 /// This format is a direct representation of langcodec::Resource objects in JSON.
 pub fn transform(input: String) -> Result<Vec<langcodec::Resource>, String> {
     // Read the file content

@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// Stable machine-readable category for [`Error`].
+/// Stable machine-readable category for [`enum@Error`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
@@ -39,7 +39,7 @@ pub struct ErrorContext {
     pub candidates: Vec<String>,
 }
 
-/// Serializable structured representation of an [`Error`].
+/// Serializable structured representation of an [`enum@Error`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StructuredError {
     pub code: ErrorCode,

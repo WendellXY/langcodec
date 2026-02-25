@@ -32,5 +32,12 @@ jobs:
       - name: Build
         run: cargo build --workspace --all-targets --verbose
 
+      - name: Doc (warnings as errors)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: |
+          cargo doc -p langcodec --no-deps
+          cargo doc -p langcodec-cli --lib --no-deps
+
       - name: Test
         run: cargo test --workspace --all-targets --verbose
