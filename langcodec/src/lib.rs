@@ -143,6 +143,7 @@ pub mod converter;
 pub mod error;
 pub mod formats;
 pub mod operations;
+pub mod normalize;
 pub mod placeholder;
 pub mod plural_rules;
 pub mod provenance;
@@ -165,6 +166,7 @@ pub use crate::{
         DiffChangedItem, DiffOptions, DiffReport, DiffSummary, LanguageDiff, SyncIssue,
         SyncIssueKind, SyncOptions, SyncReport, diff_resources, sync_existing_entries,
     },
+    normalize::{KeyStyle, NormalizeOptions, NormalizeReport, normalize_codec},
     placeholder::{extract_placeholders, normalize_placeholders, signature},
     plural_rules::{
         PluralValidationReport, autofix_fill_missing_from_other_resource,
