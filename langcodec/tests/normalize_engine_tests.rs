@@ -47,25 +47,70 @@ fn normalize_sorts_entries_and_is_idempotent() {
 }
 
 #[test]
-fn normalize_rejects_placeholder_option_until_implemented() {
-    let mut codec = Codec { resources: vec![] };
-    let options = NormalizeOptions {
-        normalize_placeholders: true,
-        key_style: KeyStyle::None,
+fn normalize_applies_placeholder_normalization_by_default() {
+    let mut codec = Codec {
+        resources: vec![Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "Localizable".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![Entry {
+                id: "summary".to_string(),
+                value: Translation::Singular("%@ has %ld items".to_string()),
+                comment: None,
+                status: EntryStatus::Translated,
+                custom: HashMap::new(),
+            }],
+        }],
     };
 
-    let error = langcodec::normalize::normalize_codec(&mut codec, &options).unwrap_err();
-    assert!(error.to_string().contains("not yet implemented"));
+    let report = langcodec::normalize::normalize_codec(&mut codec, &Default::default()).unwrap();
+    let value = match &codec.resources[0].entries[0].value {
+        Translation::Singular(value) => value.clone(),
+        _ => unreachable!("test fixture uses singular translation"),
+    };
+
+    assert_eq!(value, "%s has %d items");
+    assert!(report.changed);
 }
 
 #[test]
-fn normalize_rejects_key_style_option_until_implemented() {
-    let mut codec = Codec { resources: vec![] };
+fn normalize_errors_on_key_style_collision_after_transform() {
+    let mut codec = Codec {
+        resources: vec![Resource {
+            metadata: Metadata {
+                language: "en".to_string(),
+                domain: "Localizable".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: vec![
+                Entry {
+                    id: "welcome-title".to_string(),
+                    value: Translation::Singular("Welcome".to_string()),
+                    comment: None,
+                    status: EntryStatus::Translated,
+                    custom: HashMap::new(),
+                },
+                Entry {
+                    id: "welcome_title".to_string(),
+                    value: Translation::Singular("Welcome again".to_string()),
+                    comment: None,
+                    status: EntryStatus::Translated,
+                    custom: HashMap::new(),
+                },
+            ],
+        }],
+    };
+
     let options = NormalizeOptions {
         normalize_placeholders: false,
         key_style: KeyStyle::Snake,
     };
 
     let error = langcodec::normalize::normalize_codec(&mut codec, &options).unwrap_err();
-    assert!(error.to_string().contains("not yet implemented"));
+    let message = error.to_string();
+    assert!(message.contains("collision"));
+    assert!(message.contains("welcome-title"));
+    assert!(message.contains("welcome_title"));
 }

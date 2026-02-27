@@ -1,4 +1,5 @@
 use crate::{Codec, Error};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct NormalizeOptions {
@@ -9,7 +10,7 @@ pub struct NormalizeOptions {
 impl Default for NormalizeOptions {
     fn default() -> Self {
         Self {
-            normalize_placeholders: false,
+            normalize_placeholders: true,
             key_style: KeyStyle::None,
         }
     }
@@ -33,27 +34,171 @@ pub fn normalize_codec(
     codec: &mut Codec,
     options: &NormalizeOptions,
 ) -> Result<NormalizeReport, Error> {
-    if options.normalize_placeholders {
-        return Err(Error::validation_error(
-            "normalize option `normalize_placeholders=true` is not yet implemented in this stage",
-        ));
-    }
-    if options.key_style != KeyStyle::None {
-        return Err(Error::validation_error(
-            "normalize option `key_style` is not yet implemented in this stage",
-        ));
-    }
-
     let mut changed = false;
 
     for resource in &mut codec.resources {
-        let before_order: Vec<String> = resource.entries.iter().map(|entry| entry.id.clone()).collect();
-        resource.entries.sort_by(|left, right| left.id.cmp(&right.id));
-        let after_order: Vec<String> = resource.entries.iter().map(|entry| entry.id.clone()).collect();
+        if options.key_style != KeyStyle::None {
+            let mut transformed_ids = Vec::with_capacity(resource.entries.len());
+            let mut seen: HashMap<String, String> = HashMap::new();
+
+            for entry in &resource.entries {
+                let transformed = transform_key_style(&entry.id, options.key_style);
+                if let Some(existing) = seen.get(&transformed) {
+                    return Err(Error::validation_error(format!(
+                        "key-style collision in resource '{}' (domain '{}'): '{}' and '{}' both normalize to '{}'",
+                        resource.metadata.language,
+                        resource.metadata.domain,
+                        existing,
+                        entry.id,
+                        transformed
+                    )));
+                }
+                seen.insert(transformed.clone(), entry.id.clone());
+                transformed_ids.push(transformed);
+            }
+
+            for (entry, transformed_id) in
+                resource.entries.iter_mut().zip(transformed_ids.into_iter())
+            {
+                if entry.id != transformed_id {
+                    entry.id = transformed_id;
+                    changed = true;
+                }
+            }
+        }
+
+        if options.normalize_placeholders {
+            for entry in &mut resource.entries {
+                if normalize_entry_placeholders(entry) {
+                    changed = true;
+                }
+            }
+        }
+
+        let before_order: Vec<String> = resource
+            .entries
+            .iter()
+            .map(|entry| entry.id.clone())
+            .collect();
+        resource
+            .entries
+            .sort_by(|left, right| left.id.cmp(&right.id));
+        let after_order: Vec<String> = resource
+            .entries
+            .iter()
+            .map(|entry| entry.id.clone())
+            .collect();
         if before_order != after_order {
             changed = true;
         }
     }
 
     Ok(NormalizeReport { changed })
+}
+
+fn normalize_entry_placeholders(entry: &mut crate::types::Entry) -> bool {
+    use crate::placeholder::normalize_placeholders;
+    use crate::types::Translation;
+
+    match &mut entry.value {
+        Translation::Empty => false,
+        Translation::Singular(value) => {
+            let normalized = normalize_placeholders(value);
+            if *value != normalized {
+                *value = normalized;
+                true
+            } else {
+                false
+            }
+        }
+        Translation::Plural(plural) => {
+            let mut changed = false;
+            for value in plural.forms.values_mut() {
+                let normalized = normalize_placeholders(value);
+                if *value != normalized {
+                    *value = normalized;
+                    changed = true;
+                }
+            }
+            changed
+        }
+    }
+}
+
+fn transform_key_style(input: &str, key_style: KeyStyle) -> String {
+    match key_style {
+        KeyStyle::None => input.to_string(),
+        KeyStyle::Snake => join_words(input, "_"),
+        KeyStyle::Kebab => join_words(input, "-"),
+        KeyStyle::Camel => camel_case(input),
+    }
+}
+
+fn join_words(input: &str, separator: &str) -> String {
+    let words = split_words(input);
+    if words.is_empty() {
+        return input.to_string();
+    }
+    words.join(separator)
+}
+
+fn camel_case(input: &str) -> String {
+    let words = split_words(input);
+    if words.is_empty() {
+        return input.to_string();
+    }
+
+    let mut out = String::new();
+    out.push_str(&words[0]);
+    for word in words.iter().skip(1) {
+        let mut chars = word.chars();
+        if let Some(first) = chars.next() {
+            out.push(first.to_ascii_uppercase());
+            out.extend(chars);
+        }
+    }
+    out
+}
+
+fn split_words(input: &str) -> Vec<String> {
+    let chars: Vec<char> = input.chars().collect();
+    let mut words = Vec::new();
+    let mut current = String::new();
+
+    for (idx, ch) in chars.iter().enumerate() {
+        if !ch.is_ascii_alphanumeric() {
+            if !current.is_empty() {
+                words.push(current.to_ascii_lowercase());
+                current.clear();
+            }
+            continue;
+        }
+
+        let should_split = if current.is_empty() {
+            false
+        } else {
+            let is_upper = ch.is_ascii_uppercase();
+            let prev = chars[idx - 1];
+            let prev_is_lower_or_digit = prev.is_ascii_lowercase() || prev.is_ascii_digit();
+            let prev_is_upper = prev.is_ascii_uppercase();
+            let next_is_lower = chars
+                .get(idx + 1)
+                .map(|next| next.is_ascii_lowercase())
+                .unwrap_or(false);
+
+            is_upper && (prev_is_lower_or_digit || (prev_is_upper && next_is_lower))
+        };
+
+        if should_split {
+            words.push(current.to_ascii_lowercase());
+            current.clear();
+        }
+        current.push(*ch);
+    }
+
+    if !current.is_empty() {
+        words.push(current.to_ascii_lowercase());
+    }
+
+    words
 }
