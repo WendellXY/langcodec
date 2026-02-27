@@ -9,13 +9,13 @@ pub struct NormalizeOptions {
 impl Default for NormalizeOptions {
     fn default() -> Self {
         Self {
-            normalize_placeholders: true,
+            normalize_placeholders: false,
             key_style: KeyStyle::None,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum KeyStyle {
     #[default]
     None,
@@ -31,8 +31,19 @@ pub struct NormalizeReport {
 
 pub fn normalize_codec(
     codec: &mut Codec,
-    _options: &NormalizeOptions,
+    options: &NormalizeOptions,
 ) -> Result<NormalizeReport, Error> {
+    if options.normalize_placeholders {
+        return Err(Error::validation_error(
+            "normalize option `normalize_placeholders=true` is not yet implemented in this stage",
+        ));
+    }
+    if options.key_style != KeyStyle::None {
+        return Err(Error::validation_error(
+            "normalize option `key_style` is not yet implemented in this stage",
+        ));
+    }
+
     let mut changed = false;
 
     for resource in &mut codec.resources {

@@ -1,5 +1,6 @@
 use langcodec::{
     Codec,
+    normalize::{KeyStyle, NormalizeOptions},
     types::{Entry, EntryStatus, Metadata, Resource, Translation},
 };
 use std::collections::HashMap;
@@ -43,4 +44,28 @@ fn normalize_sorts_entries_and_is_idempotent() {
 
     let report2 = langcodec::normalize::normalize_codec(&mut codec, &Default::default()).unwrap();
     assert!(!report2.changed);
+}
+
+#[test]
+fn normalize_rejects_placeholder_option_until_implemented() {
+    let mut codec = Codec { resources: vec![] };
+    let options = NormalizeOptions {
+        normalize_placeholders: true,
+        key_style: KeyStyle::None,
+    };
+
+    let error = langcodec::normalize::normalize_codec(&mut codec, &options).unwrap_err();
+    assert!(error.to_string().contains("not yet implemented"));
+}
+
+#[test]
+fn normalize_rejects_key_style_option_until_implemented() {
+    let mut codec = Codec { resources: vec![] };
+    let options = NormalizeOptions {
+        normalize_placeholders: false,
+        key_style: KeyStyle::Snake,
+    };
+
+    let error = langcodec::normalize::normalize_codec(&mut codec, &options).unwrap_err();
+    assert!(error.to_string().contains("not yet implemented"));
 }
