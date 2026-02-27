@@ -34,6 +34,16 @@ pub fn normalize_codec(
     codec: &mut Codec,
     options: &NormalizeOptions,
 ) -> Result<NormalizeReport, Error> {
+    let mut normalized = codec.clone();
+    let report = normalize_codec_in_place(&mut normalized, options)?;
+    *codec = normalized;
+    Ok(report)
+}
+
+fn normalize_codec_in_place(
+    codec: &mut Codec,
+    options: &NormalizeOptions,
+) -> Result<NormalizeReport, Error> {
     let mut changed = false;
 
     for resource in &mut codec.resources {
@@ -153,11 +163,15 @@ fn camel_case(input: &str) -> String {
     for word in words.iter().skip(1) {
         let mut chars = word.chars();
         if let Some(first) = chars.next() {
-            out.push(first.to_ascii_uppercase());
+            out.extend(first.to_uppercase());
             out.extend(chars);
         }
     }
     out
+}
+
+fn lowercase_word(input: &str) -> String {
+    input.chars().flat_map(|ch| ch.to_lowercase()).collect()
 }
 
 fn split_words(input: &str) -> Vec<String> {
@@ -166,9 +180,9 @@ fn split_words(input: &str) -> Vec<String> {
     let mut current = String::new();
 
     for (idx, ch) in chars.iter().enumerate() {
-        if !ch.is_ascii_alphanumeric() {
+        if !ch.is_alphanumeric() {
             if !current.is_empty() {
-                words.push(current.to_ascii_lowercase());
+                words.push(lowercase_word(&current));
                 current.clear();
             }
             continue;
@@ -177,27 +191,27 @@ fn split_words(input: &str) -> Vec<String> {
         let should_split = if current.is_empty() {
             false
         } else {
-            let is_upper = ch.is_ascii_uppercase();
+            let is_upper = ch.is_uppercase();
             let prev = chars[idx - 1];
-            let prev_is_lower_or_digit = prev.is_ascii_lowercase() || prev.is_ascii_digit();
-            let prev_is_upper = prev.is_ascii_uppercase();
+            let prev_is_lower_or_digit = prev.is_lowercase() || prev.is_numeric();
+            let prev_is_upper = prev.is_uppercase();
             let next_is_lower = chars
                 .get(idx + 1)
-                .map(|next| next.is_ascii_lowercase())
+                .map(|next| next.is_lowercase())
                 .unwrap_or(false);
 
             is_upper && (prev_is_lower_or_digit || (prev_is_upper && next_is_lower))
         };
 
         if should_split {
-            words.push(current.to_ascii_lowercase());
+            words.push(lowercase_word(&current));
             current.clear();
         }
         current.push(*ch);
     }
 
     if !current.is_empty() {
-        words.push(current.to_ascii_lowercase());
+        words.push(lowercase_word(&current));
     }
 
     words
