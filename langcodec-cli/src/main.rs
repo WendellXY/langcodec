@@ -4,6 +4,7 @@ mod diff;
 mod edit;
 mod formats;
 mod merge;
+mod normalize;
 mod path_glob;
 mod stats;
 mod sync;
@@ -16,6 +17,7 @@ use crate::debug::run_debug_command;
 use crate::diff::{DiffOptions, run_diff_command};
 use crate::edit::{EditSetOptions, run_edit_set_command};
 use crate::merge::{ConflictStrategy, run_merge_command};
+use crate::normalize::run_normalize_command;
 use crate::sync::{SyncOptions, run_sync_command};
 use crate::validation::{ValidationContext, validate_context, validate_language_code};
 use crate::view::print_view;
@@ -195,6 +197,9 @@ enum Commands {
         #[arg(long)]
         version: Option<String>,
     },
+
+    /// Normalize localization files.
+    Normalize,
 
     /// Show translation coverage and per-status counts.
     Stats {
@@ -594,6 +599,12 @@ fn main() {
             let mut cmd = Args::command();
             cmd = cmd.bin_name("langcodec");
             generate(shell, &mut cmd, "langcodec", &mut std::io::stdout());
+        }
+        Commands::Normalize => {
+            if let Err(e) = run_normalize_command() {
+                eprintln!("❌ Normalize failed: {}", e);
+                std::process::exit(1);
+            }
         }
         Commands::Stats { input, lang, json } => {
             // Validate
