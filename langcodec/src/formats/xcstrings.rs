@@ -128,6 +128,12 @@ impl TryFrom<Format> for Vec<Resource> {
             if let Some(extraction_state) = &item.extraction_state {
                 custom.insert("extraction_state".to_string(), extraction_state.to_string());
             }
+            if let Some(is_comment_auto_generated) = item.is_comment_auto_generated {
+                custom.insert(
+                    "is_comment_auto_generated".to_string(),
+                    is_comment_auto_generated.to_string(),
+                );
+            }
 
             if item.localizations.is_empty() {
                 if item.should_translate.unwrap_or(true) {
@@ -177,7 +183,7 @@ impl TryFrom<Format> for Vec<Resource> {
                             value: translation,
                             comment: item.comment.clone(),
                             status: localization.state(),
-                            custom: custom.clone(), // No custom data in xcstrings
+                            custom: custom.clone(),
                         });
                 }
             }
