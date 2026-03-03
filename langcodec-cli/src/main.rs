@@ -335,6 +335,13 @@ fn is_custom_input_extension(input: &str) -> bool {
         || input.ends_with(".langcodec")
 }
 
+fn input_supports_explicit_status_metadata(input: &str) -> bool {
+    std::path::Path::new(input)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("xcstrings"))
+}
+
 fn load_codec_for_readonly_command(
     input: &str,
     lang: &Option<String>,
@@ -542,6 +549,13 @@ fn main() {
             // Validate all inputs
             if let Err(e) = validate_context(&context) {
                 eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+
+            if strict && status.is_some() && !input_supports_explicit_status_metadata(&input) {
+                eprintln!(
+                    "❌ Strict mode with --status requires explicit status metadata. Supported in v1: .xcstrings"
+                );
                 std::process::exit(1);
             }
 

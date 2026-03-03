@@ -110,6 +110,85 @@ fn write_xcstrings_partial_match_fixture(path: &std::path::Path) {
     fs::write(path, xcstrings).unwrap();
 }
 
+fn write_android_strings_fixture(path: &std::path::Path) {
+    let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="translated_key">Hello</string>
+    <string name="needs_review_key">Needs review</string>
+</resources>
+"#;
+
+    fs::write(path, xml).unwrap();
+}
+
+#[test]
+fn test_view_status_strict_rejects_android_strings_without_status_metadata() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("strings.xml");
+    write_android_strings_fixture(&input_file);
+
+    let output = langcodec_cmd()
+        .args([
+            "--strict",
+            "view",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--lang",
+            "en",
+            "--status",
+            "translated",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        !output.status.success(),
+        "CLI unexpectedly succeeded. stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("explicit status metadata"),
+        "Expected strict status metadata guard error. stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_view_status_strict_allows_xcstrings_with_status_metadata() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("Localizable.xcstrings");
+    write_xcstrings_fixture(&input_file);
+
+    let output = langcodec_cmd()
+        .args([
+            "--strict",
+            "view",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--lang",
+            "en",
+            "--status",
+            "needs_review",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("needs_review_key"),
+        "Expected filtered entry in output. stdout: {}",
+        stdout
+    );
+}
+
 #[test]
 fn test_view_status_filters_single_status_for_lang() {
     let temp_dir = TempDir::new().unwrap();
