@@ -232,3 +232,39 @@ fn test_normalize_continue_on_error_aggregates_and_returns_non_zero() {
         "expected successful file processing to continue, got: {combined}"
     );
 }
+
+#[test]
+fn test_normalize_continue_on_error_counts_literal_missing_input_in_summary() {
+    let temp_dir = TempDir::new().unwrap();
+    let good = temp_dir.path().join("good.strings");
+    let missing = temp_dir.path().join("missing.strings");
+    fs::write(&good, "\"z\" = \"%@\";\n\"a\" = \"A\";\n").unwrap();
+
+    let output = langcodec_cmd()
+        .args([
+            "normalize",
+            "-i",
+            missing.to_str().unwrap(),
+            good.to_str().unwrap(),
+            "--continue-on-error",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        !output.status.success(),
+        "expected non-zero when at least one file fails"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}{stderr}");
+
+    assert!(
+        combined.contains("Input file does not exist"),
+        "expected missing-input error, got: {combined}"
+    );
+    assert!(
+        combined.contains("Summary: processed 2; success: 1; failed: 1"),
+        "expected coherent summary counts, got: {combined}"
+    );
+}

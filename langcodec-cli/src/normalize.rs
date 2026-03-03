@@ -170,6 +170,7 @@ pub fn run_normalize_command(opts: NormalizeCliOptions) -> Result<(), String> {
             if opts.continue_on_error {
                 eprintln!("❌ {}", msg);
                 failures.push(msg);
+                processed_count += 1;
                 failed_count += 1;
                 skip_missing.insert(original.clone());
                 continue;
