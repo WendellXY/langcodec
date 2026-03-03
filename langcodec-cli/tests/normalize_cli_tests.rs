@@ -89,6 +89,85 @@ fn test_normalize_dry_run_does_not_write() {
 }
 
 #[test]
+fn test_normalize_check_detects_drift_across_standard_formats() {
+    let temp_dir = TempDir::new().unwrap();
+    let cases = [
+        (
+            "apple_strings",
+            "en.strings",
+            "\"z\" = \"%@\";\n\"a\" = \"A\";\n",
+        ),
+        (
+            "android_xml",
+            "strings.xml",
+            r#"<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="z">Hello %@</string>
+    <string name="a">A</string>
+</resources>
+"#,
+        ),
+        ("csv", "translations.csv", "z,%@\na,A\n"),
+        ("tsv", "translations.tsv", "z\t%@\na\tA\n"),
+        (
+            "xcstrings",
+            "Localizable.xcstrings",
+            r#"{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "z": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hello %@"
+          }
+        }
+      }
+    },
+    "a": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A"
+          }
+        }
+      }
+    }
+  }
+}
+"#,
+        ),
+    ];
+
+    for (label, filename, contents) in cases {
+        let input = temp_dir.path().join(filename);
+        fs::write(&input, contents).unwrap();
+
+        let output = langcodec_cmd()
+            .args(["normalize", "-i", input.to_str().unwrap(), "--check"])
+            .output()
+            .unwrap();
+
+        assert!(
+            !output.status.success(),
+            "{label} should report drift in --check mode"
+        );
+        let combined = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            combined.contains("would change"),
+            "{label} expected drift message, got: {combined}"
+        );
+    }
+}
+
+#[test]
 fn test_normalize_output_written_even_when_unchanged() {
     let temp_dir = TempDir::new().unwrap();
     let input = temp_dir.path().join("en.strings");

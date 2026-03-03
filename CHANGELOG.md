@@ -10,10 +10,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 - Global `--strict` mode in CLI workflows and strict-read controls in library input options.
 - CLI `diff` command with human-readable and JSON report output.
 - Plural validation enhancements and richer stats reporting.
+- CLI `normalize` command support across Apple `.strings`, `.xcstrings`, Android `strings.xml`, CSV, and TSV formats, including drift detection with `--check`.
 
 ### Changed
 - Ongoing improvements to conversion coverage across Apple, Android, CSV, and TSV formats.
 - Documentation and contributor guidance updates.
+- Normalize workflow documentation, including `--dry-run`, `--no-placeholders`, `--key-style`, multi-input `--output` constraints, and `--continue-on-error` behavior.
 
 ### Fixed
 - Multiple parser/writer correctness and conversion edge-case fixes covered by expanded tests.

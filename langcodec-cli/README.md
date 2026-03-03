@@ -3,7 +3,7 @@
 Universal CLI for converting, inspecting, merging, and editing localization files.
 
 - Formats: Apple `.strings`, `.xcstrings`, Android `strings.xml`, CSV, TSV
-- Commands: convert, diff, merge, sync, view, stats, debug, edit
+- Commands: convert, diff, merge, sync, view, stats, debug, edit, normalize
 
 ## Install
 
@@ -120,6 +120,39 @@ Options:
 - --continue-on-error: Process all inputs; report failures at the end (non-zero exit if any fail).
 
 Supported formats: .strings, .xml (Android), .xcstrings, .csv, .tsv. Custom JSON/YAML/.langcodec edit is currently not enabled.
+
+### normalize
+
+Normalize localization files in-place (or to `--output` in single-input mode).
+
+```sh
+# Normalize in-place
+langcodec normalize -i en.lproj/Localizable.strings
+
+# CI drift check (non-zero if any file would change)
+langcodec normalize -i 'locales/**/*.{strings,xml,csv,tsv,xcstrings}' --check
+
+# Preview without writing
+langcodec normalize -i values/strings.xml --dry-run
+
+# Disable placeholder normalization and rename keys to snake_case
+langcodec normalize -i Localizable.xcstrings --no-placeholders --key-style snake
+
+# Keep processing remaining files and summarize failures at the end
+langcodec normalize -i a.strings -i b.csv -i c.tsv --continue-on-error
+```
+
+Options and behavior:
+
+- --check: Detects normalization drift and exits non-zero when a file would change.
+- --dry-run: Prints what would change and exits without writing files.
+- --no-placeholders: Skips placeholder canonicalization (for example `%@` → `%s`).
+- --key-style: Renames keys during normalization. Values: `none` (default), `snake`, `kebab`, `camel`.
+- --output/-o: Single-input mode only. If multiple inputs are provided, `--output` is rejected.
+- --continue-on-error: Continues processing all matched inputs, prints a summary, and exits non-zero if any file failed.
+- --inputs/-i: One or more files, including quoted glob patterns.
+
+Supported normalize formats: `.strings`, Android `strings.xml`, `.csv`, `.tsv`, `.xcstrings`.
 
 ## Notes
 

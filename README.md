@@ -3,7 +3,7 @@
 Universal localization toolkit: library + CLI for Apple/Android/CSV/TSV.
 
 - Library crate (`langcodec`): parse, write, convert, merge with a unified model
-- CLI crate (`langcodec-cli`): convert, diff, merge, sync, view, stats, debug, edit
+- CLI crate (`langcodec-cli`): convert, diff, merge, sync, view, stats, debug, edit, normalize
 
 ---
 
@@ -59,6 +59,7 @@ This is a `0.7.0` release available on [crates.io](https://crates.io/crates/lang
 - Convert: `langcodec convert -i input.strings -o strings.xml`
 - Diff: `langcodec diff --source A.xcstrings --target B.xcstrings --json`
 - Edit (add/update/remove): `langcodec edit set -i 'locales/**/*.strings' -k welcome -v "Hello"` (use `--dry-run` to preview)
+- Normalize and detect drift: `langcodec normalize -i 'locales/**/*.{strings,xml,csv,tsv,xcstrings}' --check`
 - Sync existing keys only: `langcodec sync --source A.xcstrings --target B.xcstrings --match-lang en`
 - View: `langcodec view -i strings.xml --full`
 - Stats (JSON): `langcodec stats -i Localizable.xcstrings --json`
@@ -92,6 +93,10 @@ This is a `0.7.0` release available on [crates.io](https://crates.io/crates/lang
 - The convert command also supports custom JSON/YAML input formats.
 - The CLI will error if you try to merge files of different formats.
 - Edit supports multiple inputs and glob patterns. When multiple inputs are provided, edits are applied in-place and `--output` is not allowed.
+- Normalize supports `.strings`, Android `strings.xml`, `.csv`, `.tsv`, and `.xcstrings`.
+- Normalize options: `--check` (fail on drift), `--dry-run` (preview only), `--no-placeholders` (skip placeholder canonicalization), `--key-style` (`none|snake|kebab|camel`).
+- Normalize multi-input constraint: `--output` is single-input only; pair multi-input workflows with in-place writes.
+- Normalize `--continue-on-error` processes all inputs and returns non-zero if any file fails.
 - Android path inference: `values/strings.xml` (no qualifier) defaults to English (`en`).
 - When converting to `.xcstrings`, if `source_language` or `version` metadata is missing, the CLI defaults them to `en` and `1.0` respectively (overridable via flags).
 
