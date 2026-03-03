@@ -26,7 +26,11 @@ fn parse_status_filter(status: &Option<String>) -> Result<Option<Vec<EntryStatus
     };
 
     let mut parsed = Vec::new();
-    for token in raw_status.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+    for token in raw_status
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let normalized = token.replace(['-', ' '], "_");
         let entry_status = normalized.parse::<EntryStatus>().map_err(|_| {
             format!(

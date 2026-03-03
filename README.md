@@ -62,6 +62,8 @@ This is a `0.7.0` release available on [crates.io](https://crates.io/crates/lang
 - Normalize and detect drift: `langcodec normalize -i 'locales/**/*.{strings,xml,csv,tsv,xcstrings}' --check`
 - Sync existing keys only: `langcodec sync --source A.xcstrings --target B.xcstrings --match-lang en`
 - View: `langcodec view -i strings.xml --full`
+- View filtered untranslated/review-needed keys: `langcodec view -i Localizable.xcstrings --status new,needs_review --keys-only`
+- View filtered results as JSON: `langcodec view -i Localizable.xcstrings --status new --lang fr --json`
 - Stats (JSON): `langcodec stats -i Localizable.xcstrings --json`
   - See full options: langcodec-cli/README.md#stats
   - Example output:
@@ -99,6 +101,7 @@ This is a `0.7.0` release available on [crates.io](https://crates.io/crates/lang
 - Normalize `--continue-on-error` processes all inputs and returns non-zero if any file fails.
 - Android path inference: `values/strings.xml` (no qualifier) defaults to English (`en`).
 - When converting to `.xcstrings`, if `source_language` or `version` metadata is missing, the CLI defaults them to `en` and `1.0` respectively (overridable via flags).
+- Strict status filtering note: `langcodec --strict view --status ...` requires explicit status metadata (supported in v1: `.xcstrings`).
 
 #### Plurals
 

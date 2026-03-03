@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog and this project follows Semantic Versioning while APIs remain in 0.x evolution.
 
+## [Unreleased]
+
+### Added
+- CLI `view` status-based filtering with `--status`, `--keys-only`, and `--json` output modes for listing untranslated/review-needed entries.
+
+### Changed
+- `view --status` now supports strict metadata gating: `langcodec --strict view ... --status ...` requires explicit status metadata (v1 support: `.xcstrings`).
+
 ## [0.7.0] - 2026-02-17
 
 ### Added

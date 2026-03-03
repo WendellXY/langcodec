@@ -488,12 +488,20 @@ fn test_view_status_json_outputs_entries_payload() {
     assert_eq!(payload["summary"]["total_matches"], 2);
     assert_eq!(payload["summary"]["statuses"]["needs_review"], 2);
     let languages = payload["summary"]["languages"].as_array().unwrap();
-    assert_eq!(languages.len(), 2, "Expected 2 languages. payload: {payload}");
+    assert_eq!(
+        languages.len(),
+        2,
+        "Expected 2 languages. payload: {payload}"
+    );
     assert!(languages.iter().any(|lang| lang == "en"));
     assert!(languages.iter().any(|lang| lang == "fr"));
 
     let entries = payload["entries"].as_array().unwrap();
-    assert_eq!(entries.len(), 2, "Expected only filtered entries. payload: {payload}");
+    assert_eq!(
+        entries.len(),
+        2,
+        "Expected only filtered entries. payload: {payload}"
+    );
 
     let en_entry = entries
         .iter()
@@ -536,7 +544,10 @@ fn test_view_status_json_keys_only_outputs_keys_payload() {
 
     assert_eq!(payload["summary"]["total_matches"], 2);
     assert_eq!(payload["summary"]["statuses"]["needs_review"], 2);
-    assert!(payload.get("entries").is_none(), "Expected keys-only payload");
+    assert!(
+        payload.get("entries").is_none(),
+        "Expected keys-only payload"
+    );
 
     let keys = payload["keys"].as_array().unwrap();
     assert_eq!(keys.len(), 2);
