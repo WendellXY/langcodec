@@ -20,7 +20,7 @@ use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::normalize::{NormalizeCliOptions, run_normalize_command};
 use crate::sync::{SyncOptions, run_sync_command};
 use crate::validation::{ValidationContext, validate_context, validate_language_code};
-use crate::view::print_view;
+use crate::view::{ViewOptions, print_view, validate_status_filter};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 
@@ -166,6 +166,18 @@ enum Commands {
         /// Display full value without truncation (even in terminal)
         #[arg(long)]
         full: bool,
+
+        /// Filter entries by status (e.g. translated, needs_review, stale, new, do_not_translate)
+        #[arg(long)]
+        status: Option<String>,
+
+        /// Print keys only
+        #[arg(long, default_value_t = false)]
+        keys_only: bool,
+
+        /// Output JSON instead of human-readable text
+        #[arg(long, default_value_t = false)]
+        json: bool,
 
         /// Validate plural completeness against CLDR category sets
         #[arg(long, default_value_t = false)]
@@ -321,6 +333,13 @@ fn is_custom_input_extension(input: &str) -> bool {
         || input.ends_with(".yaml")
         || input.ends_with(".yml")
         || input.ends_with(".langcodec")
+}
+
+fn input_supports_explicit_status_metadata(input: &str) -> bool {
+    std::path::Path::new(input)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("xcstrings"))
 }
 
 fn load_codec_for_readonly_command(
@@ -515,6 +534,9 @@ fn main() {
             input,
             lang,
             full,
+            status,
+            keys_only,
+            json,
             check_plurals,
         } => {
             // Create validation context
@@ -530,6 +552,18 @@ fn main() {
                 std::process::exit(1);
             }
 
+            if let Err(e) = validate_status_filter(&status) {
+                eprintln!("❌ {}", e);
+                std::process::exit(1);
+            }
+
+            if strict && status.is_some() && !input_supports_explicit_status_metadata(&input) {
+                eprintln!(
+                    "❌ Strict mode with --status requires explicit status metadata. Supported in v1: .xcstrings"
+                );
+                std::process::exit(1);
+            }
+
             let codec = match load_codec_for_readonly_command(&input, &lang, strict) {
                 Ok(codec) => codec,
                 Err(e) => {
@@ -538,11 +572,24 @@ fn main() {
                 }
             };
 
-            print_view(&codec, &lang, full);
+            let view_options = ViewOptions {
+                full,
+                status,
+                keys_only,
+                json,
+            };
+
+            print_view(&codec, &lang, &view_options);
 
             if check_plurals {
                 match codec.validate_plurals() {
-                    Ok(()) => println!("\n✅ Plural validation passed"),
+                    Ok(()) => {
+                        if json || keys_only {
+                            eprintln!("✅ Plural validation passed");
+                        } else {
+                            println!("\n✅ Plural validation passed");
+                        }
+                    }
                     Err(e) => {
                         eprintln!("\n❌ Plural validation failed: {}", e);
                         std::process::exit(2);

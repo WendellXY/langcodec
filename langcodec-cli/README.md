@@ -63,9 +63,20 @@ CI-oriented options:
 
 ```sh
 langcodec view -i values/strings.xml --full
+langcodec view -i Localizable.xcstrings --status new,needs_review
+langcodec view -i Localizable.xcstrings --status new --lang fr --json
+langcodec view -i Localizable.xcstrings --status new,needs_review --keys-only
 ```
 
 Prints entries. Plurals are labeled with `Type: Plural` and show categories.
+
+View options:
+
+- `--status`: Filter by one or more statuses (`translated|needs_review|new|do_not_translate|stale`), comma-separated.
+- `--keys-only`: Print only keys in text mode (`lang<TAB>key` when `--lang` is not set).
+- `--json`: Output machine-readable JSON (`summary` + `entries` or `keys` payload).
+- `--lang`: Restrict results to a specific language before status filtering.
+- `--strict`: With `--status`, requires explicit status metadata (supported in v1: `.xcstrings`).
 
 ### stats
 
