@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap};
 use std::{
     collections::HashMap,
     io::{BufRead, Write},
@@ -11,12 +11,28 @@ use crate::{
     types::{Entry, EntryStatus, Metadata, Plural, PluralCategory, Resource, Translation},
 };
 
+fn serialize_sorted_map<S, V>(map: &HashMap<String, V>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    V: Serialize,
+{
+    let mut keys: Vec<&String> = map.keys().collect();
+    keys.sort_unstable();
+
+    let mut out = serializer.serialize_map(Some(map.len()))?;
+    for k in keys {
+        out.serialize_entry(k, &map[k])?;
+    }
+    out.end()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Format {
     pub source_language: String,
-    pub version: String,
+    #[serde(serialize_with = "serialize_sorted_map")]
     pub strings: HashMap<String, Item>,
+    pub version: String,
 }
 
 impl Parser for Format {
@@ -230,20 +246,25 @@ impl TryFrom<Format> for Vec<Resource> {
     }
 }
 
+fn is_none_or_true(v: &Option<bool>) -> bool {
+    v.is_none() || *v == Some(true)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
-    #[serde(default)]
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub localizations: HashMap<String, Localization>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub extraction_state: Option<ExtractionState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub should_translate: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_comment_auto_generated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extraction_state: Option<ExtractionState>,
+    #[serde(skip_serializing_if = "is_none_or_true")]
+    pub should_translate: Option<bool>,
+    #[serde(default)]
+    #[serde(serialize_with = "serialize_sorted_map")]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub localizations: HashMap<String, Localization>,
 }
 
 impl Item {
@@ -666,7 +687,9 @@ mod tests {
         assert!(item.localizations.is_empty());
         assert_eq!(
             item.comment.as_deref(),
-            Some("Text displayed in the tips view of the return user reward dialog, describing the rewards that have been sent to the user's backpack.")
+            Some(
+                "Text displayed in the tips view of the return user reward dialog, describing the rewards that have been sent to the user's backpack."
+            )
         );
         assert_eq!(item.is_comment_auto_generated, Some(true));
     }
