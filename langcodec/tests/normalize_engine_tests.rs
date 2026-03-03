@@ -140,7 +140,10 @@ fn normalize_preserves_unicode_letters_in_key_style_transform() {
     };
 
     let report = langcodec::normalize::normalize_codec(&mut codec, &options).unwrap();
-    assert_eq!(codec.resources[0].entries[0].id, "crème_brûlée_你好_weiß_key");
+    assert_eq!(
+        codec.resources[0].entries[0].id,
+        "crème_brûlée_你好_weiß_key"
+    );
     assert!(report.changed);
 }
 
