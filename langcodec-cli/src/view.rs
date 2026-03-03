@@ -1,5 +1,9 @@
-use langcodec::{Codec, types::EntryStatus};
-use std::collections::{BTreeMap, HashSet};
+use langcodec::{
+    Codec,
+    types::{EntryStatus, PluralCategory, Translation},
+};
+use serde_json::{Map, Value, json};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 pub struct ViewOptions {
     pub full: bool,
@@ -59,10 +63,125 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
     }
 }
 
+fn status_label(status: &EntryStatus) -> &'static str {
+    match status {
+        EntryStatus::DoNotTranslate => "do_not_translate",
+        EntryStatus::New => "new",
+        EntryStatus::Stale => "stale",
+        EntryStatus::NeedsReview => "needs_review",
+        EntryStatus::Translated => "translated",
+    }
+}
+
+fn plural_category_label(category: &PluralCategory) -> &'static str {
+    match category {
+        PluralCategory::Zero => "zero",
+        PluralCategory::One => "one",
+        PluralCategory::Two => "two",
+        PluralCategory::Few => "few",
+        PluralCategory::Many => "many",
+        PluralCategory::Other => "other",
+    }
+}
+
+fn render_json_output(
+    filtered_resources: &[(&langcodec::Resource, Vec<&langcodec::types::Entry>)],
+    lang_filter: &Option<String>,
+    keys_only: bool,
+) -> Result<String, String> {
+    let mut total_matches = 0usize;
+    let mut languages = BTreeSet::new();
+    let mut status_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut entries_payload = Vec::new();
+    let mut keys_by_language: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut keys_for_lang = Vec::new();
+
+    for (resource, entries) in filtered_resources {
+        languages.insert(resource.metadata.language.clone());
+
+        for entry in entries {
+            total_matches += 1;
+            let status = status_label(&entry.status).to_string();
+            *status_counts.entry(status.clone()).or_insert(0) += 1;
+
+            if keys_only {
+                if lang_filter.is_some() {
+                    keys_for_lang.push(entry.id.clone());
+                } else {
+                    keys_by_language
+                        .entry(resource.metadata.language.clone())
+                        .or_default()
+                        .push(entry.id.clone());
+                }
+                continue;
+            }
+
+            let mut entry_json = Map::new();
+            entry_json.insert("lang".to_string(), json!(resource.metadata.language));
+            entry_json.insert("key".to_string(), json!(entry.id));
+            entry_json.insert("status".to_string(), json!(status));
+            entry_json.insert("domain".to_string(), json!(resource.metadata.domain));
+
+            match &entry.value {
+                Translation::Empty => {
+                    entry_json.insert("type".to_string(), json!("empty"));
+                }
+                Translation::Singular(value) => {
+                    entry_json.insert("type".to_string(), json!("singular"));
+                    entry_json.insert("value".to_string(), json!(value));
+                }
+                Translation::Plural(plural) => {
+                    entry_json.insert("type".to_string(), json!("plural"));
+                    entry_json.insert("plural_id".to_string(), json!(plural.id));
+                    let mut forms = Map::new();
+                    for (category, value) in &plural.forms {
+                        forms.insert(plural_category_label(category).to_string(), json!(value));
+                    }
+                    entry_json.insert("forms".to_string(), Value::Object(forms));
+                }
+            }
+
+            if let Some(comment) = &entry.comment {
+                entry_json.insert("comment".to_string(), json!(comment));
+            }
+
+            entries_payload.push(Value::Object(entry_json));
+        }
+    }
+
+    let summary = json!({
+        "total_matches": total_matches,
+        "languages": languages.into_iter().collect::<Vec<_>>(),
+        "statuses": status_counts,
+    });
+
+    let payload = if keys_only {
+        if lang_filter.is_some() {
+            json!({
+                "summary": summary,
+                "keys": keys_for_lang,
+            })
+        } else {
+            json!({
+                "summary": summary,
+                "keys": keys_by_language,
+            })
+        }
+    } else {
+        json!({
+            "summary": summary,
+            "entries": entries_payload,
+        })
+    };
+
+    serde_json::to_string_pretty(&payload)
+        .map_err(|e| format!("Failed to render view JSON payload: {e}"))
+}
+
 /// Print a view of the resources in a codec.
 pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOptions) {
     let keys_only_text = opts.keys_only && !opts.json;
-    if !keys_only_text {
+    if !keys_only_text && !opts.json {
         println!("Processing resources...");
     }
     let status_filter = match parse_status_filter(&opts.status) {
@@ -107,7 +226,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
         std::process::exit(1);
     }
 
-    if !keys_only_text {
+    if !keys_only_text && !opts.json {
         println!("✅ Found {} resource(s)", resources.len());
     }
 
@@ -126,6 +245,18 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
             (*resource, entries)
         })
         .collect::<Vec<_>>();
+
+    if opts.json {
+        let rendered = match render_json_output(&filtered_resources, lang_filter, opts.keys_only) {
+            Ok(text) => text,
+            Err(err) => {
+                eprintln!("❌ {}", err);
+                std::process::exit(1);
+            }
+        };
+        println!("{}", rendered);
+        return;
+    }
 
     if keys_only_text {
         let include_lang_prefix = lang_filter.is_none();
@@ -156,10 +287,10 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
             }
 
             match &entry.value {
-                langcodec::types::Translation::Empty => {
+                Translation::Empty => {
                     println!("    Type: Empty");
                 }
-                langcodec::types::Translation::Singular(value) => {
+                Translation::Singular(value) => {
                     println!("    Type: Singular");
                     if opts.full {
                         println!("    Value: {}", value);
@@ -168,7 +299,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
                         println!("    Value: {}", truncated);
                     }
                 }
-                langcodec::types::Translation::Plural(plural) => {
+                Translation::Plural(plural) => {
                     println!("    Type: Plural");
                     println!("    Plural ID: {}", plural.id);
                     for (category, value) in &plural.forms {

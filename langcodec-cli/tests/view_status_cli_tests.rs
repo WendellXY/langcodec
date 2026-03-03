@@ -349,3 +349,93 @@ fn test_view_keys_only_without_lang_prints_lang_tab_key() {
         stdout
     );
 }
+
+#[test]
+fn test_view_status_json_outputs_entries_payload() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("Localizable.xcstrings");
+    write_xcstrings_multilang_fixture(&input_file);
+
+    let output = langcodec_cmd()
+        .args([
+            "view",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--status",
+            "needs_review",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let payload: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("Expected JSON output. parse error: {e}. stdout: {stdout}"));
+
+    assert_eq!(payload["summary"]["total_matches"], 2);
+    assert_eq!(payload["summary"]["statuses"]["needs_review"], 2);
+    let languages = payload["summary"]["languages"].as_array().unwrap();
+    assert_eq!(languages.len(), 2, "Expected 2 languages. payload: {payload}");
+    assert!(languages.iter().any(|lang| lang == "en"));
+    assert!(languages.iter().any(|lang| lang == "fr"));
+
+    let entries = payload["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2, "Expected only filtered entries. payload: {payload}");
+
+    let en_entry = entries
+        .iter()
+        .find(|entry| entry["lang"] == "en")
+        .expect("Expected English entry in JSON payload");
+    assert_eq!(en_entry["key"], "needs_review_key");
+    assert_eq!(en_entry["status"], "needs_review");
+    assert_eq!(en_entry["type"], "singular");
+    assert_eq!(en_entry["value"], "Needs review EN");
+}
+
+#[test]
+fn test_view_status_json_keys_only_outputs_keys_payload() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("Localizable.xcstrings");
+    write_xcstrings_multilang_fixture(&input_file);
+
+    let output = langcodec_cmd()
+        .args([
+            "view",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--status",
+            "needs_review",
+            "--keys-only",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let payload: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("Expected JSON output. parse error: {e}. stdout: {stdout}"));
+
+    assert_eq!(payload["summary"]["total_matches"], 2);
+    assert_eq!(payload["summary"]["statuses"]["needs_review"], 2);
+    assert!(payload.get("entries").is_none(), "Expected keys-only payload");
+
+    let keys = payload["keys"].as_object().unwrap();
+    let en_keys = keys["en"].as_array().unwrap();
+    let fr_keys = keys["fr"].as_array().unwrap();
+    assert_eq!(en_keys.len(), 1);
+    assert_eq!(fr_keys.len(), 1);
+    assert_eq!(en_keys[0], "needs_review_key");
+    assert_eq!(fr_keys[0], "needs_review_key");
+}
