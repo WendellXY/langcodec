@@ -1,10 +1,49 @@
-use langcodec::Codec;
+use langcodec::{Codec, types::EntryStatus};
 
 pub struct ViewOptions {
     pub full: bool,
     pub status: Option<String>,
     pub keys_only: bool,
     pub json: bool,
+}
+
+const ACCEPTED_STATUSES: [&str; 5] = [
+    "translated",
+    "needs_review",
+    "stale",
+    "new",
+    "do_not_translate",
+];
+
+fn parse_status_filter(status: &Option<String>) -> Result<Option<Vec<EntryStatus>>, String> {
+    let Some(raw_status) = status else {
+        return Ok(None);
+    };
+
+    let mut parsed = Vec::new();
+    for token in raw_status.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let normalized = token.replace(['-', ' '], "_");
+        let entry_status = normalized.parse::<EntryStatus>().map_err(|_| {
+            format!(
+                "Invalid status '{}'. Accepted statuses: {}",
+                token,
+                ACCEPTED_STATUSES.join(", ")
+            )
+        })?;
+
+        if !parsed.contains(&entry_status) {
+            parsed.push(entry_status);
+        }
+    }
+
+    if parsed.is_empty() {
+        return Err(format!(
+            "Invalid status ''. Accepted statuses: {}",
+            ACCEPTED_STATUSES.join(", ")
+        ));
+    }
+
+    Ok(Some(parsed))
 }
 
 /// Truncate a string by Unicode scalar values (chars),
@@ -23,7 +62,14 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
 pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOptions) {
     println!("Processing resources...");
     // Flags are surfaced now and will be applied in follow-up tasks.
-    let _ = (&opts.status, opts.keys_only, opts.json);
+    let _ = (opts.keys_only, opts.json);
+    let status_filter = match parse_status_filter(&opts.status) {
+        Ok(filter) => filter,
+        Err(err) => {
+            eprintln!("❌ {}", err);
+            std::process::exit(1);
+        }
+    };
 
     // Use the new high-level methods from the lib crate
     let resources = if let Some(lang) = lang_filter {
@@ -65,9 +111,19 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
         println!("\n=== Resource {} ===", i + 1);
         println!("Language: {}", resource.metadata.language);
         println!("Domain: {}", resource.metadata.domain);
-        println!("Entries: {}", resource.entries.len());
+        let entries = resource
+            .entries
+            .iter()
+            .filter(|entry| {
+                status_filter
+                    .as_ref()
+                    .is_none_or(|statuses| statuses.contains(&entry.status))
+            })
+            .collect::<Vec<_>>();
 
-        for (j, entry) in resource.entries.iter().enumerate() {
+        println!("Entries: {}", entries.len());
+
+        for (j, entry) in entries.iter().enumerate() {
             println!("\n  Entry {}: {}", j + 1, entry.id);
             println!("    Status: {:?}", entry.status);
 
