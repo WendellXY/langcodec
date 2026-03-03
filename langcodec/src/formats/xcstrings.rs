@@ -151,7 +151,7 @@ impl TryFrom<Format> for Vec<Resource> {
                                 id: id.clone(),
                                 value: Translation::Empty,
                                 comment: item.comment.clone(),
-                                status: EntryStatus::Translated,
+                                status: EntryStatus::New,
                                 custom: custom.clone(),
                             });
                     }
@@ -408,6 +408,63 @@ impl PluralVariation {
 mod tests {
     use super::*;
 
+    fn format_with_translated_before_empty() -> Format {
+        for _ in 0..256 {
+            let mut strings = HashMap::new();
+            strings.insert(
+                "translated_key".to_string(),
+                Item {
+                    localizations: {
+                        let mut localizations = HashMap::new();
+                        localizations.insert(
+                            "en".to_string(),
+                            Localization::from(StringUnit::new(EntryStatus::Translated, "Hello")),
+                        );
+                        localizations.insert(
+                            "fr".to_string(),
+                            Localization::from(StringUnit::new(EntryStatus::Translated, "Bonjour")),
+                        );
+                        localizations
+                    },
+                    comment: None,
+                    extraction_state: None,
+                    should_translate: Some(true),
+                    is_comment_auto_generated: None,
+                },
+            );
+            strings.insert(
+                "empty_key".to_string(),
+                Item {
+                    localizations: HashMap::new(),
+                    comment: Some("Missing translation".to_string()),
+                    extraction_state: None,
+                    should_translate: Some(true),
+                    is_comment_auto_generated: None,
+                },
+            );
+
+            let order: Vec<&str> = strings.keys().map(String::as_str).collect();
+            let translated_pos = order
+                .iter()
+                .position(|key| *key == "translated_key")
+                .expect("translated key in map");
+            let empty_pos = order
+                .iter()
+                .position(|key| *key == "empty_key")
+                .expect("empty key in map");
+
+            if translated_pos < empty_pos {
+                return Format {
+                    source_language: "en".to_string(),
+                    version: "1.0".to_string(),
+                    strings,
+                };
+            }
+        }
+
+        panic!("failed to build deterministic key order for xcstrings test");
+    }
+
     #[test]
     fn test_ios_placeholder_conversion_in_writer() {
         // Build resources that contain Android-style placeholders
@@ -469,5 +526,24 @@ mod tests {
                 .value
                 .contains("%1$@")
         );
+    }
+
+    #[test]
+    fn test_empty_item_is_marked_new_when_expanded_for_existing_languages() {
+        let format = format_with_translated_before_empty();
+        let resources = Vec::<Resource>::try_from(format).expect("resources from xcstrings");
+        assert_eq!(resources.len(), 2);
+
+        for resource in resources {
+            let empty_entry = resource
+                .entries
+                .iter()
+                .find(|entry| entry.id == "empty_key")
+                .expect("empty entry is generated for each known language");
+
+            assert_eq!(empty_entry.value, Translation::Empty);
+            assert_eq!(empty_entry.status, EntryStatus::New);
+            assert_eq!(empty_entry.comment.as_deref(), Some("Missing translation"));
+        }
     }
 }
