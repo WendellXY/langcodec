@@ -86,33 +86,26 @@ fn plural_category_label(category: &PluralCategory) -> &'static str {
 
 fn render_json_output(
     filtered_resources: &[(&langcodec::Resource, Vec<&langcodec::types::Entry>)],
-    lang_filter: &Option<String>,
     keys_only: bool,
 ) -> Result<String, String> {
     let mut total_matches = 0usize;
     let mut languages = BTreeSet::new();
     let mut status_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut entries_payload = Vec::new();
-    let mut keys_by_language: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let mut keys_for_lang = Vec::new();
+    let mut keys_payload = Vec::new();
 
     for (resource, entries) in filtered_resources {
-        languages.insert(resource.metadata.language.clone());
-
         for entry in entries {
+            languages.insert(resource.metadata.language.clone());
             total_matches += 1;
             let status = status_label(&entry.status).to_string();
             *status_counts.entry(status.clone()).or_insert(0) += 1;
 
             if keys_only {
-                if lang_filter.is_some() {
-                    keys_for_lang.push(entry.id.clone());
-                } else {
-                    keys_by_language
-                        .entry(resource.metadata.language.clone())
-                        .or_default()
-                        .push(entry.id.clone());
-                }
+                keys_payload.push(json!({
+                    "lang": resource.metadata.language,
+                    "key": entry.id,
+                }));
                 continue;
             }
 
@@ -156,17 +149,10 @@ fn render_json_output(
     });
 
     let payload = if keys_only {
-        if lang_filter.is_some() {
-            json!({
-                "summary": summary,
-                "keys": keys_for_lang,
-            })
-        } else {
-            json!({
-                "summary": summary,
-                "keys": keys_by_language,
-            })
-        }
+        json!({
+            "summary": summary,
+            "keys": keys_payload,
+        })
     } else {
         json!({
             "summary": summary,
@@ -247,7 +233,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
         .collect::<Vec<_>>();
 
     if opts.json {
-        let rendered = match render_json_output(&filtered_resources, lang_filter, opts.keys_only) {
+        let rendered = match render_json_output(&filtered_resources, opts.keys_only) {
             Ok(text) => text,
             Err(err) => {
                 eprintln!("❌ {}", err);
