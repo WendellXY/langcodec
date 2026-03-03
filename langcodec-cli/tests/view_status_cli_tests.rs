@@ -190,6 +190,45 @@ fn test_view_status_strict_allows_xcstrings_with_status_metadata() {
 }
 
 #[test]
+fn test_view_status_strict_surfaces_invalid_status_before_metadata_guard() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("strings.xml");
+    write_android_strings_fixture(&input_file);
+
+    let output = langcodec_cmd()
+        .args([
+            "--strict",
+            "view",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--lang",
+            "en",
+            "--status",
+            "not-a-status",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        !output.status.success(),
+        "CLI unexpectedly succeeded. stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Invalid status"),
+        "Expected invalid status error before strict metadata guard. stderr: {}",
+        stderr
+    );
+    assert!(
+        !stderr.contains("explicit status metadata"),
+        "Did not expect metadata guard to mask invalid status. stderr: {}",
+        stderr
+    );
+}
+
+#[test]
 fn test_view_status_filters_single_status_for_lang() {
     let temp_dir = TempDir::new().unwrap();
     let input_file = temp_dir.path().join("Localizable.xcstrings");
@@ -454,6 +493,50 @@ fn test_view_keys_only_without_lang_prints_lang_tab_key() {
         !stdout.contains("Processing resources..."),
         "Expected keys-only output without preamble lines. stdout: {}",
         stdout
+    );
+}
+
+#[test]
+fn test_view_keys_only_with_check_plurals_keeps_stdout_key_only() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("Localizable.xcstrings");
+    write_xcstrings_fixture(&input_file);
+
+    let output = langcodec_cmd()
+        .args([
+            "view",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--lang",
+            "en",
+            "--status",
+            "needs_review",
+            "--keys-only",
+            "--check-plurals",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert_eq!(
+        lines,
+        vec!["needs_review_key"],
+        "Expected stdout to contain only key lines. stdout: {}",
+        stdout
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Plural validation passed"),
+        "Expected plural validation banner in stderr. stderr: {}",
+        stderr
     );
 }
 

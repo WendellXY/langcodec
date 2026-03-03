@@ -55,6 +55,10 @@ fn parse_status_filter(status: &Option<String>) -> Result<Option<Vec<EntryStatus
     Ok(Some(parsed))
 }
 
+pub fn validate_status_filter(status: &Option<String>) -> Result<(), String> {
+    parse_status_filter(status).map(|_| ())
+}
+
 /// Truncate a string by Unicode scalar values (chars),
 /// appending ellipsis if content exceeds `max_chars`.
 fn truncate_chars(s: &str, max_chars: usize) -> String {

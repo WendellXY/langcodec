@@ -20,7 +20,7 @@ use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::normalize::{NormalizeCliOptions, run_normalize_command};
 use crate::sync::{SyncOptions, run_sync_command};
 use crate::validation::{ValidationContext, validate_context, validate_language_code};
-use crate::view::{ViewOptions, print_view};
+use crate::view::{ViewOptions, print_view, validate_status_filter};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 
@@ -167,7 +167,7 @@ enum Commands {
         #[arg(long)]
         full: bool,
 
-        /// Filter entries by status (e.g. translated, needs_review, missing)
+        /// Filter entries by status (e.g. translated, needs_review, stale, new, do_not_translate)
         #[arg(long)]
         status: Option<String>,
 
@@ -552,6 +552,11 @@ fn main() {
                 std::process::exit(1);
             }
 
+            if let Err(e) = validate_status_filter(&status) {
+                eprintln!("❌ {}", e);
+                std::process::exit(1);
+            }
+
             if strict && status.is_some() && !input_supports_explicit_status_metadata(&input) {
                 eprintln!(
                     "❌ Strict mode with --status requires explicit status metadata. Supported in v1: .xcstrings"
@@ -579,7 +584,7 @@ fn main() {
             if check_plurals {
                 match codec.validate_plurals() {
                     Ok(()) => {
-                        if json {
+                        if json || keys_only {
                             eprintln!("✅ Plural validation passed");
                         } else {
                             println!("\n✅ Plural validation passed");
