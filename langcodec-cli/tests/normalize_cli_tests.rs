@@ -15,6 +15,14 @@ fn test_main_help_lists_normalize() {
 }
 
 #[test]
+fn test_normalize_requires_inputs_argument() {
+    let output = langcodec_cmd().args(["normalize"]).output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--inputs"));
+}
+
+#[test]
 fn test_normalize_command_executes_successfully() {
     let temp_dir = TempDir::new().unwrap();
     let input = temp_dir.path().join("en.strings");
@@ -78,4 +86,79 @@ fn test_normalize_dry_run_does_not_write() {
     );
     let after = fs::read_to_string(&input).unwrap();
     assert_eq!(after, before);
+}
+
+#[test]
+fn test_normalize_output_written_even_when_unchanged() {
+    let temp_dir = TempDir::new().unwrap();
+    let input = temp_dir.path().join("en.strings");
+    let output_path = temp_dir.path().join("out").join("normalized.strings");
+    fs::write(&input, "\"a\" = \"A\";\n\"b\" = \"B\";\n").unwrap();
+
+    let output = langcodec_cmd()
+        .args([
+            "normalize",
+            "-i",
+            input.to_str().unwrap(),
+            "-o",
+            output_path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output_path.exists(), "expected output file to be created");
+
+    let written = fs::read_to_string(&output_path).unwrap();
+    assert!(written.contains("\"a\" = \"A\";"));
+    assert!(written.contains("\"b\" = \"B\";"));
+}
+
+#[test]
+fn test_normalize_check_and_dry_run_with_output_do_not_create_directories() {
+    for mode in ["--check", "--dry-run"] {
+        let temp_dir = TempDir::new().unwrap();
+        let input = temp_dir.path().join("en.strings");
+        let missing_parent = temp_dir.path().join("missing").join("nested");
+        let output_path = missing_parent.join("out.strings");
+        fs::write(&input, "\"z\" = \"%@\";\n\"a\" = \"A\";\n").unwrap();
+
+        let output = langcodec_cmd()
+            .args([
+                "normalize",
+                "-i",
+                input.to_str().unwrap(),
+                "-o",
+                output_path.to_str().unwrap(),
+                mode,
+            ])
+            .output()
+            .unwrap();
+
+        if mode == "--check" {
+            assert!(
+                !output.status.success(),
+                "check mode should fail when drift is detected"
+            );
+        } else {
+            assert!(
+                output.status.success(),
+                "dry-run failed with stderr: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        assert!(
+            !missing_parent.exists(),
+            "mode {mode} unexpectedly created output directory"
+        );
+        assert!(
+            !output_path.exists(),
+            "mode {mode} unexpectedly created output file"
+        );
+    }
 }

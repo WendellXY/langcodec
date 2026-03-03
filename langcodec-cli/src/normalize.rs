@@ -3,6 +3,7 @@ use crate::validation::{validate_file_path, validate_output_path};
 use langcodec::{
     Codec, FormatType, KeyStyle, NormalizeOptions as EngineNormalizeOptions, normalize_codec,
 };
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct NormalizeCliOptions {
@@ -61,6 +62,12 @@ fn write_back(codec: &Codec, input_path: &str, output_path: &Option<String>) -> 
     }
 }
 
+fn has_distinct_output_path(input_path: &str, output_path: &Option<String>) -> bool {
+    output_path
+        .as_ref()
+        .is_some_and(|output| Path::new(output) != Path::new(input_path))
+}
+
 pub fn run_normalize_command(opts: NormalizeCliOptions) -> Result<(), String> {
     let expanded = path_glob::expand_input_globs(&opts.inputs)
         .map_err(|e| format!("Failed to expand input patterns: {}", e))?;
@@ -73,9 +80,6 @@ pub fn run_normalize_command(opts: NormalizeCliOptions) -> Result<(), String> {
 
     let input = &expanded[0];
     validate_file_path(input)?;
-    if let Some(output) = &opts.output {
-        validate_output_path(output)?;
-    }
 
     let mut codec = Codec::new();
     codec
@@ -92,19 +96,42 @@ pub fn run_normalize_command(opts: NormalizeCliOptions) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-    if !report.changed {
+    if opts.check {
+        if report.changed {
+            println!("would change: {}", input);
+            return Err(format!("would change: {}", input));
+        }
+
         println!("No changes needed: {}", input);
         return Ok(());
     }
 
-    if opts.check {
-        println!("would change: {}", input);
-        return Err(format!("would change: {}", input));
+    if opts.dry_run {
+        if report.changed {
+            println!("DRY-RUN: would change {}", input);
+        } else {
+            println!("No changes needed: {}", input);
+        }
+        return Ok(());
     }
 
-    if opts.dry_run {
-        println!("DRY-RUN: would change {}", input);
+    if !report.changed {
+        if has_distinct_output_path(input, &opts.output) {
+            if let Some(output) = &opts.output {
+                validate_output_path(output)?;
+            }
+            write_back(&codec, input, &opts.output)?;
+            println!("No changes needed: {}", input);
+            println!("✅ Wrote output: {}", opts.output.as_deref().unwrap_or(input));
+            return Ok(());
+        }
+
+        println!("No changes needed: {}", input);
         return Ok(());
+    }
+
+    if let Some(output) = &opts.output {
+        validate_output_path(output)?;
     }
 
     write_back(&codec, input, &opts.output)?;

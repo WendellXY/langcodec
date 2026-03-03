@@ -201,7 +201,7 @@ enum Commands {
     /// Normalize localization files.
     Normalize {
         /// The input files to normalize (supports glob patterns). Quote patterns to avoid shell expansion.
-        #[arg(short, long, num_args = 1.., help = "Input files. Supports glob patterns. Quote patterns to avoid slow shell-side expansion (e.g., '/path/**/*/Localizable.strings').")]
+        #[arg(short, long, required = true, num_args = 1.., help = "Input files. Supports glob patterns. Quote patterns to avoid slow shell-side expansion (e.g., '/path/**/*/Localizable.strings').")]
         inputs: Vec<String>,
 
         /// Optional output file (single-file mode only). If omitted, writes in-place.
