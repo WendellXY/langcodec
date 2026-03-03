@@ -630,3 +630,81 @@ fn test_view_status_json_keys_only_lang_uses_consistent_object_schema() {
     assert!(keys.iter().all(|item| item["lang"] == "en"));
     assert!(keys.iter().all(|item| item["key"] == "needs_review_key"));
 }
+
+#[test]
+fn test_view_status_json_with_check_plurals_keeps_stdout_json() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("Localizable.xcstrings");
+    write_xcstrings_multilang_fixture(&input_file);
+
+    let output = langcodec_cmd()
+        .args([
+            "view",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--status",
+            "needs_review",
+            "--json",
+            "--check-plurals",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let _payload: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("Expected JSON output. parse error: {e}. stdout: {stdout}"));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Plural validation passed"),
+        "Expected plural validation success in stderr. stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_view_status_text_excludes_zero_match_languages_from_output_and_summary() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("Localizable.xcstrings");
+    write_xcstrings_partial_match_fixture(&input_file);
+
+    let output = langcodec_cmd()
+        .args([
+            "view",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--status",
+            "needs_review",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Language: en"),
+        "Expected matched language in output. stdout: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("Language: fr"),
+        "Expected zero-match language to be excluded. stdout: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Total languages: 1"),
+        "Expected summary to count only matching languages. stdout: {}",
+        stdout
+    );
+}

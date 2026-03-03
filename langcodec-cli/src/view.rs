@@ -170,8 +170,9 @@ fn render_json_output(
 
 /// Print a view of the resources in a codec.
 pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOptions) {
-    let keys_only_text = opts.keys_only && !opts.json;
-    if !keys_only_text && !opts.json {
+    let text_mode = !opts.json;
+    let keys_only_text = opts.keys_only && text_mode;
+    if text_mode && !keys_only_text {
         println!("Processing resources...");
     }
     let status_filter = match parse_status_filter(&opts.status) {
@@ -216,10 +217,6 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
         std::process::exit(1);
     }
 
-    if !keys_only_text && !opts.json {
-        println!("✅ Found {} resource(s)", resources.len());
-    }
-
     let filtered_resources = resources
         .iter()
         .map(|resource| {
@@ -236,8 +233,21 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
         })
         .collect::<Vec<_>>();
 
+    let visible_resources = if status_filter.is_some() {
+        filtered_resources
+            .into_iter()
+            .filter(|(_, entries)| !entries.is_empty())
+            .collect::<Vec<_>>()
+    } else {
+        filtered_resources
+    };
+
+    if text_mode && !keys_only_text {
+        println!("✅ Found {} resource(s)", visible_resources.len());
+    }
+
     if opts.json {
-        let rendered = match render_json_output(&filtered_resources, opts.keys_only) {
+        let rendered = match render_json_output(&visible_resources, opts.keys_only) {
             Ok(text) => text,
             Err(err) => {
                 eprintln!("❌ {}", err);
@@ -250,7 +260,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
 
     if keys_only_text {
         let include_lang_prefix = lang_filter.is_none();
-        for (resource, entries) in &filtered_resources {
+        for (resource, entries) in &visible_resources {
             for entry in entries {
                 if include_lang_prefix {
                     println!("{}\t{}", resource.metadata.language, entry.id);
@@ -262,7 +272,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
         return;
     }
 
-    for (i, (resource, entries)) in filtered_resources.iter().enumerate() {
+    for (i, (resource, entries)) in visible_resources.iter().enumerate() {
         println!("\n=== Resource {} ===", i + 1);
         println!("Language: {}", resource.metadata.language);
         println!("Domain: {}", resource.metadata.domain);
@@ -309,7 +319,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
     if lang_filter.is_none() {
         let mut unique_keys = HashSet::new();
         let mut per_language_counts: BTreeMap<String, usize> = BTreeMap::new();
-        for (resource, entries) in &filtered_resources {
+        for (resource, entries) in &visible_resources {
             per_language_counts
                 .entry(resource.metadata.language.clone())
                 .and_modify(|count| *count += entries.len())

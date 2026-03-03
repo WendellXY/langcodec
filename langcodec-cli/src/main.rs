@@ -578,7 +578,13 @@ fn main() {
 
             if check_plurals {
                 match codec.validate_plurals() {
-                    Ok(()) => println!("\n✅ Plural validation passed"),
+                    Ok(()) => {
+                        if json {
+                            eprintln!("✅ Plural validation passed");
+                        } else {
+                            println!("\n✅ Plural validation passed");
+                        }
+                    }
                     Err(e) => {
                         eprintln!("\n❌ Plural validation failed: {}", e);
                         std::process::exit(2);
