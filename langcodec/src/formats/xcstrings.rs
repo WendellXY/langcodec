@@ -161,6 +161,30 @@ impl TryFrom<Format> for Vec<Resource> {
                                 custom: custom.clone(),
                             });
                     }
+                } else {
+                    // Preserve non-translatable metadata-only entries by attaching an empty
+                    // do-not-translate entry to source language.
+                    let source_language = custom_meta
+                        .get("source_language")
+                        .cloned()
+                        .unwrap_or_else(|| "en".to_string());
+                    resource_map
+                        .entry(source_language.clone())
+                        .or_insert(Resource {
+                            metadata: Metadata {
+                                language: source_language,
+                                domain: String::default(),
+                                custom: custom_meta.clone(),
+                            },
+                            entries: Vec::new(),
+                        })
+                        .add_entry(Entry {
+                            id: id.clone(),
+                            value: Translation::Empty,
+                            comment: item.comment.clone(),
+                            status: EntryStatus::DoNotTranslate,
+                            custom: custom.clone(),
+                        });
                 }
                 continue;
             }
@@ -551,5 +575,54 @@ mod tests {
             assert_eq!(empty_entry.status, EntryStatus::New);
             assert_eq!(empty_entry.comment.as_deref(), Some("Missing translation"));
         }
+    }
+
+    #[test]
+    fn test_non_translatable_item_without_localizations_is_preserved() {
+        let mut strings = HashMap::new();
+        strings.insert(
+            "game_title".to_string(),
+            Item {
+                localizations: {
+                    let mut localizations = HashMap::new();
+                    localizations.insert(
+                        "en".to_string(),
+                        Localization::from(StringUnit::new(EntryStatus::Translated, "Game")),
+                    );
+                    localizations
+                },
+                comment: None,
+                extraction_state: None,
+                should_translate: Some(true),
+                is_comment_auto_generated: None,
+            },
+        );
+        strings.insert(
+            "Carrom".to_string(),
+            Item {
+                localizations: HashMap::new(),
+                comment: Some("The text label for the Carrom game button.".to_string()),
+                extraction_state: None,
+                should_translate: Some(false),
+                is_comment_auto_generated: Some(true),
+            },
+        );
+        let format = Format {
+            source_language: "en".to_string(),
+            version: "1.0".to_string(),
+            strings,
+        };
+
+        let resources = Vec::<Resource>::try_from(format).expect("resources from xcstrings");
+        let roundtrip = Format::try_from(resources).expect("xcstrings from resources");
+        let carrom = roundtrip.strings.get("Carrom").expect("Carrom item exists");
+
+        assert!(carrom.localizations.is_empty());
+        assert_eq!(
+            carrom.comment.as_deref(),
+            Some("The text label for the Carrom game button.")
+        );
+        assert_eq!(carrom.should_translate, Some(false));
+        assert_eq!(carrom.is_comment_auto_generated, Some(true));
     }
 }
