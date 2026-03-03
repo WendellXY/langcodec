@@ -118,6 +118,8 @@ impl TryFrom<Format> for Vec<Resource> {
         // Key: Language code, e.g. "en", "fr", etc.
         // Value: Resource containing all items for that language
         let mut resource_map = HashMap::<String, Resource>::new();
+        let mut pending_empty_translatable_entries =
+            Vec::<(String, Option<String>, HashMap<String, String>)>::new();
 
         let mut custom_meta = HashMap::<String, String>::new();
         custom_meta.insert(String::from("source_language"), format.source_language);
@@ -137,30 +139,8 @@ impl TryFrom<Format> for Vec<Resource> {
 
             if item.localizations.is_empty() {
                 if item.should_translate.unwrap_or(true) {
-                    // If the item is empty and should be translated, add a new entry for each language
-                    //
-                    // This method requires that all languages are already present in the resource map, in
-                    // other words, the translated items must be presented above the untranslated items.
-                    let lang_codes = resource_map.keys().cloned().collect::<Vec<_>>();
-                    for lang_code in lang_codes {
-                        resource_map
-                            .entry(lang_code.clone())
-                            .or_insert(Resource {
-                                metadata: Metadata {
-                                    language: lang_code.clone(),
-                                    domain: String::default(),
-                                    custom: custom_meta.clone(),
-                                },
-                                entries: Vec::new(),
-                            })
-                            .add_entry(Entry {
-                                id: id.clone(),
-                                value: Translation::Empty,
-                                comment: item.comment.clone(),
-                                status: EntryStatus::New,
-                                custom: custom.clone(),
-                            });
-                    }
+                    // Defer empty translatable entries until language buckets are known.
+                    pending_empty_translatable_entries.push((id.clone(), item.comment, custom));
                 } else {
                     // Preserve non-translatable metadata-only entries by attaching an empty
                     // do-not-translate entry to source language.
@@ -207,6 +187,39 @@ impl TryFrom<Format> for Vec<Resource> {
                             value: translation,
                             comment: item.comment.clone(),
                             status: localization.state(),
+                            custom: custom.clone(),
+                        });
+                }
+            }
+        }
+
+        if !pending_empty_translatable_entries.is_empty() {
+            let mut lang_codes = resource_map.keys().cloned().collect::<Vec<_>>();
+            if lang_codes.is_empty() {
+                lang_codes.push(
+                    custom_meta
+                        .get("source_language")
+                        .cloned()
+                        .unwrap_or_else(|| "en".to_string()),
+                );
+            }
+            for (id, comment, custom) in pending_empty_translatable_entries {
+                for lang_code in &lang_codes {
+                    resource_map
+                        .entry(lang_code.clone())
+                        .or_insert(Resource {
+                            metadata: Metadata {
+                                language: lang_code.clone(),
+                                domain: String::default(),
+                                custom: custom_meta.clone(),
+                            },
+                            entries: Vec::new(),
+                        })
+                        .add_entry(Entry {
+                            id: id.clone(),
+                            value: Translation::Empty,
+                            comment: comment.clone(),
+                            status: EntryStatus::New,
                             custom: custom.clone(),
                         });
                 }
@@ -624,5 +637,37 @@ mod tests {
         );
         assert_eq!(carrom.should_translate, Some(false));
         assert_eq!(carrom.is_comment_auto_generated, Some(true));
+    }
+
+    #[test]
+    fn test_translatable_metadata_only_item_without_localizations_is_preserved() {
+        let mut strings = HashMap::new();
+        strings.insert(
+            "The following rewards have been sent to your backpack.".to_string(),
+            Item {
+                localizations: HashMap::new(),
+                comment: Some("Text displayed in the tips view of the return user reward dialog, describing the rewards that have been sent to the user's backpack.".to_string()),
+                extraction_state: None,
+                should_translate: None,
+                is_comment_auto_generated: Some(true),
+            },
+        );
+        let format = Format {
+            source_language: "en".to_string(),
+            version: "1.0".to_string(),
+            strings,
+        };
+
+        let resources = Vec::<Resource>::try_from(format).expect("resources from xcstrings");
+        let roundtrip = Format::try_from(resources).expect("xcstrings from resources");
+        let key = "The following rewards have been sent to your backpack.";
+        let item = roundtrip.strings.get(key).expect("reward tip item exists");
+
+        assert!(item.localizations.is_empty());
+        assert_eq!(
+            item.comment.as_deref(),
+            Some("Text displayed in the tips view of the return user reward dialog, describing the rewards that have been sent to the user's backpack.")
+        );
+        assert_eq!(item.is_comment_auto_generated, Some(true));
     }
 }
