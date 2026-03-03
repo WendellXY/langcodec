@@ -142,6 +142,7 @@ pub mod codec;
 pub mod converter;
 pub mod error;
 pub mod formats;
+pub mod normalize;
 pub mod operations;
 pub mod placeholder;
 pub mod plural_rules;
@@ -161,6 +162,7 @@ pub use crate::{
     },
     error::{Error, ErrorCode, ErrorContext, StructuredError},
     formats::FormatType,
+    normalize::{KeyStyle, NormalizeOptions, NormalizeReport, normalize_codec},
     operations::{
         DiffChangedItem, DiffOptions, DiffReport, DiffSummary, LanguageDiff, SyncIssue,
         SyncIssueKind, SyncOptions, SyncReport, diff_resources, sync_existing_entries,

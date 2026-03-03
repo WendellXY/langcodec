@@ -3,3 +3,6 @@ Cargo.lock
 
 # Editor Configurations
 .vscode
+
+# Local planning artifacts
+docs/plans/*

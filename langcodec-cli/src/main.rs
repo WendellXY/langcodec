@@ -4,6 +4,7 @@ mod diff;
 mod edit;
 mod formats;
 mod merge;
+mod normalize;
 mod path_glob;
 mod stats;
 mod sync;
@@ -16,6 +17,7 @@ use crate::debug::run_debug_command;
 use crate::diff::{DiffOptions, run_diff_command};
 use crate::edit::{EditSetOptions, run_edit_set_command};
 use crate::merge::{ConflictStrategy, run_merge_command};
+use crate::normalize::{NormalizeCliOptions, run_normalize_command};
 use crate::sync::{SyncOptions, run_sync_command};
 use crate::validation::{ValidationContext, validate_context, validate_language_code};
 use crate::view::print_view;
@@ -194,6 +196,37 @@ enum Commands {
         /// For xcstrings output: override version (default: 1.0)
         #[arg(long)]
         version: Option<String>,
+    },
+
+    /// Normalize localization files.
+    Normalize {
+        /// The input files to normalize (supports glob patterns). Quote patterns to avoid shell expansion.
+        #[arg(short, long, required = true, num_args = 1.., help = "Input files. Supports glob patterns. Quote patterns to avoid slow shell-side expansion (e.g., '/path/**/*/Localizable.strings').")]
+        inputs: Vec<String>,
+
+        /// Optional output file (single-file mode only). If omitted, writes in-place.
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Preview changes without writing
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Exit non-zero if normalization would change the file
+        #[arg(long, default_value_t = false)]
+        check: bool,
+
+        /// Disable placeholder normalization
+        #[arg(long, default_value_t = false)]
+        no_placeholders: bool,
+
+        /// Key renaming style: none|snake|kebab|camel
+        #[arg(long, default_value = "none")]
+        key_style: String,
+
+        /// Continue processing remaining files when a file fails
+        #[arg(long, default_value_t = false)]
+        continue_on_error: bool,
     },
 
     /// Show translation coverage and per-status counts.
@@ -594,6 +627,30 @@ fn main() {
             let mut cmd = Args::command();
             cmd = cmd.bin_name("langcodec");
             generate(shell, &mut cmd, "langcodec", &mut std::io::stdout());
+        }
+        Commands::Normalize {
+            inputs,
+            output,
+            dry_run,
+            check,
+            no_placeholders,
+            key_style,
+            continue_on_error,
+        } => {
+            let opts = NormalizeCliOptions {
+                inputs,
+                output,
+                dry_run,
+                check,
+                no_placeholders,
+                key_style,
+                continue_on_error,
+                strict,
+            };
+            if let Err(e) = run_normalize_command(opts) {
+                eprintln!("❌ Normalize failed: {}", e);
+                std::process::exit(1);
+            }
         }
         Commands::Stats { input, lang, json } => {
             // Validate
