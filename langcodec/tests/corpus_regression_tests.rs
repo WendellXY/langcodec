@@ -83,16 +83,6 @@ fn expected_fr_stable_values() -> Vec<ExpectedValue> {
     ]
 }
 
-fn with_language(
-    expected_values: Vec<ExpectedValue>,
-    language: &'static str,
-) -> Vec<ExpectedValue> {
-    expected_values
-        .into_iter()
-        .map(|item| ExpectedValue { language, ..item })
-        .collect()
-}
-
 fn read_codec(path: &Path, lang_hint: Option<&str>) -> Codec {
     let mut codec = Codec::new();
     codec
@@ -199,7 +189,7 @@ fn convert_edge_case_corpora_table_driven() {
     let root = corpus_root();
     let output_dir = tempfile::tempdir().expect("create temp output dir");
 
-    let csv_default_expected = with_language(expected_en_stable_values(), "default");
+    let csv_single_lang_expected = expected_en_stable_values();
 
     let convert_cases = vec![
         ConvertCase {
@@ -221,14 +211,14 @@ fn convert_edge_case_corpora_table_driven() {
             input_relative_path: "en.lproj/Localizable.strings",
             output_file_name: "from_strings.csv",
             output_lang_hint: None,
-            expected_values: csv_default_expected.clone(),
+            expected_values: csv_single_lang_expected.clone(),
         },
         ConvertCase {
             name: "strings -> tsv",
             input_relative_path: "en.lproj/Localizable.strings",
             output_file_name: "from_strings.tsv",
             output_lang_hint: None,
-            expected_values: csv_default_expected,
+            expected_values: csv_single_lang_expected,
         },
         ConvertCase {
             name: "android -> strings",

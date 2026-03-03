@@ -96,24 +96,42 @@ impl Parser for Format {
             let first_line = first_line.map_err(Error::CsvParse)?;
 
             if first_line.len() == 2 {
-                // Single language format: key, value
-                // First line is data, not header
-                records.push(MultiLanguageTSVRecord {
-                    key: first_line[0].to_string(),
-                    translations: {
-                        let mut map = HashMap::new();
-                        map.insert("default".to_string(), first_line[1].to_string());
-                        map
-                    },
-                });
+                if first_line[0].trim().eq_ignore_ascii_case("key") {
+                    // Single-language header form: key, <lang>
+                    let language = first_line[1].trim().to_string();
+                    if language.is_empty() {
+                        return Err(Error::DataMismatch(
+                            "Invalid TSV format: missing language in header".to_string(),
+                        ));
+                    }
+                    for line in lines {
+                        let line = line.map_err(Error::CsvParse)?;
+                        if line.len() == 2 {
+                            let mut record = MultiLanguageTSVRecord::new(line[0].to_string());
+                            record.add_translation(language.clone(), line[1].to_string());
+                            records.push(record);
+                        }
+                    }
+                } else {
+                    // Single language data form: key, value
+                    // First line is data, not header
+                    records.push(MultiLanguageTSVRecord {
+                        key: first_line[0].to_string(),
+                        translations: {
+                            let mut map = HashMap::new();
+                            map.insert("default".to_string(), first_line[1].to_string());
+                            map
+                        },
+                    });
 
-                // Process remaining lines
-                for line in lines {
-                    let line = line.map_err(Error::CsvParse)?;
-                    if line.len() == 2 {
-                        let mut record = MultiLanguageTSVRecord::new(line[0].to_string());
-                        record.add_translation("default".to_string(), line[1].to_string());
-                        records.push(record);
+                    // Process remaining lines
+                    for line in lines {
+                        let line = line.map_err(Error::CsvParse)?;
+                        if line.len() == 2 {
+                            let mut record = MultiLanguageTSVRecord::new(line[0].to_string());
+                            record.add_translation("default".to_string(), line[1].to_string());
+                            records.push(record);
+                        }
                     }
                 }
             } else if first_line.len() >= 3 {
@@ -426,6 +444,25 @@ mod tests {
             format.records[1].get_translation("default"),
             Some(&"Goodbye".to_string())
         );
+    }
+
+    #[test]
+    fn test_parse_single_language_header_tsv() {
+        let tsv_content = "key\ten\nhello\tHello\nbye\tGoodbye\n";
+        let format = Format::from_reader(Cursor::new(tsv_content)).unwrap();
+        assert_eq!(format.records.len(), 2);
+        assert_eq!(
+            format.records[0].get_translation("en"),
+            Some(&"Hello".to_string())
+        );
+        assert_eq!(
+            format.records[1].get_translation("en"),
+            Some(&"Goodbye".to_string())
+        );
+
+        let resources = Vec::<Resource>::try_from(format).unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].metadata.language, "en");
     }
 
     #[test]

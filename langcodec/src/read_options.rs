@@ -3,7 +3,7 @@
 /// Read behavior options for [`crate::Codec`] file-loading APIs.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ReadOptions {
-    /// Optional language hint applied to all loaded resources.
+    /// Optional language hint used for single-language formats (e.g. `.strings`, `strings.xml`).
     pub language_hint: Option<String>,
     /// Enables stricter checks (e.g., language is required for single-language formats).
     pub strict: bool,

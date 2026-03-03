@@ -368,3 +368,86 @@ fn test_edit_set_continue_on_error() {
     let updated = fs::read_to_string(&good).unwrap();
     assert!(updated.contains("\"welcome\""));
 }
+
+#[test]
+fn test_edit_set_xcstrings_with_lang_preserves_other_languages() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("Localizable.xcstrings");
+    let initial = r#"{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "hello": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hello"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bonjour"
+          }
+        }
+      }
+    },
+    "bye": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bye"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Au revoir"
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    fs::write(&input_file, initial).unwrap();
+
+    let out = langcodec_cmd()
+        .args([
+            "edit",
+            "set",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--lang",
+            "en",
+            "-k",
+            "hello",
+            "-v",
+            "Hello Updated",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let content = fs::read_to_string(&input_file).unwrap();
+    let payload: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+    assert_eq!(
+        payload["strings"]["hello"]["localizations"]["en"]["stringUnit"]["value"],
+        "Hello Updated"
+    );
+    assert_eq!(
+        payload["strings"]["hello"]["localizations"]["fr"]["stringUnit"]["value"],
+        "Bonjour"
+    );
+    assert_eq!(
+        payload["strings"]["bye"]["localizations"]["fr"]["stringUnit"]["value"],
+        "Au revoir"
+    );
+}

@@ -1081,7 +1081,7 @@ impl Codec {
         };
 
         for new_resource in &mut new_resources {
-            if let Some(ref lang) = language {
+            if requires_language && let Some(ref lang) = language {
                 new_resource.metadata.language = lang.clone();
             }
             new_resource.metadata.domain = domain.clone();
