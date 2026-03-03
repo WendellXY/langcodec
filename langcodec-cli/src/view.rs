@@ -1,4 +1,5 @@
 use langcodec::{Codec, types::EntryStatus};
+use std::collections::{BTreeMap, HashSet};
 
 pub struct ViewOptions {
     pub full: bool,
@@ -38,7 +39,7 @@ fn parse_status_filter(status: &Option<String>) -> Result<Option<Vec<EntryStatus
 
     if parsed.is_empty() {
         return Err(format!(
-            "Invalid status ''. Accepted statuses: {}",
+            "No valid statuses were provided. Accepted statuses: {}",
             ACCEPTED_STATUSES.join(", ")
         ));
     }
@@ -107,20 +108,26 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
 
     println!("✅ Found {} resource(s)", resources.len());
 
-    for (i, resource) in resources.iter().enumerate() {
+    let filtered_resources = resources
+        .iter()
+        .map(|resource| {
+            let entries = resource
+                .entries
+                .iter()
+                .filter(|entry| {
+                    status_filter
+                        .as_ref()
+                        .is_none_or(|statuses| statuses.contains(&entry.status))
+                })
+                .collect::<Vec<_>>();
+            (*resource, entries)
+        })
+        .collect::<Vec<_>>();
+
+    for (i, (resource, entries)) in filtered_resources.iter().enumerate() {
         println!("\n=== Resource {} ===", i + 1);
         println!("Language: {}", resource.metadata.language);
         println!("Domain: {}", resource.metadata.domain);
-        let entries = resource
-            .entries
-            .iter()
-            .filter(|entry| {
-                status_filter
-                    .as_ref()
-                    .is_none_or(|statuses| statuses.contains(&entry.status))
-            })
-            .collect::<Vec<_>>();
-
         println!("Entries: {}", entries.len());
 
         for (j, entry) in entries.iter().enumerate() {
@@ -162,12 +169,23 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
 
     // Show summary using the new high-level methods
     if lang_filter.is_none() {
-        println!("\n=== Summary ===");
-        println!("Total languages: {}", codec.languages().count());
-        println!("Total unique keys: {}", codec.all_keys().count());
+        let mut unique_keys = HashSet::new();
+        let mut per_language_counts: BTreeMap<String, usize> = BTreeMap::new();
+        for (resource, entries) in &filtered_resources {
+            per_language_counts
+                .entry(resource.metadata.language.clone())
+                .and_modify(|count| *count += entries.len())
+                .or_insert(entries.len());
+            for entry in entries {
+                unique_keys.insert(entry.id.clone());
+            }
+        }
 
-        for lang in codec.languages() {
-            let count = codec.entry_count(lang);
+        println!("\n=== Summary ===");
+        println!("Total languages: {}", per_language_counts.len());
+        println!("Total unique keys: {}", unique_keys.len());
+
+        for (lang, count) in per_language_counts {
             println!("  {}: {} entries", lang, count);
         }
     }
