@@ -9,14 +9,14 @@ Universal localization toolkit: library + CLI for Apple/Android/CSV/TSV.
 
 ## Status
 
-This is a `0.9.0` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, APIs may evolve. Contributions and feedback are very welcome!
+This is a `0.9.1` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, APIs may evolve. Contributions and feedback are very welcome!
 
 ---
 
 ## Installation
 
 - CLI: `cargo install langcodec-cli`
-- Lib: add `langcodec = "0.9.0"` to your `Cargo.toml`
+- Lib: add `langcodec = "0.9.1"` to your `Cargo.toml`
 
 ---
 
@@ -33,13 +33,13 @@ This is a `0.9.0` release available on [crates.io](https://crates.io/crates/lang
 
 <!-- markdownlint-disable no-inline-html no-space-in-emphasis -->
 
-| Format                | Parse | Write | Convert | Merge | Plural Support   | Comments |
-|-----------------------|:-----:|:-----:|:-------:|:-----:|:----------------:|----------|
-| Apple `.strings`      |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No             |  ✔️      |
-| Apple `.xcstrings`    |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   Yes<sup>*</sup>|  ✔️      |
-| Android `strings.xml` |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   Yes            |  ✔️      |
-| CSV                   |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No             |  –       |
-| TSV                   |  ✔️   |  ✔️   |   ✔️    |  ✔️   |   No             |  –       |
+| Format                | Parse | Write | Convert | Merge | Plural Support  | Comments |
+| --------------------- | :---: | :---: | :-----: | :---: | :-------------: | -------- |
+| Apple `.strings`      |   ✔️   |   ✔️   |    ✔️    |   ✔️   |       No        | ✔️        |
+| Apple `.xcstrings`    |   ✔️   |   ✔️   |    ✔️    |   ✔️   | Yes<sup>*</sup> | ✔️        |
+| Android `strings.xml` |   ✔️   |   ✔️   |    ✔️    |   ✔️   |       Yes       | ✔️        |
+| CSV                   |   ✔️   |   ✔️   |    ✔️    |   ✔️   |       No        | –        |
+| TSV                   |   ✔️   |   ✔️   |    ✔️    |   ✔️   |       No        | –        |
 
 <sup>* `.xcstrings` plural support is implemented via CLDR categories.</sup>
 
