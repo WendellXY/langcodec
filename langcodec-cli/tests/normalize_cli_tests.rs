@@ -162,3 +162,73 @@ fn test_normalize_check_and_dry_run_with_output_do_not_create_directories() {
         );
     }
 }
+
+#[test]
+fn test_normalize_rejects_output_with_multiple_inputs() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_a = temp_dir.path().join("a.strings");
+    let input_b = temp_dir.path().join("b.strings");
+    let output_path = temp_dir.path().join("out.strings");
+    fs::write(&input_a, "\"a\" = \"A\";\n").unwrap();
+    fs::write(&input_b, "\"b\" = \"B\";\n").unwrap();
+
+    let output = langcodec_cmd()
+        .args([
+            "normalize",
+            "-i",
+            input_a.to_str().unwrap(),
+            input_b.to_str().unwrap(),
+            "-o",
+            output_path.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("--output cannot be used with multiple input files"),
+        "expected --output multi-input rejection; got: {combined}"
+    );
+}
+
+#[test]
+fn test_normalize_continue_on_error_aggregates_and_returns_non_zero() {
+    let temp_dir = TempDir::new().unwrap();
+    let good = temp_dir.path().join("good.strings");
+    let bad = temp_dir.path().join("bad.txt");
+    fs::write(&good, "\"z\" = \"%@\";\n\"a\" = \"A\";\n").unwrap();
+    fs::write(&bad, "not a supported localization format").unwrap();
+
+    let output = langcodec_cmd()
+        .args([
+            "normalize",
+            "-i",
+            bad.to_str().unwrap(),
+            good.to_str().unwrap(),
+            "--continue-on-error",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        !output.status.success(),
+        "expected non-zero when at least one file fails"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}{stderr}");
+
+    assert!(
+        combined.contains("Summary: processed 2; success: 1; failed: 1"),
+        "expected summary counts, got: {combined}"
+    );
+    assert!(
+        combined.contains("✅ Normalized:"),
+        "expected successful file processing to continue, got: {combined}"
+    );
+}

@@ -223,6 +223,10 @@ enum Commands {
         /// Key renaming style: none|snake|kebab|camel
         #[arg(long, default_value = "none")]
         key_style: String,
+
+        /// Continue processing remaining files when a file fails
+        #[arg(long, default_value_t = false)]
+        continue_on_error: bool,
     },
 
     /// Show translation coverage and per-status counts.
@@ -631,6 +635,7 @@ fn main() {
             check,
             no_placeholders,
             key_style,
+            continue_on_error,
         } => {
             let opts = NormalizeCliOptions {
                 inputs,
@@ -639,6 +644,7 @@ fn main() {
                 check,
                 no_placeholders,
                 key_style,
+                continue_on_error,
             };
             if let Err(e) = run_normalize_command(opts) {
                 eprintln!("❌ Normalize failed: {}", e);
