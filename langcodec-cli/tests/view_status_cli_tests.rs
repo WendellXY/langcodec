@@ -236,3 +236,116 @@ fn test_view_status_rejects_blank_status_list() {
         stderr
     );
 }
+
+#[test]
+fn test_view_keys_only_with_lang_prints_key_per_line() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("Localizable.xcstrings");
+    write_xcstrings_fixture(&input_file);
+
+    let output = langcodec_cmd()
+        .args([
+            "view",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--lang",
+            "en",
+            "--status",
+            "needs_review",
+            "--keys-only",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert!(
+        lines.contains(&"needs_review_key"),
+        "Expected raw key line in output. stdout: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("Entry 1:"),
+        "Expected keys-only output without verbose entry headings. stdout: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("Status:"),
+        "Expected keys-only output without status lines. stdout: {}",
+        stdout
+    );
+    assert!(
+        !lines.contains(&"translated_key"),
+        "Expected non-matching keys to be excluded. stdout: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("Processing resources..."),
+        "Expected keys-only output without preamble lines. stdout: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_view_keys_only_without_lang_prints_lang_tab_key() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("Localizable.xcstrings");
+    write_xcstrings_multilang_fixture(&input_file);
+
+    let output = langcodec_cmd()
+        .args([
+            "view",
+            "-i",
+            input_file.to_str().unwrap(),
+            "--status",
+            "needs_review",
+            "--keys-only",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "CLI failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert!(
+        lines.contains(&"en\tneeds_review_key"),
+        "Expected `lang<TAB>key` line for en. stdout: {}",
+        stdout
+    );
+    assert!(
+        lines.contains(&"fr\tneeds_review_key"),
+        "Expected `lang<TAB>key` line for fr. stdout: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("=== Summary ==="),
+        "Expected keys-only output without summary block. stdout: {}",
+        stdout
+    );
+    assert!(
+        !lines.contains(&"en\ttranslated_key"),
+        "Expected non-matching en key to be excluded. stdout: {}",
+        stdout
+    );
+    assert!(
+        !lines.contains(&"fr\ttranslated_key"),
+        "Expected non-matching fr key to be excluded. stdout: {}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("Processing resources..."),
+        "Expected keys-only output without preamble lines. stdout: {}",
+        stdout
+    );
+}

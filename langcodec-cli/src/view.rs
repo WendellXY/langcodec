@@ -61,9 +61,10 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
 
 /// Print a view of the resources in a codec.
 pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOptions) {
-    println!("Processing resources...");
-    // Flags are surfaced now and will be applied in follow-up tasks.
-    let _ = (opts.keys_only, opts.json);
+    let keys_only_text = opts.keys_only && !opts.json;
+    if !keys_only_text {
+        println!("Processing resources...");
+    }
     let status_filter = match parse_status_filter(&opts.status) {
         Ok(filter) => filter,
         Err(err) => {
@@ -106,7 +107,9 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
         std::process::exit(1);
     }
 
-    println!("✅ Found {} resource(s)", resources.len());
+    if !keys_only_text {
+        println!("✅ Found {} resource(s)", resources.len());
+    }
 
     let filtered_resources = resources
         .iter()
@@ -123,6 +126,20 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
             (*resource, entries)
         })
         .collect::<Vec<_>>();
+
+    if keys_only_text {
+        let include_lang_prefix = lang_filter.is_none();
+        for (resource, entries) in &filtered_resources {
+            for entry in entries {
+                if include_lang_prefix {
+                    println!("{}\t{}", resource.metadata.language, entry.id);
+                } else {
+                    println!("{}", entry.id);
+                }
+            }
+        }
+        return;
+    }
 
     for (i, (resource, entries)) in filtered_resources.iter().enumerate() {
         println!("\n=== Resource {} ===", i + 1);
