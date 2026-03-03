@@ -395,6 +395,17 @@ fn test_view_command_with_format() {
 }
 
 #[test]
+fn test_view_help_lists_new_filter_flags() {
+    let output = langcodec_cmd().args(["view", "--help"]).output().unwrap();
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--status"));
+    assert!(stdout.contains("--keys-only"));
+    assert!(stdout.contains("--json"));
+}
+
+#[test]
 fn test_debug_command_basic() {
     let temp_dir = TempDir::new().unwrap();
     let input_file = temp_dir.path().join("test.json");

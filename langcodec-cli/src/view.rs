@@ -1,5 +1,12 @@
 use langcodec::Codec;
 
+pub struct ViewOptions {
+    pub full: bool,
+    pub status: Option<String>,
+    pub keys_only: bool,
+    pub json: bool,
+}
+
 /// Truncate a string by Unicode scalar values (chars),
 /// appending ellipsis if content exceeds `max_chars`.
 fn truncate_chars(s: &str, max_chars: usize) -> String {
@@ -13,8 +20,10 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
 }
 
 /// Print a view of the resources in a codec.
-pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
+pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOptions) {
     println!("Processing resources...");
+    // Flags are surfaced now and will be applied in follow-up tasks.
+    let _ = (&opts.status, opts.keys_only, opts.json);
 
     // Use the new high-level methods from the lib crate
     let resources = if let Some(lang) = lang_filter {
@@ -72,7 +81,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
                 }
                 langcodec::types::Translation::Singular(value) => {
                     println!("    Type: Singular");
-                    if full {
+                    if opts.full {
                         println!("    Value: {}", value);
                     } else {
                         let truncated = truncate_chars(value, 50);
@@ -83,7 +92,7 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, full: bool) {
                     println!("    Type: Plural");
                     println!("    Plural ID: {}", plural.id);
                     for (category, value) in &plural.forms {
-                        if full {
+                        if opts.full {
                             println!("      {:?}: {}", category, value);
                         } else {
                             let truncated = truncate_chars(value, 50);

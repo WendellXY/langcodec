@@ -20,7 +20,7 @@ use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::normalize::{NormalizeCliOptions, run_normalize_command};
 use crate::sync::{SyncOptions, run_sync_command};
 use crate::validation::{ValidationContext, validate_context, validate_language_code};
-use crate::view::print_view;
+use crate::view::{ViewOptions, print_view};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 
@@ -166,6 +166,18 @@ enum Commands {
         /// Display full value without truncation (even in terminal)
         #[arg(long)]
         full: bool,
+
+        /// Filter entries by status (e.g. translated, needs_review, missing)
+        #[arg(long)]
+        status: Option<String>,
+
+        /// Print keys only
+        #[arg(long, default_value_t = false)]
+        keys_only: bool,
+
+        /// Output JSON instead of human-readable text
+        #[arg(long, default_value_t = false)]
+        json: bool,
 
         /// Validate plural completeness against CLDR category sets
         #[arg(long, default_value_t = false)]
@@ -515,6 +527,9 @@ fn main() {
             input,
             lang,
             full,
+            status,
+            keys_only,
+            json,
             check_plurals,
         } => {
             // Create validation context
@@ -538,7 +553,14 @@ fn main() {
                 }
             };
 
-            print_view(&codec, &lang, full);
+            let view_options = ViewOptions {
+                full,
+                status,
+                keys_only,
+                json,
+            };
+
+            print_view(&codec, &lang, &view_options);
 
             if check_plurals {
                 match codec.validate_plurals() {
