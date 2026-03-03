@@ -645,6 +645,7 @@ fn main() {
                 no_placeholders,
                 key_style,
                 continue_on_error,
+                strict,
             };
             if let Err(e) = run_normalize_command(opts) {
                 eprintln!("❌ Normalize failed: {}", e);

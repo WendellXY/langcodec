@@ -347,3 +347,54 @@ fn test_normalize_continue_on_error_counts_literal_missing_input_in_summary() {
         "expected coherent summary counts, got: {combined}"
     );
 }
+
+#[test]
+fn test_normalize_strict_requires_language_for_single_language_formats() {
+    let temp_dir = TempDir::new().unwrap();
+    let input = temp_dir.path().join("Localizable.strings");
+    fs::write(&input, "\"hello\" = \"Hello\";\n").unwrap();
+
+    let output = langcodec_cmd()
+        .args(["--strict", "normalize", "-i", input.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(
+        !output.status.success(),
+        "expected strict normalize to fail without language inference"
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("missing language"),
+        "expected strict missing-language error, got: {combined}"
+    );
+}
+
+#[test]
+fn test_normalize_reports_no_matches_for_glob_patterns() {
+    let temp_dir = TempDir::new().unwrap();
+    let missing_glob = temp_dir.path().join("missing").join("*.strings");
+
+    let output = langcodec_cmd()
+        .args(["normalize", "-i", missing_glob.to_str().unwrap()])
+        .output()
+        .unwrap();
+
+    assert!(
+        !output.status.success(),
+        "expected normalize to fail when glob pattern matches no files"
+    );
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("No input files matched the provided patterns"),
+        "expected no-match glob error, got: {combined}"
+    );
+}

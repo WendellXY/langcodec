@@ -1,7 +1,8 @@
 use crate::path_glob;
 use crate::validation::{validate_file_path, validate_output_path};
 use langcodec::{
-    Codec, FormatType, KeyStyle, NormalizeOptions as EngineNormalizeOptions, normalize_codec,
+    Codec, FormatType, KeyStyle, NormalizeOptions as EngineNormalizeOptions, ReadOptions,
+    normalize_codec,
 };
 use std::collections::HashSet;
 use std::path::Path;
@@ -15,6 +16,7 @@ pub struct NormalizeCliOptions {
     pub no_placeholders: bool,
     pub key_style: String,
     pub continue_on_error: bool,
+    pub strict: bool,
 }
 
 fn parse_key_style(input: &str) -> Result<KeyStyle, String> {
@@ -83,19 +85,20 @@ fn run_normalize_for_file(
     check: bool,
     no_placeholders: bool,
     key_style: &KeyStyle,
+    strict: bool,
 ) -> Result<bool, String> {
     validate_file_path(input)?;
 
     let mut codec = Codec::new();
     codec
-        .read_file_by_extension(input, None)
+        .read_file_by_extension_with_options(input, &ReadOptions::new().with_strict(strict))
         .map_err(|e| format!("Failed to read input '{}': {}", input, e))?;
 
     let report = normalize_codec(
         &mut codec,
         &EngineNormalizeOptions {
             normalize_placeholders: !no_placeholders,
-            key_style: key_style.clone(),
+            key_style: *key_style,
         },
     )
     .map_err(|e| e.to_string())?;
@@ -147,6 +150,10 @@ fn run_normalize_for_file(
 pub fn run_normalize_command(opts: NormalizeCliOptions) -> Result<(), String> {
     let expanded = path_glob::expand_input_globs(&opts.inputs)
         .map_err(|e| format!("Failed to expand input patterns: {}", e))?;
+    let expanded: Vec<String> = expanded
+        .into_iter()
+        .filter(|path| !has_glob_meta(path) || Path::new(path).is_file())
+        .collect();
     if expanded.is_empty() {
         return Err("No input files matched the provided patterns".to_string());
     }
@@ -193,6 +200,7 @@ pub fn run_normalize_command(opts: NormalizeCliOptions) -> Result<(), String> {
             opts.check,
             opts.no_placeholders,
             &key_style,
+            opts.strict,
         ) {
             Ok(changed) => {
                 success_count += 1;

@@ -55,7 +55,7 @@ fn normalize_codec_in_place(
                 let transformed = transform_key_style(&entry.id, options.key_style);
                 if let Some(existing) = seen.get(&transformed) {
                     return Err(Error::validation_error(format!(
-                        "key-style collision in resource '{}' (domain '{}'): '{}' and '{}' both normalize to '{}'",
+                        "key-style collision in language '{}' (domain '{}'): '{}' and '{}' both normalize to '{}'",
                         resource.metadata.language,
                         resource.metadata.domain,
                         existing,
@@ -85,20 +85,14 @@ fn normalize_codec_in_place(
             }
         }
 
-        let before_order: Vec<String> = resource
+        let already_sorted = resource
             .entries
-            .iter()
-            .map(|entry| entry.id.clone())
-            .collect();
-        resource
-            .entries
-            .sort_by(|left, right| left.id.cmp(&right.id));
-        let after_order: Vec<String> = resource
-            .entries
-            .iter()
-            .map(|entry| entry.id.clone())
-            .collect();
-        if before_order != after_order {
+            .windows(2)
+            .all(|pair| pair[0].id <= pair[1].id);
+        if !already_sorted {
+            resource
+                .entries
+                .sort_by(|left, right| left.id.cmp(&right.id));
             changed = true;
         }
     }
