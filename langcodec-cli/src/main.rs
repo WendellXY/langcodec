@@ -1,3 +1,4 @@
+mod config;
 mod convert;
 mod debug;
 mod diff;
@@ -8,6 +9,7 @@ mod normalize;
 mod path_glob;
 mod stats;
 mod sync;
+mod translate;
 mod transformers;
 mod validation;
 mod view;
@@ -19,6 +21,7 @@ use crate::edit::{EditSetOptions, run_edit_set_command};
 use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::normalize::{NormalizeCliOptions, run_normalize_command};
 use crate::sync::{SyncOptions, run_sync_command};
+use crate::translate::{TranslateOptions, run_translate_command};
 use crate::validation::{ValidationContext, validate_context, validate_language_code};
 use crate::view::{ViewOptions, print_view, validate_status_filter};
 use clap::{CommandFactory, Parser, Subcommand};
@@ -252,6 +255,53 @@ enum Commands {
         /// Output JSON instead of human-readable text
         #[arg(long)]
         json: bool,
+    },
+
+    /// Translate source entries into a target language using Mentra-backed providers.
+    Translate {
+        /// Source localization file
+        #[arg(short = 's', long)]
+        source: String,
+
+        /// Optional target localization file. If omitted, translates in-place within multi-language files.
+        #[arg(short = 't', long)]
+        target: Option<String>,
+
+        /// Optional output file. Defaults to in-place write to target or source.
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Source language code. Required when the source file contains multiple languages.
+        #[arg(long)]
+        source_lang: Option<String>,
+
+        /// Target language code.
+        #[arg(long)]
+        target_lang: Option<String>,
+
+        /// Filter target entries by status before translating (default: new,stale)
+        #[arg(long)]
+        status: Option<String>,
+
+        /// Mentra provider to use: openai, anthropic, gemini
+        #[arg(long)]
+        provider: Option<String>,
+
+        /// Model identifier to use with Mentra
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Number of concurrent translation workers
+        #[arg(long)]
+        concurrency: Option<usize>,
+
+        /// Optional langcodec.toml path
+        #[arg(long)]
+        config: Option<String>,
+
+        /// Preview the translation run without writing files
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
     },
 
     /// Debug: Read a localization file and output as JSON.
@@ -646,6 +696,62 @@ fn main() {
                 version,
                 strict,
             );
+        }
+        Commands::Translate {
+            source,
+            target,
+            output,
+            source_lang,
+            target_lang,
+            status,
+            provider,
+            model,
+            concurrency,
+            config,
+            dry_run,
+        } => {
+            let mut context = ValidationContext::new().with_input_file(source.clone());
+            if let Some(target_path) = &target
+                && std::path::Path::new(target_path).exists()
+            {
+                context = context.with_input_file(target_path.clone());
+            }
+            if let Some(output_path) = &output {
+                context = context.with_output_file(output_path.clone());
+            } else if let Some(target_path) = &target {
+                context = context.with_output_file(target_path.clone());
+            }
+            if let Some(lang_code) = &source_lang {
+                context = context.with_language_code(lang_code.clone());
+            }
+            if let Err(e) = validate_context(&context) {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+            if let Some(lang_code) = &target_lang
+                && let Err(e) = validate_language_code(lang_code)
+            {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+
+            if let Err(e) = run_translate_command(TranslateOptions {
+                source,
+                target,
+                output,
+                source_lang,
+                target_lang,
+                status,
+                provider,
+                model,
+                concurrency,
+                config,
+                dry_run,
+                strict,
+            }) {
+                eprintln!("❌ Translate failed: {}", e);
+                std::process::exit(1);
+            }
         }
         Commands::Debug {
             input,

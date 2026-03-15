@@ -1,9 +1,9 @@
 # langcodec-cli (Command Line)
 
-Universal CLI for converting, inspecting, merging, and editing localization files.
+Universal CLI for converting, inspecting, merging, editing, and translating localization files.
 
 - Formats: Apple `.strings`, `.xcstrings`, Android `strings.xml`, CSV, TSV
-- Commands: convert, diff, merge, sync, view, stats, debug, edit, normalize
+- Commands: convert, diff, merge, sync, view, stats, debug, edit, normalize, translate
 
 ## Install
 
@@ -86,6 +86,34 @@ langcodec stats -i Localizable.xcstrings --json
 ```
 
 Shows per-language totals, counts by status, and completion percent (excludes DoNotTranslate). Use `--json` for machine-readable output.
+
+### translate
+
+Translate singular source entries into a target language with a Mentra-backed provider.
+
+```sh
+langcodec translate \
+  --source source.xcstrings \
+  --target target.xcstrings \
+  --source-lang en \
+  --target-lang fr \
+  --provider openai \
+  --model gpt-4.1-mini
+```
+
+Behavior:
+
+- defaults to translating target entries with statuses `new,stale`
+- writes generated values as `needs_review`
+- skips plural entries in v1
+- writes in-place by default and supports `--dry-run`
+- supports translate defaults from `langcodec.toml`
+
+Provider/auth notes:
+
+- choose a Mentra provider with `--provider` (`openai|anthropic|gemini`) or `translate.provider` in config
+- set the matching API key in the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY`)
+- set the model with `--model`, `translate.model`, or `MENTRA_MODEL`
 
 ### debug
 
