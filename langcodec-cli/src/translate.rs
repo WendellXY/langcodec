@@ -11,11 +11,15 @@ use mentra::provider::{
 use serde::Deserialize;
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, VecDeque},
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio::{runtime::Builder, sync::Semaphore, task::JoinSet};
+use tokio::{
+    runtime::Builder,
+    sync::{Mutex as AsyncMutex, mpsc},
+    task::JoinSet,
+};
 
 const DEFAULT_STATUSES: [&str; 2] = ["new", "stale"];
 const DEFAULT_CONCURRENCY: usize = 4;
@@ -246,49 +250,59 @@ async fn async_run_translation(
         });
     }
 
-    let semaphore = Arc::new(Semaphore::new(prepared.opts.concurrency));
+    let worker_count = prepared.opts.concurrency.min(prepared.jobs.len()).max(1);
+    let queue = Arc::new(AsyncMutex::new(VecDeque::from(prepared.jobs.clone())));
+    let (tx, mut rx) = mpsc::unbounded_channel::<Result<TranslationResult, String>>();
     let mut join_set = JoinSet::new();
-    for job in prepared.jobs.clone() {
+    for _ in 0..worker_count {
         let backend = Arc::clone(&backend);
-        let permit_pool = Arc::clone(&semaphore);
+        let queue = Arc::clone(&queue);
+        let tx = tx.clone();
         join_set.spawn(async move {
-            let _permit = permit_pool
-                .acquire_owned()
-                .await
-                .map_err(|_| format!("Failed to acquire translation worker for '{}'", job.key))?;
-            let value = backend
-                .translate(BackendRequest {
-                    key: job.key.clone(),
-                    source_lang: job.source_lang.clone(),
-                    target_lang: job.target_lang.clone(),
-                    source_value: job.source_value.clone(),
-                    source_comment: job.source_comment.clone(),
-                })
-                .await?;
-            Ok::<TranslationResult, String>(TranslationResult {
-                key: job.key.clone(),
-                translated_value: value,
-            })
+            loop {
+                let job = {
+                    let mut queue = queue.lock().await;
+                    queue.pop_front()
+                };
+
+                let Some(job) = job else {
+                    break;
+                };
+
+                let result = backend
+                    .translate(BackendRequest {
+                        key: job.key.clone(),
+                        source_lang: job.source_lang.clone(),
+                        target_lang: job.target_lang.clone(),
+                        source_value: job.source_value.clone(),
+                        source_comment: job.source_comment.clone(),
+                    })
+                    .await
+                    .map(|translated_value| TranslationResult {
+                        key: job.key.clone(),
+                        translated_value,
+                    });
+                let _ = tx.send(result);
+            }
+
+            Ok::<(), String>(())
         });
     }
+    drop(tx);
 
     let mut results: HashMap<String, String> = HashMap::new();
     let mut completed = 0usize;
 
-    while let Some(result) = join_set.join_next().await {
+    while let Some(result) = rx.recv().await {
         completed += 1;
         match result {
-            Ok(Ok(item)) => {
+            Ok(item) => {
                 prepared.summary.translated += 1;
                 results.insert(item.key, item.translated_value);
             }
-            Ok(Err(err)) => {
-                prepared.summary.failed += 1;
-                eprintln!("✖ {}", err);
-            }
             Err(err) => {
                 prepared.summary.failed += 1;
-                eprintln!("✖ Translation task failed to join: {}", err);
+                eprintln!("✖ {}", err);
             }
         }
         eprintln!(
@@ -299,6 +313,20 @@ async fn async_run_translation(
             count_skipped(&prepared.summary),
             prepared.summary.failed
         );
+    }
+
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                prepared.summary.failed += 1;
+                eprintln!("✖ Translation worker failed: {}", err);
+            }
+            Err(err) => {
+                prepared.summary.failed += 1;
+                eprintln!("✖ Translation task failed to join: {}", err);
+            }
+        }
     }
 
     print_summary(&prepared.summary);
@@ -332,7 +360,7 @@ async fn async_run_translation(
 
 fn prepare_translation(opts: &TranslateOptions) -> Result<PreparedTranslation, String> {
     let config = load_config(opts.config.as_deref())?;
-    let resolved = resolve_options(opts, config.as_ref())?;
+    let mut resolved = resolve_options(opts, config.as_ref())?;
 
     validate_path_inputs(&resolved)?;
 
@@ -352,12 +380,18 @@ fn prepare_translation(opts: &TranslateOptions) -> Result<PreparedTranslation, S
         .ok()
         .flatten();
 
+    if opts.target.is_none()
+        && output_path == source_path
+        && !is_multi_language_format(&output_format)
+    {
+        return Err(
+            "Omitting --target is only supported for in-place multi-language files; use --target or --output for single-language formats"
+                .to_string(),
+        );
+    }
+
     let source_codec = read_codec(&source_path, resolved.source_lang.clone(), resolved.strict)?;
     let source_resource = select_source_resource(&source_codec, &resolved.source_lang)?;
-
-    if source_resource.language == resolved.target_lang {
-        return Err("Source language and target language must differ".to_string());
-    }
 
     let mut target_codec = if Path::new(&target_path).exists() {
         read_codec(&target_path, output_lang_hint.clone(), resolved.strict)?
@@ -379,12 +413,10 @@ fn prepare_translation(opts: &TranslateOptions) -> Result<PreparedTranslation, S
         &resolved.target_lang,
         output_lang_hint.as_deref(),
     )?;
-    if target_language != resolved.target_lang {
-        return Err(format!(
-            "Target language '{}' does not match resolved output language '{}'",
-            resolved.target_lang, target_language
-        ));
+    if lang_matches(&source_resource.language, &target_language) {
+        return Err("Source language and target language must differ".to_string());
     }
+    resolved.target_lang = target_language;
 
     ensure_target_resource(&mut target_codec, &resolved.target_lang)?;
     propagate_xcstrings_metadata(&mut target_codec, &source_resource.language);
@@ -394,7 +426,7 @@ fn prepare_translation(opts: &TranslateOptions) -> Result<PreparedTranslation, S
         &target_codec,
         &resolved.target_lang,
         &resolved.statuses,
-        target_supports_explicit_status(&target_path, &output_format),
+        target_supports_explicit_status(&target_path),
     )?;
 
     Ok(PreparedTranslation {
@@ -829,14 +861,11 @@ fn is_multi_language_format(format: &FormatType) -> bool {
     matches!(format, FormatType::Xcstrings | FormatType::CSV | FormatType::TSV)
 }
 
-fn target_supports_explicit_status(path: &str, format: &FormatType) -> bool {
-    match format {
-        FormatType::Xcstrings => true,
-        _ => Path::new(path)
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("xcstrings")),
-    }
+fn target_supports_explicit_status(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("xcstrings"))
 }
 
 fn write_back(
@@ -960,29 +989,34 @@ fn format_provider_error(err: ProviderError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{collections::VecDeque, fs, sync::Mutex};
+    use std::{fs, sync::Mutex};
     use tempfile::TempDir;
 
     #[derive(Clone)]
     struct MockBackend {
-        responses: Arc<Mutex<VecDeque<Result<String, String>>>>,
+        responses: Arc<Mutex<HashMap<String, Result<String, String>>>>,
     }
 
     impl MockBackend {
-        fn new(responses: Vec<Result<String, String>>) -> Self {
+        fn new(responses: Vec<(&str, Result<String, String>)>) -> Self {
             Self {
-                responses: Arc::new(Mutex::new(VecDeque::from(responses))),
+                responses: Arc::new(Mutex::new(
+                    responses
+                        .into_iter()
+                        .map(|(key, value)| (key.to_string(), value))
+                        .collect(),
+                )),
             }
         }
     }
 
     #[async_trait]
     impl TranslationBackend for MockBackend {
-        async fn translate(&self, _request: BackendRequest) -> Result<String, String> {
+        async fn translate(&self, request: BackendRequest) -> Result<String, String> {
             self.responses
                 .lock()
                 .unwrap()
-                .pop_front()
+                .remove(&request.key)
                 .unwrap_or_else(|| Err("missing mock response".to_string()))
         }
     }
@@ -1013,8 +1047,14 @@ mod tests {
         fs::write(&source, "\"welcome\" = \"Welcome\";\n\"bye\" = \"Goodbye\";\n").unwrap();
 
         let prepared = prepare_translation(&base_options(&source, Some(&target))).unwrap();
-        let outcome =
-            run_prepared_translation(prepared, Arc::new(MockBackend::new(vec![Ok("Bienvenue".to_string()), Ok("Au revoir".to_string())]))).unwrap();
+        let outcome = run_prepared_translation(
+            prepared,
+            Arc::new(MockBackend::new(vec![
+                ("welcome", Ok("Bienvenue".to_string())),
+                ("bye", Ok("Au revoir".to_string())),
+            ])),
+        )
+        .unwrap();
 
         assert_eq!(outcome.translated, 2);
         let written = fs::read_to_string(&target).unwrap();
@@ -1036,8 +1076,14 @@ mod tests {
 
         let before = fs::read_to_string(&target).unwrap();
         let prepared = prepare_translation(&options).unwrap();
-        let outcome =
-            run_prepared_translation(prepared, Arc::new(MockBackend::new(vec![Ok("Bienvenue".to_string())]))).unwrap();
+        let outcome = run_prepared_translation(
+            prepared,
+            Arc::new(MockBackend::new(vec![(
+                "welcome",
+                Ok("Bienvenue".to_string()),
+            )])),
+        )
+        .unwrap();
         let after = fs::read_to_string(&target).unwrap();
 
         assert_eq!(outcome.translated, 1);
@@ -1058,8 +1104,8 @@ mod tests {
         let err = run_prepared_translation(
             prepared,
             Arc::new(MockBackend::new(vec![
-                Ok("Bienvenue".to_string()),
-                Err("boom".to_string()),
+                ("welcome", Ok("Bienvenue".to_string())),
+                ("bye", Err("boom".to_string())),
             ])),
         )
         .unwrap_err();
@@ -1159,6 +1205,51 @@ status = ["new", "stale"]
 
         let prepared = prepare_translation(&base_options(&source, Some(&target))).unwrap();
         assert_eq!(prepared.summary.skipped_plural, 1);
+        assert_eq!(prepared.summary.queued, 1);
+    }
+
+    #[test]
+    fn rejects_in_place_single_language_translation_without_target() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("en.strings");
+        fs::write(&source, "\"welcome\" = \"Welcome\";\n").unwrap();
+
+        let options = base_options(&source, None);
+        let err = prepare_translation(&options).unwrap_err();
+        assert!(err.contains("Omitting --target is only supported"));
+    }
+
+    #[test]
+    fn canonicalizes_target_language_from_existing_target_resource() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("translations.csv");
+        let target = temp_dir.path().join("target.csv");
+        fs::write(&source, "key,en\nwelcome,Welcome\n").unwrap();
+        fs::write(&target, "key,fr-CA\nwelcome,\n").unwrap();
+
+        let mut options = base_options(&source, Some(&target));
+        options.target_lang = Some("fr".to_string());
+        options.source_lang = Some("en".to_string());
+
+        let prepared = prepare_translation(&options).unwrap();
+        assert_eq!(prepared.opts.target_lang, "fr-CA");
+        assert_eq!(prepared.summary.queued, 1);
+    }
+
+    #[test]
+    fn infers_status_from_target_input_format_not_output_format() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("en.strings");
+        let target = temp_dir.path().join("fr.strings");
+        let output = temp_dir.path().join("translated.xcstrings");
+
+        fs::write(&source, "\"welcome\" = \"Welcome\";\n").unwrap();
+        fs::write(&target, "\"welcome\" = \"\";\n").unwrap();
+
+        let mut options = base_options(&source, Some(&target));
+        options.output = Some(output.to_string_lossy().to_string());
+
+        let prepared = prepare_translation(&options).unwrap();
         assert_eq!(prepared.summary.queued, 1);
     }
 
