@@ -3,7 +3,7 @@
 Universal localization toolkit: library + CLI for Apple/Android/CSV/TSV.
 
 - Library crate (`langcodec`): parse, write, convert, merge with a unified model
-- CLI crate (`langcodec-cli`): convert, diff, merge, sync, view, stats, debug, edit, normalize
+- CLI crate (`langcodec-cli`): convert, diff, merge, sync, edit, normalize, view, stats, debug, completions
 
 ---
 
@@ -25,7 +25,7 @@ This is a `0.9.1` release available on [crates.io](https://crates.io/crates/lang
 - Parse, write, convert, merge: `.strings`, `.xcstrings`, `strings.xml`, CSV, TSV
 - Unified `Resource` model (`Translation::Singular|Plural`)
 - Plurals: `.xcstrings` and Android `<plurals>` supported
-- CLI helpers: convert, merge, view, stats (JSON or human-readable)
+- CLI helpers: convert, diff, merge, sync, edit, normalize, view, stats, debug, completions
 
 ---
 
@@ -91,8 +91,8 @@ This is a `0.9.1` release available on [crates.io](https://crates.io/crates/lang
 #### Notes
 
 - For CSV/TSV single-language files, the language code (`--lang`) may be required.
-- All commands support Apple `.strings`, `.xcstrings`, Android `strings.xml`, CSV, and TSV.
-- The convert command also supports custom JSON/YAML input formats.
+- All file-processing commands support Apple `.strings`, `.xcstrings`, Android `strings.xml`, CSV, and TSV.
+- The convert command also supports custom JSON/YAML and `.langcodec` input formats.
 - The CLI will error if you try to merge files of different formats.
 - Edit supports multiple inputs and glob patterns. When multiple inputs are provided, edits are applied in-place and `--output` is not allowed.
 - Normalize supports `.strings`, Android `strings.xml`, `.csv`, `.tsv`, and `.xcstrings`.

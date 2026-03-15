@@ -74,8 +74,11 @@ Binary: `"$REPO/target/release/langcodec"`
 
 - `convert`: Convert localization files between formats (auto-detect by extension)
 - `edit set`: Add/update/remove entries in-place (or to `--output`)
-- `view`: Pretty-print entries, filter by `--lang`, optional `--check_plurals`
+- `diff`: Compare two localization files and report added/removed/changed keys
+- `sync`: Sync existing entries from a source file into a target file
+- `view`: Pretty-print entries, filter by `--lang`, optional `--check-plurals`
 - `merge`: Merge multiple inputs to one output with conflict strategy
+- `normalize`: Normalize files and optionally fail on drift with `--check`
 - `stats`: Coverage and per-status counts (text or `--json`)
 - `debug`: Read file and emit JSON (to stdout or `--output`)
 - `completions`: Generate shell completion scripts
@@ -123,9 +126,9 @@ Custom inputs (one-way into internal Resources via CLI):
 "$REPO/target/release/langcodec" convert \
   --input "/abs/path/translations.json" \
   --output "/abs/path/Localizable.xcstrings" \
-  --input_format json-language-map \
-  --output_format xcstrings \
-  --source_language en \
+  --input-format json-language-map \
+  --output-format xcstrings \
+  --source-language en \
   --version 1.0
 ```
 
@@ -157,7 +160,7 @@ Custom inputs (one-way into internal Resources via CLI):
   --lang en \
   --key welcome_message \
   --value "Hello" \
-  --dry_run
+  --dry-run
 ```
 
 - View entries (full values) and check plurals:
@@ -167,7 +170,7 @@ Custom inputs (one-way into internal Resources via CLI):
   --input "/abs/path/Localizable.xcstrings" \
   --lang en \
   --full \
-  --check_plurals
+  --check-plurals
 ```
 
 - Merge multiple files (quote globs to avoid shell-side expansion):
@@ -178,7 +181,7 @@ Custom inputs (one-way into internal Resources via CLI):
   --output "/abs/path/merged.xcstrings" \
   --strategy last \
   --lang en \
-  --source_language en \
+  --source-language en \
   --version 1.0
 ```
 
@@ -204,12 +207,12 @@ Custom inputs (one-way into internal Resources via CLI):
 
 - `0`: success
 - `1`: validation or runtime failure (e.g., invalid inputs, unsupported format)
-- `2`: plural validation failed (when `view --check_plurals` is used)
+- `2`: plural validation failed (when `view --check-plurals` is used)
 
 ## Behavior notes for agents
 
 - All commands are non-interactive. Always pass explicit absolute paths.
-- Input/output formats are inferred from file extensions unless `--input_format` / `--output_format` is provided.
+- Input/output formats are inferred from file extensions unless `--input-format` / `--output-format` is provided.
 - For single-language formats, pass `--lang` when required (e.g., ambiguous inputs).
 - Quote glob patterns provided to `merge --inputs` to avoid slow shell-side expansion.
 
@@ -230,10 +233,10 @@ Builder pattern and direct `Codec` manipulation are also available; see `langcod
 
 ## Extension points (for contributors/agents)
 
-- Add/modify formats: edit files under `langcodec/src/formats/` and wire into `formats/mod.rs`
+- Add/modify formats: edit files under `langcodec/src/formats/` and wire into `langcodec/src/formats.rs`
 - Implement parsing/writing: implement `Parser` in `langcodec/src/traits.rs`
 - Add CLI subcommands/options: edit `langcodec-cli/src/main.rs` and corresponding modules
-- Support new custom one-way formats: add a transformer under `langcodec-cli/src/transformers/` and register in `transformers/mod.rs` and `formats.rs`
+- Support new custom one-way formats: add a transformer under `langcodec-cli/src/transformers/` and register in `langcodec-cli/src/transformers.rs` and `langcodec-cli/src/formats.rs`
 
 ## Reproducible CI example
 
