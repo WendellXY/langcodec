@@ -61,6 +61,7 @@ This is a `0.9.1` release available on [crates.io](https://crates.io/crates/lang
 - Edit (add/update/remove): `langcodec edit set -i 'locales/**/*.strings' -k welcome -v "Hello"` (use `--dry-run` to preview)
 - Normalize and detect drift: `langcodec normalize -i 'locales/**/*.{strings,xml,csv,tsv,xcstrings}' --check`
 - Sync existing keys only: `langcodec sync --source A.xcstrings --target B.xcstrings --match-lang en`
+- Translate drafts with Mentra: `langcodec translate --source source.xcstrings --target target.xcstrings --source-lang en --target-lang fr --provider openai --model gpt-4.1-mini`
 - View: `langcodec view -i strings.xml --full`
 - View filtered untranslated/review-needed keys: `langcodec view -i Localizable.xcstrings --status new,needs_review --keys-only`
 - View filtered results as JSON: `langcodec view -i Localizable.xcstrings --status new --lang fr --json`
@@ -102,6 +103,7 @@ This is a `0.9.1` release available on [crates.io](https://crates.io/crates/lang
 - Android path inference: `values/strings.xml` (no qualifier) defaults to English (`en`).
 - When converting to `.xcstrings`, if `source_language` or `version` metadata is missing, the CLI defaults them to `en` and `1.0` respectively (overridable via flags).
 - Strict status filtering note: `langcodec --strict view --status ...` requires explicit status metadata (supported in v1: `.xcstrings`).
+- Translate defaults to `new,stale`, writes `needs_review`, skips plurals, and supports `langcodec.toml` for translate-specific defaults.
 
 #### Plurals
 

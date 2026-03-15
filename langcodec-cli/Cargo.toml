@@ -18,8 +18,13 @@ clap_complete = "4"
 unicode-width = "0.2.1"
 crossterm = "0.29.0"
 atty = "0.2.14"
+async-trait = "0.1.89"
+mentra = "0.2.0"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+tokio = { version = "1.50.0", features = ["rt-multi-thread", "sync"] }
+toml = "0.8"
 unic-langid = "0.9.6"
 glob = "0.3"
 rayon = "1.10"
