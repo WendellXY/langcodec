@@ -8,6 +8,10 @@ This document helps automation agents quickly understand, build, test, and opera
 - **CLI crate**: `langcodec-cli/` — end-user command-line tool built on the library
 - **Binary name**: `langcodec`
 
+## Philosophy
+
+Agents must reason from first principles. Do not rely on conventions, copied patterns, or assumptions without verification. Every task should begin by identifying the fundamental facts, constraints, and invariants of the system (e.g., API contracts, type rules, data models, performance limits). Decompose problems until they reach irreducible components, then derive solutions logically from those facts. Prefer the simplest design that satisfies all constraints, and explicitly verify assumptions using available evidence (code, documentation, tests, or tools). Avoid guesswork, pattern imitation, or speculative implementations. Solutions should be the result of facts → constraints → reasoning → implementation.
+
 ## Repository layout (key paths)
 
 - `langcodec/src/lib.rs`: library entry; re-exports `Codec`, `convert_auto`, `FormatType`, `types::*`
