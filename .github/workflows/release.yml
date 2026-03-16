@@ -23,11 +23,11 @@ jobs:
             target: x86_64-unknown-linux-gnu
             archive_ext: tar.gz
             binary_name: langcodec
-          - os: macos-13
+          - os: macos-15
             target: x86_64-apple-darwin
             archive_ext: tar.gz
             binary_name: langcodec
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             archive_ext: tar.gz
             binary_name: langcodec
