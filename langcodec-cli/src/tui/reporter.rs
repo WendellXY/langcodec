@@ -2,7 +2,6 @@ use std::{
     io::{self, IsTerminal, Write},
     sync::mpsc::{self, Sender},
     thread::{self, JoinHandle},
-    time::Duration,
 };
 
 use crate::{
@@ -126,7 +125,6 @@ fn map_tone(tone: DashboardLogTone) -> ui::Tone {
 
 pub(super) enum DashboardMessage {
     Event(DashboardEvent),
-    Shutdown,
 }
 
 pub struct TuiReporter {
@@ -154,8 +152,6 @@ impl RunReporter for TuiReporter {
         let _ = self
             .sender
             .send(DashboardMessage::Event(DashboardEvent::Completed));
-        thread::sleep(Duration::from_millis(160));
-        let _ = self.sender.send(DashboardMessage::Shutdown);
         if let Some(handle) = self.join_handle.take() {
             match handle.join() {
                 Ok(result) => result,

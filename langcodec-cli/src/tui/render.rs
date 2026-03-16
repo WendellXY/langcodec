@@ -42,9 +42,38 @@ fn focused_block(title: &str, focused: bool) -> Block<'static> {
 fn key_hints(completed: bool) -> Line<'static> {
     let base = "Up/Down move  Tab focus  PgUp/PgDn scroll  g/G jump  ? help";
     if completed {
-        Line::from(format!("{base}  q close"))
+        Line::from(format!("Press q to close  {base}"))
     } else {
-        Line::from(format!("{base}  Ctrl-C interrupt"))
+        Line::from(format!("{base}  q closes when finished  Ctrl-C interrupt"))
+    }
+}
+
+fn completion_hint_line(completed: bool) -> Line<'static> {
+    if completed {
+        Line::from(vec![
+            Span::styled(
+                "READY TO CLOSE ",
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "Press q to close this dashboard.",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(
+                "RUNNING ",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("The dashboard stays open until completion."),
+        ])
     }
 }
 
@@ -55,7 +84,7 @@ pub fn render_dashboard(frame: &mut Frame<'_>, state: &DashboardState, show_help
         .constraints([
             Constraint::Length(7),
             Constraint::Min(12),
-            Constraint::Length(3),
+            Constraint::Length(5),
         ])
         .split(area);
 
@@ -247,6 +276,7 @@ fn render_footer(frame: &mut Frame<'_>, area: Rect, state: &DashboardState) {
                 .join("  "),
         ));
     }
+    lines.push(completion_hint_line(state.completed));
     lines.push(key_hints(state.completed));
     frame.render_widget(
         Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title("Summary")),
@@ -260,7 +290,7 @@ fn render_help(frame: &mut Frame<'_>, area: Rect, completed: bool) {
     let quit_line = if completed {
         "q: close the dashboard"
     } else {
-        "q: ignored while the run is still active"
+        "q: available after the run finishes"
     };
     let lines = vec![
         Line::from("Up/Down: move selected item"),
@@ -307,7 +337,7 @@ mod tests {
         DashboardState, SummaryRow,
     };
 
-    use super::render_dashboard;
+    use super::{completion_hint_line, key_hints, render_dashboard};
 
     fn render_to_string(state: &DashboardState) -> String {
         let backend = TestBackend::new(100, 40);
@@ -365,6 +395,43 @@ mod tests {
         let rendered = render_to_string(&state);
         assert!(rendered.contains("failed=1"));
         assert!(rendered.contains("network error"));
+        assert!(rendered.contains("READY TO CLOSE"));
+        assert!(rendered.contains("Press q to close this dashboard"));
+    }
+
+    #[test]
+    fn key_hints_explain_when_q_is_available() {
+        let running = key_hints(false);
+        let completed = key_hints(true);
+        assert!(
+            running
+                .spans
+                .iter()
+                .any(|span| span.content.contains("q closes when finished"))
+        );
+        assert!(
+            completed
+                .spans
+                .iter()
+                .any(|span| span.content.contains("Press q to close"))
+        );
+    }
+
+    #[test]
+    fn completion_hint_is_explicit_when_finished() {
+        let completed = completion_hint_line(true);
+        assert!(
+            completed
+                .spans
+                .iter()
+                .any(|span| span.content.contains("READY TO CLOSE"))
+        );
+        assert!(
+            completed
+                .spans
+                .iter()
+                .any(|span| span.content.contains("Press q to close this dashboard"))
+        );
     }
 
     #[test]

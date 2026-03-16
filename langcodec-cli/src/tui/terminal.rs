@@ -122,10 +122,6 @@ pub fn run_dashboard(
         loop {
             match rx.try_recv() {
                 Ok(DashboardMessage::Event(event)) => state.apply(event),
-                Ok(DashboardMessage::Shutdown) => {
-                    should_close = true;
-                    break;
-                }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     should_close = true;
