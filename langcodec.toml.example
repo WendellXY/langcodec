@@ -1,0 +1,28 @@
+# Example langcodec.toml
+#
+# langcodec looks for this file in the current directory and then walks up
+# parent directories until it finds one. You can also pass an explicit path:
+#   langcodec translate --config /absolute/path/to/langcodec.toml
+#
+# Today, config file support is used by the `translate` command.
+
+[translate]
+# Required unless you pass --provider.
+# Supported values: openai, anthropic, gemini
+provider = "openai"
+
+# Required unless you pass --model or set MENTRA_MODEL.
+model = "gpt-4.1-mini"
+
+# Optional, but useful when the source contains multiple languages.
+source_lang = "en"
+
+# Required unless you pass --target-lang.
+target_lang = "fr"
+
+# Optional. Defaults to 4.
+concurrency = 4
+
+# Optional. Defaults to ["new", "stale"].
+# Only target entries with one of these statuses will be translated.
+status = ["new", "stale"]

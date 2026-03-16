@@ -105,6 +105,23 @@ This is a `0.9.1` release available on [crates.io](https://crates.io/crates/lang
 - Strict status filtering note: `langcodec --strict view --status ...` requires explicit status metadata (supported in v1: `.xcstrings`).
 - Translate defaults to `new,stale`, writes `needs_review`, skips plurals, and supports `langcodec.toml` for translate-specific defaults.
 
+#### Example `langcodec.toml`
+
+Save this as `langcodec.toml` in your project root, or point to it with `--config`.
+The CLI discovers `langcodec.toml` by searching the current directory and then parent directories.
+
+```toml
+[translate]
+provider = "openai"
+model = "gpt-4.1-mini"
+source_lang = "en"
+target_lang = "fr"
+concurrency = 4
+status = ["new", "stale"]
+```
+
+There is also a commented example file at `langcodec.toml.example` in the repository root.
+
 #### Plurals
 
 - Android `<plurals>` are fully supported. They convert to the internal `Translation::Plural` representation and back to `<plurals>` with quantities `zero/one/two/few/many/other`.

@@ -109,6 +109,24 @@ Behavior:
 - writes in-place by default and supports `--dry-run`
 - supports translate defaults from `langcodec.toml`
 
+Example `langcodec.toml`:
+
+```toml
+[translate]
+provider = "openai"
+model = "gpt-4.1-mini"
+source_lang = "en"
+target_lang = "fr"
+concurrency = 4
+status = ["new", "stale"]
+```
+
+Config notes:
+
+- save the file as `langcodec.toml` in your project root, or pass `--config /absolute/path/to/langcodec.toml`
+- config discovery walks upward from the current directory until it finds `langcodec.toml`
+- CLI flags still override config values
+
 Provider/auth notes:
 
 - choose a Mentra provider with `--provider` (`openai|anthropic|gemini`) or `translate.provider` in config
