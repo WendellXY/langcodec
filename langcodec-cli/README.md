@@ -99,6 +99,7 @@ langcodec translate \
 - config defaults from `langcodec.toml`
 - multiple target languages for multi-language outputs
 - live progress updates
+- `--ui auto|plain|tui` for dashboard or plain terminal output
 - preflight validation before model requests
 - translation result summaries at the end
 
@@ -120,21 +121,26 @@ langcodec annotate \
 - preserving manual comments
 - config defaults from `langcodec.toml`
 - source shortlisting before agent lookup
+- `--ui auto|plain|tui` for dashboard or plain terminal output
 - `--dry-run` and `--check` for CI-friendly runs
 
 ## Example Config
 
 ```toml
-[ai]
-provider = "openai"
-model = "gpt-4.1-mini"
+[openai]
+model = "gpt-5.4"
 
 [translate]
-source = "locales/Localizable.xcstrings"
-source_lang = "en"
-target_lang = "fr,de"
-status = ["new", "stale"]
 concurrency = 4
+
+[translate.input]
+source = "locales/Localizable.xcstrings"
+lang = "en"
+status = ["new", "stale"]
+
+[translate.output]
+lang = ["fr", "de"]
+status = "translated"
 
 [annotate]
 input = "locales/Localizable.xcstrings"
@@ -149,7 +155,7 @@ langcodec translate
 langcodec annotate
 ```
 
-Legacy configs using `translate.provider` and `translate.model` still work. For larger repos, `translate.sources = [...]` can fan out parallel runs from config.
+When exactly one provider section is configured, `translate` and `annotate` use it automatically. If you configure multiple providers, choose one with `--provider` or `translate.provider`. For larger repos, `translate.input.sources = [...]` can fan out parallel runs from config.
 
 For annotate fan-out runs, use `annotate.inputs = [...]` and omit `annotate.output` so each catalog is updated in place.
 

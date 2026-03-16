@@ -127,16 +127,20 @@ langcodec sync --source source.xcstrings --target target.xcstrings --match-lang 
 Create a `langcodec.toml` in your project:
 
 ```toml
-[ai]
-provider = "openai"
-model = "gpt-4.1-mini"
+[openai]
+model = "gpt-5.4"
 
 [translate]
-source = "locales/Localizable.xcstrings"
-source_lang = "en"
-target_lang = "fr,de"
-status = ["new", "stale"]
 concurrency = 4
+
+[translate.input]
+source = "locales/Localizable.xcstrings"
+lang = "en"
+status = ["new", "stale"]
+
+[translate.output]
+lang = ["fr", "de"]
+status = "translated"
 
 [annotate]
 input = "locales/Localizable.xcstrings"
@@ -151,7 +155,7 @@ langcodec translate
 langcodec annotate
 ```
 
-`translate` still accepts legacy `translate.provider` and `translate.model` if you have older config files. For larger projects, `translate.sources = [...]` can fan out parallel runs from config.
+When exactly one provider section is configured, `translate` and `annotate` use it automatically. If you configure multiple providers, choose one with `--provider` or `translate.provider`. For larger projects, `translate.input.sources = [...]` can fan out parallel runs from config.
 
 `annotate` also supports `annotate.inputs = [...]` for config-driven in-place runs across multiple xcstrings files.
 

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::config::CliConfig;
 use mentra::{
     BuiltinProvider,
     provider::{self, Provider},
@@ -58,17 +59,27 @@ pub(crate) struct ProviderSetup {
 
 pub(crate) fn resolve_provider(
     cli: Option<&str>,
-    shared_cfg: Option<&str>,
-    legacy_cfg: Option<&str>,
+    config: Option<&CliConfig>,
+    translate_cfg: Option<&str>,
 ) -> Result<ProviderKind, String> {
     if let Some(value) = cli {
         return ProviderKind::parse(value);
     }
-    if let Some(value) = shared_cfg {
+    if let Some(value) = translate_cfg {
         return ProviderKind::parse(value);
     }
-    if let Some(value) = legacy_cfg {
-        return ProviderKind::parse(value);
+    if let Some(config) = config {
+        let configured = config.configured_provider_names();
+        match configured.len() {
+            1 => return ProviderKind::parse(configured[0]),
+            0 => {}
+            _ => {
+                return Err(
+                    "Multiple provider sections are configured; specify --provider or set translate.provider in langcodec.toml"
+                        .to_string(),
+                );
+            }
+        }
     }
 
     let mut available = Vec::new();
@@ -85,11 +96,11 @@ pub(crate) fn resolve_provider(
     match available.len() {
         1 => Ok(available.remove(0)),
         0 => Err(
-            "--provider is required (or set ai.provider in langcodec.toml, or use legacy translate.provider, or configure exactly one provider API key)"
+            "--provider is required (or configure exactly one provider section like [openai] in langcodec.toml, set translate.provider, or configure exactly one provider API key)"
                 .to_string(),
         ),
         _ => Err(
-            "Multiple provider API keys are configured; specify --provider or set ai.provider in langcodec.toml"
+            "Multiple provider API keys are configured; specify --provider or configure a single provider section in langcodec.toml"
                 .to_string(),
         ),
     }
@@ -97,16 +108,24 @@ pub(crate) fn resolve_provider(
 
 pub(crate) fn resolve_model(
     cli: Option<&str>,
-    shared_cfg: Option<&str>,
-    legacy_cfg: Option<&str>,
+    config: Option<&CliConfig>,
+    provider: &ProviderKind,
+    translate_cfg: Option<&str>,
 ) -> Result<String, String> {
     cli.map(ToOwned::to_owned)
-        .or_else(|| shared_cfg.map(ToOwned::to_owned))
-        .or_else(|| legacy_cfg.map(ToOwned::to_owned))
+        .or_else(|| {
+            config.and_then(|cfg| {
+                cfg.provider_model(provider.display_name())
+                    .map(ToOwned::to_owned)
+            })
+        })
+        .or_else(|| translate_cfg.map(ToOwned::to_owned))
         .or_else(|| std::env::var("MENTRA_MODEL").ok())
         .ok_or_else(|| {
-            "--model is required (or set ai.model in langcodec.toml, or use legacy translate.model, or set MENTRA_MODEL)"
-                .to_string()
+            format!(
+                "--model is required (or set [{}].model in langcodec.toml, set translate.model, or set MENTRA_MODEL)",
+                provider.display_name()
+            )
         })
 }
 
@@ -133,4 +152,58 @@ pub(crate) fn build_provider(kind: &ProviderKind) -> Result<ProviderSetup, Strin
         provider_kind: kind.clone(),
         provider,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_provider_uses_single_configured_provider_section() {
+        let config: CliConfig = toml::from_str(
+            r#"
+[openai]
+model = "gpt-5.4"
+"#,
+        )
+        .expect("parse config");
+
+        let provider = resolve_provider(None, Some(&config), None).expect("resolve provider");
+        assert_eq!(provider, ProviderKind::OpenAI);
+    }
+
+    #[test]
+    fn resolve_provider_rejects_multiple_configured_provider_sections() {
+        let config: CliConfig = toml::from_str(
+            r#"
+[openai]
+model = "gpt-5.4"
+
+[anthropic]
+model = "claude-sonnet"
+"#,
+        )
+        .expect("parse config");
+
+        let err = resolve_provider(None, Some(&config), None).unwrap_err();
+        assert!(err.contains("Multiple provider sections are configured"));
+    }
+
+    #[test]
+    fn resolve_model_prefers_selected_provider_section() {
+        let config: CliConfig = toml::from_str(
+            r#"
+[openai]
+model = "gpt-5.4"
+
+[anthropic]
+model = "claude-sonnet"
+"#,
+        )
+        .expect("parse config");
+
+        let model = resolve_model(None, Some(&config), &ProviderKind::Anthropic, None)
+            .expect("resolve model");
+        assert_eq!(model, "claude-sonnet");
+    }
 }

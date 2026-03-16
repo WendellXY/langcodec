@@ -2,6 +2,11 @@ use crate::validation::{validate_language_code, validate_output_path};
 use crate::{
     ai::{ProviderKind, build_provider, resolve_model, resolve_provider},
     config::{LoadedConfig, load_config, resolve_config_relative_path},
+    tui::{
+        DashboardEvent, DashboardInit, DashboardItem, DashboardItemStatus, DashboardKind,
+        DashboardLogTone, PlainReporter, ResolvedUiMode, RunReporter, SummaryRow, TuiReporter,
+        UiMode, resolve_ui_mode_for_current_terminal,
+    },
 };
 use async_trait::async_trait;
 use langcodec::{
@@ -18,7 +23,6 @@ use serde::Deserialize;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap, VecDeque},
-    io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
     sync::Arc,
     thread,
@@ -47,6 +51,7 @@ pub struct TranslateOptions {
     pub config: Option<String>,
     pub dry_run: bool,
     pub strict: bool,
+    pub ui_mode: UiMode,
 }
 
 #[derive(Debug, Clone)]
@@ -57,11 +62,13 @@ struct ResolvedOptions {
     source_lang: Option<String>,
     target_langs: Vec<String>,
     statuses: Vec<EntryStatus>,
+    output_status: EntryStatus,
     provider: ProviderKind,
     model: String,
     concurrency: usize,
     dry_run: bool,
     strict: bool,
+    ui_mode: ResolvedUiMode,
 }
 
 #[derive(Debug, Clone)]
@@ -90,47 +97,6 @@ struct TranslationSummary {
     skipped_status: usize,
     skipped_empty_source: usize,
     failed: usize,
-}
-
-struct ProgressRenderer {
-    interactive: bool,
-    last_width: usize,
-}
-
-impl ProgressRenderer {
-    fn new() -> Self {
-        Self {
-            interactive: io::stderr().is_terminal(),
-            last_width: 0,
-        }
-    }
-
-    fn update(&mut self, completed: usize, queued: usize, summary: &TranslationSummary) {
-        let line = format!(
-            "Progress: {}/{} translated={} skipped={} failed={}",
-            completed,
-            queued,
-            summary.translated,
-            count_skipped(summary),
-            summary.failed
-        );
-
-        if self.interactive {
-            let padding = self.last_width.saturating_sub(line.len());
-            eprint!("\r{}{}", line, " ".repeat(padding));
-            let _ = io::stderr().flush();
-            self.last_width = line.len();
-        } else {
-            eprintln!("{}", line);
-        }
-    }
-
-    fn finish(&mut self) {
-        if self.interactive && self.last_width > 0 {
-            eprintln!();
-            self.last_width = 0;
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -178,6 +144,16 @@ struct BackendRequest {
     source_comment: Option<String>,
 }
 
+enum TranslationWorkerUpdate {
+    Started {
+        id: String,
+    },
+    Finished {
+        id: String,
+        result: Result<TranslationResult, String>,
+    },
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct ModelTranslationPayload {
     translation: String,
@@ -215,6 +191,9 @@ impl TranslationBackend for MentraBackend {
 
 pub fn run_translate_command(opts: TranslateOptions) -> Result<TranslateOutcome, String> {
     let runs = expand_translate_invocations(&opts)?;
+    if runs.len() > 1 && matches!(opts.ui_mode, UiMode::Tui) {
+        return Err("TUI mode supports only one translate run at a time".to_string());
+    }
     if runs.len() == 1 {
         return run_single_translate_command(runs.into_iter().next().unwrap());
     }
@@ -225,7 +204,8 @@ pub fn run_translate_command(opts: TranslateOptions) -> Result<TranslateOutcome,
     );
 
     let mut handles = Vec::new();
-    for run in runs {
+    for mut run in runs {
+        run.ui_mode = UiMode::Plain;
         handles.push(thread::spawn(move || run_single_translate_command(run)));
     }
 
@@ -290,16 +270,19 @@ fn expand_translate_invocations(opts: &TranslateOptions) -> Result<Vec<Translate
         .map(Path::to_path_buf);
 
     if cfg
-        .and_then(|item| item.source.as_ref())
-        .is_some_and(|_| cfg.and_then(|item| item.sources.as_ref()).is_some())
+        .and_then(|item| item.resolved_source())
+        .is_some_and(|_| cfg.and_then(|item| item.resolved_sources()).is_some())
     {
-        return Err("Config translate.source and translate.sources cannot both be set".to_string());
+        return Err(
+            "Config translate.input.source/translate.source and translate.input.sources/translate.sources cannot both be set"
+                .to_string(),
+        );
     }
 
     let sources = resolve_config_sources(opts, cfg, config_dir.as_deref())?;
     if sources.is_empty() {
         return Err(
-            "--source is required unless translate.source or translate.sources is set in langcodec.toml"
+            "--source is required unless translate.input.source/translate.source or translate.input.sources/translate.sources is set in langcodec.toml"
                 .to_string(),
         );
     }
@@ -307,19 +290,19 @@ fn expand_translate_invocations(opts: &TranslateOptions) -> Result<Vec<Translate
     let target = if let Some(path) = &opts.target {
         Some(path.clone())
     } else {
-        cfg.and_then(|item| item.target.as_ref())
+        cfg.and_then(|item| item.resolved_target())
             .map(|path| resolve_config_relative_path(config_dir.as_deref(), path))
     };
     let output = if let Some(path) = &opts.output {
         Some(path.clone())
     } else {
-        cfg.and_then(|item| item.output.as_ref())
+        cfg.and_then(|item| item.resolved_output_path())
             .map(|path| resolve_config_relative_path(config_dir.as_deref(), path))
     };
 
     if sources.len() > 1 && (target.is_some() || output.is_some()) {
         return Err(
-            "translate.sources cannot be combined with translate.target/translate.output or CLI --target/--output; use in-place multi-language sources or invoke files individually"
+            "translate.input.sources/translate.sources cannot be combined with translate.output.target/translate.target, translate.output.path/translate.output, or CLI --target/--output; use in-place multi-language sources or invoke files individually"
                 .to_string(),
         );
     }
@@ -333,7 +316,7 @@ fn expand_translate_invocations(opts: &TranslateOptions) -> Result<Vec<Translate
             source_lang: opts
                 .source_lang
                 .clone()
-                .or_else(|| cfg.and_then(|item| item.source_lang.clone())),
+                .or_else(|| cfg.and_then(|item| item.resolved_source_lang().map(str::to_string))),
             target_langs: if opts.target_langs.is_empty() {
                 Vec::new()
             } else {
@@ -346,6 +329,7 @@ fn expand_translate_invocations(opts: &TranslateOptions) -> Result<Vec<Translate
             config: config_path.clone(),
             dry_run: opts.dry_run,
             strict: opts.strict,
+            ui_mode: opts.ui_mode,
         })
         .collect())
 }
@@ -359,11 +343,11 @@ fn resolve_config_sources(
         return Ok(vec![source.clone()]);
     }
 
-    if let Some(source) = cfg.and_then(|item| item.source.as_ref()) {
+    if let Some(source) = cfg.and_then(|item| item.resolved_source()) {
         return Ok(vec![resolve_config_relative_path(config_dir, source)]);
     }
 
-    if let Some(sources) = cfg.and_then(|item| item.sources.as_ref()) {
+    if let Some(sources) = cfg.and_then(|item| item.resolved_sources()) {
         let resolved = sources
             .iter()
             .map(|source| resolve_config_relative_path(config_dir, source))
@@ -390,7 +374,9 @@ async fn async_run_translation(
     backend: Arc<dyn TranslationBackend>,
 ) -> Result<TranslateOutcome, String> {
     validate_translation_preflight(&prepared)?;
-    print_preamble(&prepared);
+    if matches!(prepared.opts.ui_mode, ResolvedUiMode::Plain) {
+        print_preamble(&prepared);
+    }
 
     if prepared.jobs.is_empty() {
         print_summary(&prepared.summary);
@@ -414,8 +400,17 @@ async fn async_run_translation(
     }
 
     let worker_count = prepared.opts.concurrency.min(prepared.jobs.len()).max(1);
+    let mut reporter = create_translate_reporter(&prepared)?;
+    reporter.emit(DashboardEvent::Log {
+        tone: DashboardLogTone::Info,
+        message: "Preflight validation passed".to_string(),
+    });
+    reporter.emit(DashboardEvent::Log {
+        tone: DashboardLogTone::Info,
+        message: format!("Starting {} worker(s)", worker_count),
+    });
     let queue = Arc::new(AsyncMutex::new(VecDeque::from(prepared.jobs.clone())));
-    let (tx, mut rx) = mpsc::unbounded_channel::<Result<TranslationResult, String>>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<TranslationWorkerUpdate>();
     let mut join_set = JoinSet::new();
     for _ in 0..worker_count {
         let backend = Arc::clone(&backend);
@@ -432,6 +427,8 @@ async fn async_run_translation(
                     break;
                 };
 
+                let id = translation_job_id(&job);
+                let _ = tx.send(TranslationWorkerUpdate::Started { id: id.clone() });
                 let result = backend
                     .translate(BackendRequest {
                         key: job.key.clone(),
@@ -446,7 +443,7 @@ async fn async_run_translation(
                         target_lang: job.target_lang.clone(),
                         translated_value,
                     });
-                let _ = tx.send(result);
+                let _ = tx.send(TranslationWorkerUpdate::Finished { id, result });
             }
 
             Ok::<(), String>(())
@@ -455,22 +452,59 @@ async fn async_run_translation(
     drop(tx);
 
     let mut results: HashMap<(String, String), String> = HashMap::new();
-    let mut completed = 0usize;
-    let mut progress = ProgressRenderer::new();
 
-    while let Some(result) = rx.recv().await {
-        completed += 1;
-        match result {
-            Ok(item) => {
-                prepared.summary.translated += 1;
-                results.insert((item.key, item.target_lang), item.translated_value);
+    while let Some(update) = rx.recv().await {
+        match update {
+            TranslationWorkerUpdate::Started { id } => {
+                reporter.emit(DashboardEvent::UpdateItem {
+                    id,
+                    status: Some(DashboardItemStatus::Running),
+                    subtitle: None,
+                    source_text: None,
+                    output_text: None,
+                    note_text: None,
+                    error_text: None,
+                    extra_rows: None,
+                });
             }
-            Err(err) => {
-                prepared.summary.failed += 1;
-                eprintln!("✖ {}", err);
-            }
+            TranslationWorkerUpdate::Finished { id, result } => match result {
+                Ok(item) => {
+                    prepared.summary.translated += 1;
+                    let translated_value = item.translated_value.clone();
+                    results.insert((item.key, item.target_lang), item.translated_value);
+                    reporter.emit(DashboardEvent::UpdateItem {
+                        id,
+                        status: Some(DashboardItemStatus::Succeeded),
+                        subtitle: None,
+                        source_text: None,
+                        output_text: Some(translated_value),
+                        note_text: None,
+                        error_text: None,
+                        extra_rows: None,
+                    });
+                }
+                Err(err) => {
+                    prepared.summary.failed += 1;
+                    reporter.emit(DashboardEvent::UpdateItem {
+                        id,
+                        status: Some(DashboardItemStatus::Failed),
+                        subtitle: None,
+                        source_text: None,
+                        output_text: None,
+                        note_text: None,
+                        error_text: Some(err.clone()),
+                        extra_rows: None,
+                    });
+                    reporter.emit(DashboardEvent::Log {
+                        tone: DashboardLogTone::Error,
+                        message: err,
+                    });
+                }
+            },
         }
-        progress.update(completed, prepared.summary.queued, &prepared.summary);
+        reporter.emit(DashboardEvent::SummaryRows {
+            rows: translation_summary_rows(&prepared.summary),
+        });
     }
 
     while let Some(result) = join_set.join_next().await {
@@ -478,34 +512,90 @@ async fn async_run_translation(
             Ok(Ok(())) => {}
             Ok(Err(err)) => {
                 prepared.summary.failed += 1;
-                eprintln!("✖ Translation worker failed: {}", err);
+                reporter.emit(DashboardEvent::Log {
+                    tone: DashboardLogTone::Error,
+                    message: format!("Translation worker failed: {}", err),
+                });
             }
             Err(err) => {
                 prepared.summary.failed += 1;
-                eprintln!("✖ Translation task failed to join: {}", err);
+                reporter.emit(DashboardEvent::Log {
+                    tone: DashboardLogTone::Error,
+                    message: format!("Translation task failed to join: {}", err),
+                });
             }
         }
+        reporter.emit(DashboardEvent::SummaryRows {
+            rows: translation_summary_rows(&prepared.summary),
+        });
     }
 
-    progress.finish();
-    print_summary(&prepared.summary);
-
     if prepared.summary.failed > 0 {
+        reporter.finish()?;
+        print_summary(&prepared.summary);
         return Err("Translation failed; no files were written".to_string());
     }
 
-    apply_translation_results(&mut prepared, &results)?;
-    validate_translated_output(&prepared)?;
+    if let Err(err) = apply_translation_results(&mut prepared, &results) {
+        reporter.emit(DashboardEvent::Log {
+            tone: DashboardLogTone::Error,
+            message: err.clone(),
+        });
+        reporter.finish()?;
+        print_summary(&prepared.summary);
+        return Err(err);
+    }
+    reporter.emit(DashboardEvent::Log {
+        tone: DashboardLogTone::Info,
+        message: "Applying translated values".to_string(),
+    });
+    if let Err(err) = validate_translated_output(&prepared) {
+        reporter.emit(DashboardEvent::Log {
+            tone: DashboardLogTone::Error,
+            message: err.clone(),
+        });
+        reporter.finish()?;
+        print_summary(&prepared.summary);
+        return Err(err);
+    }
+    reporter.emit(DashboardEvent::Log {
+        tone: DashboardLogTone::Success,
+        message: "Placeholder validation passed".to_string(),
+    });
 
     if prepared.opts.dry_run {
+        reporter.emit(DashboardEvent::Log {
+            tone: DashboardLogTone::Info,
+            message: "Dry-run mode: no files were written".to_string(),
+        });
+        reporter.finish()?;
+        print_summary(&prepared.summary);
         println!("Dry-run mode: no files were written");
     } else {
-        write_back(
+        reporter.emit(DashboardEvent::Log {
+            tone: DashboardLogTone::Info,
+            message: format!("Writing {}", prepared.output_path),
+        });
+        if let Err(err) = write_back(
             &prepared.target_codec,
             &prepared.output_path,
             &prepared.output_format,
             single_output_language(&prepared.opts.target_langs),
-        )?;
+        ) {
+            reporter.emit(DashboardEvent::Log {
+                tone: DashboardLogTone::Error,
+                message: err.clone(),
+            });
+            reporter.finish()?;
+            print_summary(&prepared.summary);
+            return Err(err);
+        }
+        reporter.emit(DashboardEvent::Log {
+            tone: DashboardLogTone::Success,
+            message: format!("Wrote {}", prepared.output_path),
+        });
+        reporter.finish()?;
+        print_summary(&prepared.summary);
         println!("✅ Translate complete: {}", prepared.output_path);
     }
     print_translation_results(&prepared, &results);
@@ -636,6 +726,89 @@ fn print_preamble(prepared: &PreparedTranslation) {
     }
 }
 
+fn create_translate_reporter(
+    prepared: &PreparedTranslation,
+) -> Result<Box<dyn RunReporter>, String> {
+    let init = DashboardInit {
+        kind: DashboardKind::Translate,
+        title: format!(
+            "{} -> {}",
+            prepared.source_resource.language,
+            prepared.opts.target_langs.join(", ")
+        ),
+        metadata: translate_metadata_rows(prepared),
+        summary_rows: translation_summary_rows(&prepared.summary),
+        items: prepared.jobs.iter().map(translate_dashboard_item).collect(),
+    };
+    match prepared.opts.ui_mode {
+        ResolvedUiMode::Plain => Ok(Box::new(PlainReporter::new(init))),
+        ResolvedUiMode::Tui => Ok(Box::new(TuiReporter::new(init)?)),
+    }
+}
+
+fn translate_metadata_rows(prepared: &PreparedTranslation) -> Vec<SummaryRow> {
+    let mut rows = vec![
+        SummaryRow::new(
+            "Provider",
+            format!(
+                "{}:{}",
+                prepared.opts.provider.display_name(),
+                prepared.opts.model
+            ),
+        ),
+        SummaryRow::new("Source", prepared.source_path.clone()),
+        SummaryRow::new("Target", prepared.target_path.clone()),
+        SummaryRow::new("Output", prepared.output_path.clone()),
+        SummaryRow::new("Concurrency", prepared.opts.concurrency.to_string()),
+    ];
+    if prepared.opts.dry_run {
+        rows.push(SummaryRow::new("Mode", "dry-run"));
+    }
+    if let Some(config_path) = &prepared.config_path {
+        rows.push(SummaryRow::new("Config", config_path.display().to_string()));
+    }
+    rows
+}
+
+fn translate_dashboard_item(job: &TranslationJob) -> DashboardItem {
+    let mut item = DashboardItem::new(
+        translation_job_id(job),
+        job.key.clone(),
+        job.target_lang.clone(),
+        DashboardItemStatus::Queued,
+    );
+    item.source_text = Some(job.source_value.clone());
+    item.note_text = job
+        .existing_comment
+        .clone()
+        .or_else(|| job.source_comment.clone());
+    item
+}
+
+fn translation_job_id(job: &TranslationJob) -> String {
+    format!("{}:{}", job.target_lang, job.key)
+}
+
+fn translation_summary_rows(summary: &TranslationSummary) -> Vec<SummaryRow> {
+    vec![
+        SummaryRow::new("Total candidates", summary.total_entries.to_string()),
+        SummaryRow::new("Queued", summary.queued.to_string()),
+        SummaryRow::new("Translated", summary.translated.to_string()),
+        SummaryRow::new("Skipped total", count_skipped(summary).to_string()),
+        SummaryRow::new("Skipped plural", summary.skipped_plural.to_string()),
+        SummaryRow::new(
+            "Skipped do_not_translate",
+            summary.skipped_do_not_translate.to_string(),
+        ),
+        SummaryRow::new("Skipped status", summary.skipped_status.to_string()),
+        SummaryRow::new(
+            "Skipped empty source",
+            summary.skipped_empty_source.to_string(),
+        ),
+        SummaryRow::new("Failed", summary.failed.to_string()),
+    ]
+}
+
 fn print_summary(summary: &TranslationSummary) {
     println!("Total candidate translations: {}", summary.total_entries);
     println!("Queued for translation: {}", summary.queued);
@@ -702,7 +875,7 @@ fn apply_translation_results(
             .find_entry_mut(&job.key, &job.target_lang)
         {
             existing.value = Translation::Singular(translated_value.clone());
-            existing.status = EntryStatus::NeedsReview;
+            existing.status = prepared.opts.output_status.clone();
         } else {
             prepared
                 .target_codec
@@ -713,7 +886,7 @@ fn apply_translation_results(
                     job.existing_comment
                         .clone()
                         .or_else(|| job.source_comment.clone()),
-                    Some(EntryStatus::NeedsReview),
+                    Some(prepared.opts.output_status.clone()),
                 )
                 .map_err(|e| e.to_string())?;
         }
@@ -978,19 +1151,20 @@ fn resolve_options(
     let source_lang = opts
         .source_lang
         .clone()
-        .or_else(|| cfg.and_then(|item| item.source_lang.clone()));
+        .or_else(|| cfg.and_then(|item| item.resolved_source_lang().map(str::to_string)));
     let target_langs = if !opts.target_langs.is_empty() {
         parse_language_list(opts.target_langs.iter().map(String::as_str))?
     } else {
         parse_language_list(
-            cfg.and_then(|item| item.target_lang.as_deref())
-                .unwrap_or_default()
-                .split(','),
+            cfg.and_then(|item| item.resolved_target_langs())
+                .into_iter()
+                .flatten()
+                .flat_map(|value| value.split(',')),
         )?
     };
     if target_langs.is_empty() {
         return Err(
-            "--target-lang is required (or set translate.target_lang in langcodec.toml)"
+            "--target-lang is required (or set translate.output.lang/translate.target_lang in langcodec.toml)"
                 .to_string(),
         );
     }
@@ -1000,12 +1174,13 @@ fn resolve_options(
 
     let provider = resolve_provider(
         opts.provider.as_deref(),
-        config.and_then(|item| item.data.shared_provider()),
+        config.map(|item| &item.data),
         cfg.and_then(|item| item.provider.as_deref()),
     )?;
     let model = resolve_model(
         opts.model.as_deref(),
-        config.and_then(|item| item.data.shared_model()),
+        config.map(|item| &item.data),
+        &provider,
         cfg.and_then(|item| item.model.as_deref()),
     )?;
 
@@ -1019,8 +1194,10 @@ fn resolve_options(
 
     let statuses = parse_status_filter(
         opts.status.as_deref(),
-        cfg.and_then(|item| item.status.as_ref()),
+        cfg.and_then(|item| item.resolved_filter_status()),
     )?;
+    let output_status = parse_output_status(cfg.and_then(|item| item.resolved_output_status()))?;
+    let ui_mode = resolve_ui_mode_for_current_terminal(opts.ui_mode)?;
 
     Ok(ResolvedOptions {
         source: opts
@@ -1032,11 +1209,13 @@ fn resolve_options(
         source_lang,
         target_langs,
         statuses,
+        output_status,
         provider,
         model,
         concurrency,
         dry_run: opts.dry_run,
         strict: opts.strict,
+        ui_mode,
     })
 }
 
@@ -1070,6 +1249,25 @@ fn parse_status_filter(
         }
     }
     Ok(statuses)
+}
+
+fn parse_output_status(raw: Option<&str>) -> Result<EntryStatus, String> {
+    let Some(raw) = raw else {
+        return Ok(EntryStatus::NeedsReview);
+    };
+
+    let normalized = raw.trim().replace(['-', ' '], "_");
+    let parsed = normalized
+        .parse::<EntryStatus>()
+        .map_err(|e| format!("Invalid translate output_status '{}': {}", raw, e))?;
+
+    match parsed {
+        EntryStatus::NeedsReview | EntryStatus::Translated => Ok(parsed),
+        _ => Err(format!(
+            "translate output status must be either 'needs_review' or 'translated', got '{}'",
+            raw
+        )),
+    }
 }
 
 fn parse_language_list<'a, I>(values: I) -> Result<Vec<String>, String>
@@ -1366,6 +1564,7 @@ mod tests {
             config: None,
             dry_run: false,
             strict: false,
+            ui_mode: UiMode::Plain,
         }
     }
 
@@ -1462,11 +1661,12 @@ mod tests {
         fs::write(&source, "key,en,fr\nwelcome,Welcome,\n").unwrap();
         fs::write(
             &config,
-            r#"[translate]
-provider = "openai"
-model = "gpt-4.1-mini"
+            r#"[openai]
+model = "gpt-5.4"
+
+[translate]
 source_lang = "en"
-target_lang = "fr"
+target_lang = ["fr"]
 concurrency = 2
 status = ["new", "stale"]
 "#,
@@ -1486,12 +1686,175 @@ status = ["new", "stale"]
             config: Some(config.to_string_lossy().to_string()),
             dry_run: true,
             strict: false,
+            ui_mode: UiMode::Plain,
         };
 
         let prepared = prepare_translation(&options).unwrap();
-        assert_eq!(prepared.opts.model, "gpt-4.1-mini");
+        assert_eq!(prepared.opts.model, "gpt-5.4");
         assert_eq!(prepared.opts.target_langs, vec!["fr".to_string()]);
         assert_eq!(prepared.summary.queued, 1);
+    }
+
+    #[test]
+    fn uses_array_target_langs_from_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("source.csv");
+        let config = temp_dir.path().join("langcodec.toml");
+        fs::write(&source, "key,en,fr,de\nwelcome,Welcome,,\n").unwrap();
+        fs::write(
+            &config,
+            r#"[openai]
+model = "gpt-5.4"
+
+[translate.input]
+lang = "en"
+
+[translate.output]
+lang = ["fr", "de"]
+"#,
+        )
+        .unwrap();
+
+        let options = TranslateOptions {
+            source: Some(source.to_string_lossy().to_string()),
+            target: None,
+            output: None,
+            source_lang: None,
+            target_langs: Vec::new(),
+            status: None,
+            provider: None,
+            model: None,
+            concurrency: None,
+            config: Some(config.to_string_lossy().to_string()),
+            dry_run: true,
+            strict: false,
+            ui_mode: UiMode::Plain,
+        };
+
+        let prepared = prepare_translation(&options).unwrap();
+        assert_eq!(
+            prepared.opts.target_langs,
+            vec!["fr".to_string(), "de".to_string()]
+        );
+        assert_eq!(prepared.summary.queued, 2);
+    }
+
+    #[test]
+    fn uses_translated_output_status_from_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("Localizable.xcstrings");
+        let config = temp_dir.path().join("langcodec.toml");
+        fs::write(
+            &source,
+            r#"{
+  "sourceLanguage" : "en",
+  "version" : "1.0",
+  "strings" : {
+    "welcome" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Welcome"
+          }
+        }
+      }
+    }
+  }
+}"#,
+        )
+        .unwrap();
+        fs::write(
+            &config,
+            r#"[openai]
+model = "gpt-5.4"
+
+[translate.input]
+source = "Localizable.xcstrings"
+lang = "en"
+
+[translate.output]
+lang = ["fr"]
+status = "translated"
+"#,
+        )
+        .unwrap();
+
+        let options = TranslateOptions {
+            source: None,
+            target: None,
+            output: None,
+            source_lang: None,
+            target_langs: Vec::new(),
+            status: None,
+            provider: None,
+            model: None,
+            concurrency: None,
+            config: Some(config.to_string_lossy().to_string()),
+            dry_run: false,
+            strict: false,
+            ui_mode: UiMode::Plain,
+        };
+
+        let runs = expand_translate_invocations(&options).unwrap();
+        let prepared = prepare_translation(&runs[0]).unwrap();
+        let output_path = prepared.output_path.clone();
+        run_prepared_translation(
+            prepared,
+            Arc::new(MockBackend::new(vec![(
+                ("welcome", "fr"),
+                Ok("Bienvenue".to_string()),
+            )])),
+        )
+        .unwrap();
+
+        let written = fs::read_to_string(output_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&written).unwrap();
+        assert_eq!(
+            parsed["strings"]["welcome"]["localizations"]["fr"]["stringUnit"]["state"],
+            "translated"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_output_status_from_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("source.csv");
+        let config = temp_dir.path().join("langcodec.toml");
+        fs::write(&source, "key,en,fr\nwelcome,Welcome,\n").unwrap();
+        fs::write(
+            &config,
+            r#"[openai]
+model = "gpt-5.4"
+
+[translate.input]
+lang = "en"
+
+[translate.output]
+lang = ["fr"]
+status = "new"
+"#,
+        )
+        .unwrap();
+
+        let options = TranslateOptions {
+            source: Some(source.to_string_lossy().to_string()),
+            target: None,
+            output: None,
+            source_lang: None,
+            target_langs: Vec::new(),
+            status: None,
+            provider: None,
+            model: None,
+            concurrency: None,
+            config: Some(config.to_string_lossy().to_string()),
+            dry_run: true,
+            strict: false,
+            ui_mode: UiMode::Plain,
+        };
+
+        let err = prepare_translation(&options).unwrap_err();
+        assert!(err.contains("translate output status must be either"));
     }
 
     #[test]
@@ -1523,6 +1886,7 @@ target = "output/Translated.xcstrings"
             config: Some(config.to_string_lossy().to_string()),
             dry_run: true,
             strict: false,
+            ui_mode: UiMode::Plain,
         })
         .unwrap();
 
@@ -1574,6 +1938,7 @@ sources = ["one.xcstrings", "two.xcstrings"]
             config: Some(config.to_string_lossy().to_string()),
             dry_run: true,
             strict: false,
+            ui_mode: UiMode::Plain,
         })
         .unwrap();
 
@@ -1624,10 +1989,11 @@ target = "translated.xcstrings"
             config: Some(config.to_string_lossy().to_string()),
             dry_run: true,
             strict: false,
+            ui_mode: UiMode::Plain,
         })
         .unwrap_err();
 
-        assert!(err.contains("translate.sources cannot be combined"));
+        assert!(err.contains("translate.input.sources/translate.sources cannot be combined"));
     }
 
     #[test]

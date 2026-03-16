@@ -1,6 +1,11 @@
 use crate::{
     ai::{ProviderKind, read_api_key, resolve_model, resolve_provider},
     config::{LoadedConfig, load_config, resolve_config_relative_path},
+    tui::{
+        DashboardEvent, DashboardInit, DashboardItem, DashboardItemStatus, DashboardKind,
+        DashboardLogTone, PlainReporter, ResolvedUiMode, RunReporter, SummaryRow, TuiReporter,
+        UiMode, resolve_ui_mode_for_current_terminal,
+    },
     validation::validate_language_code,
 };
 use async_trait::async_trait;
@@ -20,7 +25,6 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     fs,
-    io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -46,6 +50,7 @@ pub struct AnnotateOptions {
     pub config: Option<String>,
     pub dry_run: bool,
     pub check: bool,
+    pub ui_mode: UiMode,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +65,7 @@ struct ResolvedAnnotateOptions {
     dry_run: bool,
     check: bool,
     workspace_root: PathBuf,
+    ui_mode: ResolvedUiMode,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +90,10 @@ enum WorkerUpdate {
         candidate_count: usize,
         top_candidate: Option<String>,
     },
+    ToolCall {
+        tone: DashboardLogTone,
+        message: String,
+    },
     Finished {
         worker_id: usize,
         key: String,
@@ -91,105 +101,12 @@ enum WorkerUpdate {
     },
 }
 
-struct AnnotateProgressRenderer {
-    interactive: bool,
-    last_width: usize,
-}
-
-impl AnnotateProgressRenderer {
-    fn new() -> Self {
-        Self {
-            interactive: io::stderr().is_terminal(),
-            last_width: 0,
-        }
-    }
-
-    fn print_message(&mut self, message: &str) {
-        self.finish_line();
-        eprintln!("{}", message);
-    }
-
-    fn start_annotation(&mut self, total: usize, concurrency: usize) {
-        self.print_message(&format!(
-            "Generating translator comments for {} entr{} with {} worker(s)...",
-            total,
-            if total == 1 { "y" } else { "ies" },
-            concurrency
-        ));
-    }
-
-    fn worker_started(
-        &mut self,
-        worker_id: usize,
-        key: &str,
-        candidate_count: usize,
-        top_candidate: Option<&str>,
-    ) {
-        let mut message = format!(
-            "Worker {} started key={} shortlist={}",
-            worker_id, key, candidate_count
-        );
-        if let Some(path) = top_candidate {
-            message.push_str(" top=");
-            message.push_str(path);
-        }
-        self.print_message(&message);
-    }
-
-    fn worker_finished(
-        &mut self,
-        worker_id: usize,
-        key: &str,
-        result: &Result<Option<AnnotationResponse>, String>,
-    ) {
-        let status = match result {
-            Ok(Some(_)) => "generated",
-            Ok(None) => "skipped",
-            Err(_) => "failed",
-        };
-        self.print_message(&format!(
-            "Worker {} finished key={} result={}",
-            worker_id, key, status
-        ));
-    }
-
-    fn update_annotation(
-        &mut self,
-        completed: usize,
-        total: usize,
-        generated: usize,
-        unmatched: usize,
-    ) {
-        self.render_line(&format!(
-            "Annotate progress: {}/{} processed generated={} skipped={}",
-            completed, total, generated, unmatched
-        ));
-    }
-
-    fn render_line(&mut self, line: &str) {
-        if self.interactive {
-            let padding = self.last_width.saturating_sub(line.len());
-            eprint!("\r{}{}", line, " ".repeat(padding));
-            let _ = io::stderr().flush();
-            self.last_width = line.len();
-        } else {
-            eprintln!("{}", line);
-        }
-    }
-
-    fn finish_line(&mut self) {
-        if self.interactive && self.last_width > 0 {
-            eprintln!();
-            self.last_width = 0;
-        }
-    }
-}
-
 #[async_trait]
 trait AnnotationBackend: Send + Sync {
     async fn annotate(
         &self,
         request: AnnotationRequest,
+        event_tx: Option<mpsc::UnboundedSender<WorkerUpdate>>,
     ) -> Result<Option<AnnotationResponse>, String>;
 }
 
@@ -230,13 +147,15 @@ impl AnnotationBackend for MentraAnnotatorBackend {
     async fn annotate(
         &self,
         request: AnnotationRequest,
+        event_tx: Option<mpsc::UnboundedSender<WorkerUpdate>>,
     ) -> Result<Option<AnnotationResponse>, String> {
         let config = build_agent_config(&self.workspace_root);
         let mut agent = self
             .runtime
             .spawn_with_config("annotate", self.model.clone(), config)
             .map_err(|e| format!("Failed to spawn Mentra agent: {}", e))?;
-        let tool_logger = spawn_tool_call_logger(agent.subscribe_events(), request.key.clone());
+        let tool_logger =
+            spawn_tool_call_logger(agent.subscribe_events(), request.key.clone(), event_tx);
 
         let response = agent
             .run(
@@ -272,8 +191,6 @@ fn run_annotate_with_backend(
     opts: ResolvedAnnotateOptions,
     backend: Arc<dyn AnnotationBackend>,
 ) -> Result<(), String> {
-    let mut progress = AnnotateProgressRenderer::new();
-    progress.print_message(&format!("Annotating {}", opts.input));
     let mut catalog = XcstringsFormat::read_from(&opts.input)
         .map_err(|e| format!("Failed to read '{}': {}", opts.input, e))?;
     let resources = Vec::<Resource>::try_from(catalog.clone())
@@ -292,18 +209,28 @@ fn run_annotate_with_backend(
         &source_values,
         &opts.source_roots,
         &opts.workspace_root,
-        &mut progress,
     )?;
 
     if requests.is_empty() {
-        progress.finish_line();
         println!("No entries require annotation updates.");
         return Ok(());
     }
 
-    progress.start_annotation(requests.len(), opts.concurrency);
-    let results = annotate_requests(requests, backend, opts.concurrency, &mut progress);
-    progress.finish_line();
+    let mut reporter = create_annotate_reporter(&opts, &source_lang, &requests)?;
+    reporter.emit(DashboardEvent::Log {
+        tone: DashboardLogTone::Info,
+        message: format!("Annotating {}", opts.input),
+    });
+    reporter.emit(DashboardEvent::Log {
+        tone: DashboardLogTone::Info,
+        message: format!(
+            "Generating translator comments for {} entr{} with {} worker(s)...",
+            requests.len(),
+            if requests.len() == 1 { "y" } else { "ies" },
+            opts.concurrency
+        ),
+    });
+    let results = annotate_requests(requests, backend, opts.concurrency, &mut *reporter);
     let results = results?;
     let mut changed = 0usize;
     let mut unmatched = 0usize;
@@ -334,11 +261,24 @@ fn run_annotate_with_backend(
     }
 
     if opts.check && changed > 0 {
+        reporter.emit(DashboardEvent::Log {
+            tone: DashboardLogTone::Warning,
+            message: format!("would change: {}", opts.output),
+        });
+        reporter.finish()?;
         println!("would change: {}", opts.output);
         return Err(format!("would change: {}", opts.output));
     }
 
     if opts.dry_run {
+        reporter.emit(DashboardEvent::Log {
+            tone: DashboardLogTone::Info,
+            message: format!(
+                "DRY-RUN: would update {} comment(s) in {}",
+                changed, opts.output
+            ),
+        });
+        reporter.finish()?;
         println!(
             "DRY-RUN: would update {} comment(s) in {}",
             changed, opts.output
@@ -350,6 +290,11 @@ fn run_annotate_with_backend(
     }
 
     if changed == 0 {
+        reporter.emit(DashboardEvent::Log {
+            tone: DashboardLogTone::Success,
+            message: "No comment updates were necessary.".to_string(),
+        });
+        reporter.finish()?;
         println!("No comment updates were necessary.");
         if unmatched > 0 {
             println!("Skipped {} entry(s) without generated comments", unmatched);
@@ -357,9 +302,24 @@ fn run_annotate_with_backend(
         return Ok(());
     }
 
-    catalog
-        .write_to(&opts.output)
-        .map_err(|e| format!("Failed to write '{}': {}", opts.output, e))?;
+    reporter.emit(DashboardEvent::Log {
+        tone: DashboardLogTone::Info,
+        message: format!("Writing {}", opts.output),
+    });
+    if let Err(err) = catalog.write_to(&opts.output) {
+        let err = format!("Failed to write '{}': {}", opts.output, err);
+        reporter.emit(DashboardEvent::Log {
+            tone: DashboardLogTone::Error,
+            message: err.clone(),
+        });
+        reporter.finish()?;
+        return Err(err);
+    }
+    reporter.emit(DashboardEvent::Log {
+        tone: DashboardLogTone::Success,
+        message: format!("Updated {} comment(s) in {}", changed, opts.output),
+    });
+    reporter.finish()?;
 
     println!("Updated {} comment(s) in {}", changed, opts.output);
     if unmatched > 0 {
@@ -419,6 +379,7 @@ fn expand_annotate_invocations(
                     config: opts.config.clone(),
                     dry_run: opts.dry_run,
                     check: opts.check,
+                    ui_mode: opts.ui_mode,
                 },
                 config,
             )
@@ -516,12 +477,13 @@ fn resolve_annotate_options(
 
     let provider = resolve_provider(
         opts.provider.as_deref(),
-        config.and_then(|item| item.data.shared_provider()),
+        config.map(|item| &item.data),
         None,
     )?;
     let model = resolve_model(
         opts.model.as_deref(),
-        config.and_then(|item| item.data.shared_model()),
+        config.map(|item| &item.data),
+        &provider,
         None,
     )?;
 
@@ -532,6 +494,7 @@ fn resolve_annotate_options(
     if let Some(lang) = &source_lang {
         validate_language_code(lang)?;
     }
+    let ui_mode = resolve_ui_mode_for_current_terminal(opts.ui_mode)?;
 
     let workspace_root = derive_workspace_root(&input, &source_roots, &cwd);
 
@@ -546,6 +509,7 @@ fn resolve_annotate_options(
         dry_run: opts.dry_run,
         check: opts.check,
         workspace_root,
+        ui_mode,
     })
 }
 
@@ -553,7 +517,7 @@ fn annotate_requests(
     requests: Vec<AnnotationRequest>,
     backend: Arc<dyn AnnotationBackend>,
     concurrency: usize,
-    progress: &mut AnnotateProgressRenderer,
+    reporter: &mut dyn RunReporter,
 ) -> Result<BTreeMap<String, Option<AnnotationResponse>>, String> {
     let runtime = Builder::new_multi_thread()
         .enable_all()
@@ -588,7 +552,7 @@ fn annotate_requests(
                         candidate_count: 0,
                         top_candidate: None,
                     });
-                    let result = backend.annotate(request).await;
+                    let result = backend.annotate(request, Some(tx.clone())).await;
                     let _ = tx.send(WorkerUpdate::Finished {
                         worker_id,
                         key,
@@ -602,7 +566,6 @@ fn annotate_requests(
         drop(tx);
 
         let mut results = BTreeMap::new();
-        let mut completed = 0usize;
         let mut generated = 0usize;
         let mut unmatched = 0usize;
         let mut first_error = None;
@@ -615,20 +578,34 @@ fn annotate_requests(
                     candidate_count,
                     top_candidate,
                 } => {
-                    progress.worker_started(
-                        worker_id,
-                        &key,
-                        candidate_count,
-                        top_candidate.as_deref(),
-                    );
+                    reporter.emit(DashboardEvent::Log {
+                        tone: DashboardLogTone::Info,
+                        message: annotate_worker_started_message(
+                            worker_id,
+                            &key,
+                            candidate_count,
+                            top_candidate.as_deref(),
+                        ),
+                    });
+                    reporter.emit(DashboardEvent::UpdateItem {
+                        id: key,
+                        status: Some(DashboardItemStatus::Running),
+                        subtitle: None,
+                        source_text: None,
+                        output_text: None,
+                        note_text: None,
+                        error_text: None,
+                        extra_rows: None,
+                    });
+                }
+                WorkerUpdate::ToolCall { tone, message } => {
+                    reporter.emit(DashboardEvent::Log { tone, message });
                 }
                 WorkerUpdate::Finished {
                     worker_id,
                     key,
                     result,
                 } => {
-                    progress.worker_finished(worker_id, &key, &result);
-                    completed += 1;
                     match result {
                         Ok(annotation) => {
                             if annotation.is_some() {
@@ -636,15 +613,63 @@ fn annotate_requests(
                             } else {
                                 unmatched += 1;
                             }
+                            let status = if annotation.is_some() {
+                                DashboardItemStatus::Succeeded
+                            } else {
+                                DashboardItemStatus::Skipped
+                            };
+                            reporter.emit(DashboardEvent::Log {
+                                tone: if annotation.is_some() {
+                                    DashboardLogTone::Success
+                                } else {
+                                    DashboardLogTone::Warning
+                                },
+                                message: annotate_worker_finished_message(
+                                    worker_id,
+                                    &key,
+                                    &annotation,
+                                ),
+                            });
+                            reporter.emit(DashboardEvent::UpdateItem {
+                                id: key.clone(),
+                                status: Some(status),
+                                subtitle: None,
+                                source_text: None,
+                                output_text: annotation.as_ref().map(|item| item.comment.clone()),
+                                note_text: None,
+                                error_text: None,
+                                extra_rows: annotation.as_ref().map(|item| {
+                                    vec![SummaryRow::new("Confidence", item.confidence.clone())]
+                                }),
+                            });
                             results.insert(key, annotation);
                         }
                         Err(err) => {
+                            reporter.emit(DashboardEvent::Log {
+                                tone: DashboardLogTone::Error,
+                                message: format!(
+                                    "Worker {} finished key={} result=failed",
+                                    worker_id, key
+                                ),
+                            });
+                            reporter.emit(DashboardEvent::UpdateItem {
+                                id: key,
+                                status: Some(DashboardItemStatus::Failed),
+                                subtitle: None,
+                                source_text: None,
+                                output_text: None,
+                                note_text: None,
+                                error_text: Some(err.clone()),
+                                extra_rows: None,
+                            });
                             if first_error.is_none() {
                                 first_error = Some(err);
                             }
                         }
                     }
-                    progress.update_annotation(completed, total, generated, unmatched);
+                    reporter.emit(DashboardEvent::SummaryRows {
+                        rows: annotate_summary_rows(total, generated, unmatched),
+                    });
                 }
             }
         }
@@ -679,7 +704,6 @@ fn build_annotation_requests(
     source_values: &HashMap<String, String>,
     source_roots: &[String],
     workspace_root: &Path,
-    _progress: &mut AnnotateProgressRenderer,
 ) -> Result<Vec<AnnotationRequest>, String> {
     let mut keys = catalog.strings.keys().cloned().collect::<Vec<_>>();
     keys.sort();
@@ -715,6 +739,101 @@ fn build_annotation_requests(
 
 fn should_preserve_manual_comment(item: &Item) -> bool {
     item.comment.is_some() && item.is_comment_auto_generated != Some(true)
+}
+
+fn create_annotate_reporter(
+    opts: &ResolvedAnnotateOptions,
+    source_lang: &str,
+    requests: &[AnnotationRequest],
+) -> Result<Box<dyn RunReporter>, String> {
+    let init = DashboardInit {
+        kind: DashboardKind::Annotate,
+        title: Path::new(&opts.input)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(opts.input.as_str())
+            .to_string(),
+        metadata: annotate_metadata_rows(opts, source_lang),
+        summary_rows: annotate_summary_rows(requests.len(), 0, 0),
+        items: requests.iter().map(annotate_dashboard_item).collect(),
+    };
+    match opts.ui_mode {
+        ResolvedUiMode::Plain => Ok(Box::new(PlainReporter::new(init))),
+        ResolvedUiMode::Tui => Ok(Box::new(TuiReporter::new(init)?)),
+    }
+}
+
+fn annotate_metadata_rows(opts: &ResolvedAnnotateOptions, source_lang: &str) -> Vec<SummaryRow> {
+    let mut rows = vec![
+        SummaryRow::new(
+            "Provider",
+            format!("{}:{}", opts.provider.display_name(), opts.model),
+        ),
+        SummaryRow::new("Input", opts.input.clone()),
+        SummaryRow::new("Output", opts.output.clone()),
+        SummaryRow::new("Source language", source_lang.to_string()),
+        SummaryRow::new("Concurrency", opts.concurrency.to_string()),
+    ];
+    if opts.dry_run {
+        rows.push(SummaryRow::new("Mode", "dry-run"));
+    }
+    if opts.check {
+        rows.push(SummaryRow::new("Check", "enabled"));
+    }
+    rows
+}
+
+fn annotate_summary_rows(total: usize, generated: usize, unmatched: usize) -> Vec<SummaryRow> {
+    vec![
+        SummaryRow::new("Total", total.to_string()),
+        SummaryRow::new("Generated", generated.to_string()),
+        SummaryRow::new("Skipped", unmatched.to_string()),
+    ]
+}
+
+fn annotate_dashboard_item(request: &AnnotationRequest) -> DashboardItem {
+    let mut item = DashboardItem::new(
+        request.key.clone(),
+        request.key.clone(),
+        request.source_lang.clone(),
+        DashboardItemStatus::Queued,
+    );
+    item.source_text = Some(request.source_value.clone());
+    item.note_text = request.existing_comment.clone();
+    item
+}
+
+fn annotate_worker_started_message(
+    worker_id: usize,
+    key: &str,
+    candidate_count: usize,
+    top_candidate: Option<&str>,
+) -> String {
+    let mut message = format!(
+        "Worker {} started key={} shortlist={}",
+        worker_id, key, candidate_count
+    );
+    if let Some(path) = top_candidate {
+        message.push_str(" top=");
+        message.push_str(path);
+    }
+    message
+}
+
+fn annotate_worker_finished_message(
+    worker_id: usize,
+    key: &str,
+    result: &Option<AnnotationResponse>,
+) -> String {
+    let status = if result.is_some() {
+        "generated"
+    } else {
+        "skipped"
+    };
+    format!(
+        "Worker {} finished key={} result={}",
+        worker_id, key, status
+    )
 }
 
 fn source_value_map(resources: &[Resource], source_lang: &str) -> HashMap<String, String> {
@@ -801,17 +920,23 @@ fn build_annotation_prompt(request: &AnnotationRequest) -> String {
 fn spawn_tool_call_logger(
     mut events: broadcast::Receiver<AgentEvent>,
     key: String,
+    event_tx: Option<mpsc::UnboundedSender<WorkerUpdate>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             match events.recv().await {
                 Ok(AgentEvent::ToolExecutionStarted { call }) => {
-                    eprintln!(
-                        "Tool call key={} tool={} input={}",
-                        key,
-                        call.name,
-                        compact_tool_input(&call.input)
-                    );
+                    if let Some(tx) = &event_tx {
+                        let _ = tx.send(WorkerUpdate::ToolCall {
+                            tone: DashboardLogTone::Info,
+                            message: format!(
+                                "Tool call key={} tool={} input={}",
+                                key,
+                                call.name,
+                                compact_tool_input(&call.input)
+                            ),
+                        });
+                    }
                 }
                 Ok(AgentEvent::ToolExecutionFinished { result }) => {
                     let status = match result {
@@ -819,7 +944,17 @@ fn spawn_tool_call_logger(
                         ContentBlock::ToolResult { .. } => "ok",
                         _ => "unknown",
                     };
-                    eprintln!("Tool result key={} status={}", key, status);
+                    if let Some(tx) = &event_tx {
+                        let tone = if status == "error" {
+                            DashboardLogTone::Error
+                        } else {
+                            DashboardLogTone::Success
+                        };
+                        let _ = tx.send(WorkerUpdate::ToolCall {
+                            tone,
+                            message: format!("Tool result key={} status={}", key, status),
+                        });
+                    }
                 }
                 Ok(_) => {}
                 Err(broadcast::error::RecvError::Closed) => break,
@@ -972,6 +1107,7 @@ mod tests {
         async fn annotate(
             &self,
             request: AnnotationRequest,
+            _event_tx: Option<mpsc::UnboundedSender<WorkerUpdate>>,
         ) -> Result<Option<AnnotationResponse>, String> {
             Ok(self.responses.get(&request.key).cloned().flatten())
         }
@@ -986,6 +1122,7 @@ mod tests {
         async fn annotate(
             &self,
             _request: AnnotationRequest,
+            _event_tx: Option<mpsc::UnboundedSender<WorkerUpdate>>,
         ) -> Result<Option<AnnotationResponse>, String> {
             Ok(Some(AnnotationResponse {
                 comment: "Generated comment".to_string(),
@@ -1157,6 +1294,7 @@ mod tests {
             dry_run: false,
             check: false,
             workspace_root: temp_dir.path().to_path_buf(),
+            ui_mode: ResolvedUiMode::Plain,
         };
 
         run_annotate_with_backend(opts, Arc::new(FakeBackend { responses }))
@@ -1230,6 +1368,7 @@ mod tests {
             dry_run: true,
             check: false,
             workspace_root: temp_dir.path().to_path_buf(),
+            ui_mode: ResolvedUiMode::Plain,
         };
 
         run_annotate_with_backend(opts, Arc::new(FakeBackend { responses }))
@@ -1280,6 +1419,7 @@ mod tests {
             dry_run: false,
             check: true,
             workspace_root: temp_dir.path().to_path_buf(),
+            ui_mode: ResolvedUiMode::Plain,
         };
 
         let error = run_annotate_with_backend(opts, Arc::new(FakeBackend { responses }))
@@ -1304,10 +1444,17 @@ mod tests {
                     .expect("build nested runtime"),
             ),
         });
-        let mut progress = AnnotateProgressRenderer::new();
+        let init = DashboardInit {
+            kind: DashboardKind::Annotate,
+            title: "test".to_string(),
+            metadata: Vec::new(),
+            summary_rows: annotate_summary_rows(1, 0, 0),
+            items: requests.iter().map(annotate_dashboard_item).collect(),
+        };
+        let mut reporter = PlainReporter::new(init);
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            annotate_requests(requests, Arc::clone(&backend), 1, &mut progress)
+            annotate_requests(requests, Arc::clone(&backend), 1, &mut reporter)
         }));
 
         assert!(result.is_ok(), "annotate_requests should not panic");
@@ -1317,7 +1464,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_annotate_options_uses_config_relative_paths_and_shared_ai_defaults() {
+    fn resolve_annotate_options_uses_provider_section_defaults() {
         let temp_dir = TempDir::new().expect("temp dir");
         let project_dir = temp_dir.path().join("project");
         let sources_dir = project_dir.join("Sources");
@@ -1338,9 +1485,8 @@ mod tests {
         let config_path = project_dir.join("langcodec.toml");
         fs::write(
             &config_path,
-            r#"[ai]
-provider = "openai"
-model = "gpt-4.1-mini"
+            r#"[openai]
+model = "gpt-5.4"
 
 [annotate]
 input = "Localizable.xcstrings"
@@ -1368,6 +1514,7 @@ concurrency = 2
                 config: Some(config_path.to_string_lossy().to_string()),
                 dry_run: false,
                 check: false,
+                ui_mode: UiMode::Plain,
             },
             Some(&loaded),
         )
@@ -1390,7 +1537,7 @@ concurrency = 2
         );
         assert_eq!(resolved.source_lang.as_deref(), Some("en"));
         assert_eq!(resolved.provider, ProviderKind::OpenAI);
-        assert_eq!(resolved.model, "gpt-4.1-mini");
+        assert_eq!(resolved.model, "gpt-5.4");
         assert_eq!(resolved.concurrency, 2);
     }
 
@@ -1426,9 +1573,8 @@ concurrency = 2
         let config_path = project_dir.join("langcodec.toml");
         fs::write(
             &config_path,
-            r#"[ai]
-provider = "openai"
-model = "gpt-4.1-mini"
+            r#"[openai]
+model = "gpt-5.4"
 
 [annotate]
 input = "Localizable.xcstrings"
@@ -1460,6 +1606,7 @@ concurrency = 2
                 config: Some(config_path.to_string_lossy().to_string()),
                 dry_run: true,
                 check: true,
+                ui_mode: UiMode::Plain,
             },
             Some(&loaded),
         )
@@ -1500,9 +1647,8 @@ concurrency = 2
         let config_path = project_dir.join("langcodec.toml");
         fs::write(
             &config_path,
-            r#"[ai]
-provider = "openai"
-model = "gpt-4.1-mini"
+            r#"[openai]
+model = "gpt-5.4"
 
 [annotate]
 inputs = ["First.xcstrings", "Second.xcstrings"]
@@ -1529,6 +1675,7 @@ concurrency = 2
                 config: Some(config_path.to_string_lossy().to_string()),
                 dry_run: false,
                 check: false,
+                ui_mode: UiMode::Plain,
             },
             Some(&loaded),
         )
@@ -1577,6 +1724,7 @@ source_roots = ["Sources"]
                 config: Some(config_path.to_string_lossy().to_string()),
                 dry_run: false,
                 check: false,
+                ui_mode: UiMode::Plain,
             },
             Some(&loaded),
         )
@@ -1605,9 +1753,8 @@ source_roots = ["Sources"]
         let config_path = project_dir.join("langcodec.toml");
         fs::write(
             &config_path,
-            r#"[ai]
-provider = "openai"
-model = "gpt-4.1-mini"
+            r#"[openai]
+model = "gpt-5.4"
 
 [annotate]
 inputs = ["One.xcstrings", "Two.xcstrings"]
@@ -1633,6 +1780,7 @@ output = "Annotated.xcstrings"
                 config: Some(config_path.to_string_lossy().to_string()),
                 dry_run: false,
                 check: false,
+                ui_mode: UiMode::Plain,
             },
             Some(&loaded),
         )
@@ -1658,13 +1806,16 @@ output = "Annotated.xcstrings"
         );
 
         let response = backend
-            .annotate(AnnotationRequest {
-                key: "start".to_string(),
-                source_lang: "en".to_string(),
-                source_value: "Start".to_string(),
-                existing_comment: None,
-                source_roots: vec!["Sources".to_string()],
-            })
+            .annotate(
+                AnnotationRequest {
+                    key: "start".to_string(),
+                    source_lang: "en".to_string(),
+                    source_value: "Start".to_string(),
+                    existing_comment: None,
+                    source_roots: vec!["Sources".to_string()],
+                },
+                None,
+            )
             .await
             .expect("annotate")
             .expect("response");
