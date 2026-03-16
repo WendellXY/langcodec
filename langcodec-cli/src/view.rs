@@ -333,7 +333,11 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
         for (i, (resource, entries)) in visible_resources.iter().enumerate() {
             println!(
                 "{}",
-                ui::section(&format!("Resource {} · {}", i + 1, resource.metadata.language))
+                ui::section(&format!(
+                    "Resource {} · {}",
+                    i + 1,
+                    resource.metadata.language
+                ))
             );
             println!("{}", ui::divider(40));
             if !resource.metadata.domain.is_empty() {
@@ -344,7 +348,10 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
             for entry in entries {
                 println!();
                 println!("{}", ui::accent(&entry.id));
-                println!("  {}", ui::key_value("Status", styled_status_label(&entry.status)));
+                println!(
+                    "  {}",
+                    ui::key_value("Status", styled_status_label(&entry.status))
+                );
 
                 if let Some(comment) = &entry.comment {
                     println!("  {}", ui::key_value("Comment", comment));
@@ -406,14 +413,14 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
 
             println!("{}", ui::section("Summary"));
             println!("{}", ui::divider(24));
-            println!("{}", ui::key_value("Total languages", per_language_counts.len()));
+            println!(
+                "{}",
+                ui::key_value("Total languages", per_language_counts.len())
+            );
             println!("{}", ui::key_value("Total unique keys", unique_keys.len()));
 
             for (lang, count) in per_language_counts {
-                println!(
-                    "{}",
-                    ui::key_value(&format!("{lang} entries"), count)
-                );
+                println!("{}", ui::key_value(&format!("{lang} entries"), count));
             }
         }
 

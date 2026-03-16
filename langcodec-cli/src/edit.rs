@@ -268,7 +268,10 @@ fn apply_set_to_file(
                     "{}",
                     ui::status_line_stdout(
                         ui::Tone::Info,
-                        &format!("Key '{}' not found in {} ({}); nothing to remove", key, l, input),
+                        &format!(
+                            "Key '{}' not found in {} ({}); nothing to remove",
+                            key, l, input
+                        ),
                     )
                 );
             }
@@ -413,10 +416,7 @@ fn apply_set_to_file(
         } else {
             println!(
                 "{}",
-                ui::status_line_stdout(
-                    ui::Tone::Accent,
-                    &format!("Updated {} in place", input),
-                )
+                ui::status_line_stdout(ui::Tone::Accent, &format!("Updated {} in place", input),)
             );
         }
     }

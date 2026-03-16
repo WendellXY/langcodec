@@ -106,7 +106,10 @@ pub fn print_stats(
                 (stats.translated as f64) * 100.0 / (stats.denominator as f64)
             };
 
-            println!("{}", ui::section(&format!("Language {}", res.metadata.language)));
+            println!(
+                "{}",
+                ui::section(&format!("Language {}", res.metadata.language))
+            );
             println!("{}", ui::divider(28));
             println!("{}", ui::key_value("Total", stats.total));
             println!(
@@ -161,7 +164,12 @@ pub fn print_stats(
                 ui::key_value(
                     "stale",
                     ui::tone_text(
-                        &stats.by_status.get("stale").copied().unwrap_or(0).to_string(),
+                        &stats
+                            .by_status
+                            .get("stale")
+                            .copied()
+                            .unwrap_or(0)
+                            .to_string(),
                         ui::Tone::Error,
                     ),
                 )

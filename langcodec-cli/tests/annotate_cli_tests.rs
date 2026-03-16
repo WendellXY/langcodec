@@ -22,4 +22,17 @@ fn test_annotate_help_mentions_source_root_flag() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("--source-root"));
     assert!(stdout.contains("--check"));
+    assert!(stdout.contains("--ui"));
+}
+
+#[test]
+fn test_translate_help_mentions_ui_flag() {
+    let output = langcodec_cmd()
+        .args(["translate", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--ui"));
+    assert!(stdout.contains("auto"));
 }

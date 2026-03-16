@@ -15,8 +15,9 @@ documentation = "https://docs.rs/langcodec-cli"
 langcodec = { path = "../langcodec", version = "0.9.1" }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
-unicode-width = "0.2.1"
+unicode-width = "0.2.0"
 crossterm = "0.29.0"
+ratatui = "0.29"
 atty = "0.2.14"
 async-trait = "0.1.89"
 mentra = "0.3.0"

@@ -29,7 +29,10 @@ pub fn run_merge_command(
     if inputs.is_empty() {
         eprintln!(
             "{}",
-            ui::status_line_stderr(ui::Tone::Error, "Error: At least one input file is required.")
+            ui::status_line_stderr(
+                ui::Tone::Error,
+                "Error: At least one input file is required."
+            )
         );
         std::process::exit(1);
     }

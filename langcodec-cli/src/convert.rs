@@ -240,10 +240,7 @@ pub fn run_unified_convert_command(
             }
             println!(
                 "{}",
-                ui::status_line_stdout(
-                    ui::Tone::Success,
-                    "Successfully converted in strict mode",
-                )
+                ui::status_line_stdout(ui::Tone::Success, "Successfully converted in strict mode",)
             );
             return;
         }
@@ -270,10 +267,7 @@ pub fn run_unified_convert_command(
             }
             println!(
                 "{}",
-                ui::status_line_stdout(
-                    ui::Tone::Success,
-                    "Successfully converted in strict mode",
-                )
+                ui::status_line_stdout(ui::Tone::Success, "Successfully converted in strict mode",)
             );
             return;
         }
@@ -295,10 +289,7 @@ pub fn run_unified_convert_command(
         }
         println!(
             "{}",
-            ui::status_line_stdout(
-                ui::Tone::Success,
-                "Successfully converted in strict mode",
-            )
+            ui::status_line_stdout(ui::Tone::Success, "Successfully converted in strict mode",)
         );
         return;
     }
@@ -332,10 +323,7 @@ pub fn run_unified_convert_command(
         if input.ends_with(".json") && options.input_format.is_none() {
             println!(
                 "{}",
-                ui::status_line_stdout(
-                    ui::Tone::Info,
-                    "Trying standard JSON format detection...",
-                )
+                ui::status_line_stdout(ui::Tone::Info, "Trying standard JSON format detection...",)
             );
             // Try to use the standard format detection which will show proper JSON parsing errors
             if let Err(e) = convert_auto(&input, &output) {
@@ -375,10 +363,7 @@ pub fn run_unified_convert_command(
             if let Err(e) = try_custom_format_conversion(&input, &output, &options.input_format) {
                 println!(
                     "{}",
-                    ui::status_line_stdout(
-                        ui::Tone::Error,
-                        "Custom format conversion failed",
-                    )
+                    ui::status_line_stdout(ui::Tone::Error, "Custom format conversion failed",)
                 );
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -405,10 +390,7 @@ pub fn run_unified_convert_command(
         if let Err(e) = try_explicit_format_conversion(&input, &output, &input_fmt, &output_fmt) {
             println!(
                 "{}",
-                ui::status_line_stdout(
-                    ui::Tone::Error,
-                    "Explicit format conversion failed",
-                )
+                ui::status_line_stdout(ui::Tone::Error, "Explicit format conversion failed",)
             );
             eprintln!("Error: {}", e);
             std::process::exit(1);

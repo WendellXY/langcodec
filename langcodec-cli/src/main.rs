@@ -13,6 +13,7 @@ mod stats;
 mod sync;
 mod transformers;
 mod translate;
+mod tui;
 mod ui;
 mod validation;
 mod view;
@@ -26,6 +27,7 @@ use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::normalize::{NormalizeCliOptions, run_normalize_command};
 use crate::sync::{SyncOptions, run_sync_command};
 use crate::translate::{TranslateOptions, run_translate_command};
+use crate::tui::UiMode;
 use crate::validation::{ValidationContext, validate_context, validate_language_code};
 use crate::view::{ViewOptions, print_view, validate_status_filter};
 use clap::{CommandFactory, Parser, Subcommand};
@@ -306,6 +308,10 @@ enum Commands {
         /// Preview the translation run without writing files
         #[arg(long, default_value_t = false)]
         dry_run: bool,
+
+        /// Terminal UI mode: auto, plain, or tui
+        #[arg(long = "ui", value_enum, default_value_t = UiMode::Auto)]
+        ui_mode: UiMode,
     },
 
     /// Generate translator-facing xcstrings comments from source usage with a Mentra agent.
@@ -349,6 +355,10 @@ enum Commands {
         /// Exit non-zero if comments would be added or refreshed
         #[arg(long, default_value_t = false)]
         check: bool,
+
+        /// Terminal UI mode: auto, plain, or tui
+        #[arg(long = "ui", value_enum, default_value_t = UiMode::Auto)]
+        ui_mode: UiMode,
     },
 
     /// Debug: Read a localization file and output as JSON.
@@ -829,6 +839,7 @@ fn main() {
             concurrency,
             config,
             dry_run,
+            ui_mode,
         } => {
             let mut context = ValidationContext::new();
             if let Some(source_path) = &source {
@@ -880,6 +891,7 @@ fn main() {
                 config,
                 dry_run,
                 strict,
+                ui_mode,
             }) {
                 eprintln!(
                     "{}",
@@ -899,6 +911,7 @@ fn main() {
             config,
             dry_run,
             check,
+            ui_mode,
         } => {
             let mut context = ValidationContext::new();
             if let Some(input_path) = &input {
@@ -929,6 +942,7 @@ fn main() {
                 config,
                 dry_run,
                 check,
+                ui_mode,
             }) {
                 eprintln!(
                     "{}",

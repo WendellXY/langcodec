@@ -42,13 +42,14 @@ fn print_or_write(output: Option<&String>, content: &str) -> Result<(), String> 
 
 fn render_human(report: &DiffReport) -> String {
     if ui::stdout_styled() {
-        let mut lines = Vec::new();
-        lines.push(ui::header("Diff"));
-        lines.push(ui::key_value("Languages", report.summary.languages));
-        lines.push(ui::key_value("Added", report.summary.added));
-        lines.push(ui::key_value("Removed", report.summary.removed));
-        lines.push(ui::key_value("Changed", report.summary.changed));
-        lines.push(ui::key_value("Unchanged", report.summary.unchanged));
+        let mut lines = vec![
+            ui::header("Diff"),
+            ui::key_value("Languages", report.summary.languages),
+            ui::key_value("Added", report.summary.added),
+            ui::key_value("Removed", report.summary.removed),
+            ui::key_value("Changed", report.summary.changed),
+            ui::key_value("Unchanged", report.summary.unchanged),
+        ];
 
         for lang in &report.languages {
             lines.push(ui::section(&format!("Language {}", lang.language)));

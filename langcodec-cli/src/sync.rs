@@ -158,7 +158,10 @@ pub fn run_sync_command(opts: SyncOptions) -> Result<(), String> {
 
     if ui::stdout_styled() {
         println!("{}", ui::header("Sync"));
-        println!("{}", ui::key_value("Sync match language", &report.match_language));
+        println!(
+            "{}",
+            ui::key_value("Sync match language", &report.match_language)
+        );
         println!(
             "{}",
             ui::key_value("Total target entries considered", report.total_entries)
@@ -248,7 +251,10 @@ pub fn run_sync_command(opts: SyncOptions) -> Result<(), String> {
         "{}",
         ui::status_line_stdout(
             ui::Tone::Success,
-            &format!("Sync complete: {}", opts.output.as_deref().unwrap_or(&opts.target)),
+            &format!(
+                "Sync complete: {}",
+                opts.output.as_deref().unwrap_or(&opts.target)
+            ),
         )
     );
     Ok(())
