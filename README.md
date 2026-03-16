@@ -197,7 +197,7 @@ More library details live in [langcodec/README.md](langcodec/README.md).
 
 ## Current Status
 
-The current release is `0.9.1` on [crates.io](https://crates.io/crates/langcodec). It is already useful in real workflows, but it is still a `0.x` project, so APIs and behavior may continue to evolve.
+The current release is `0.10.0` on [crates.io](https://crates.io/crates/langcodec). It is already useful in real workflows, but it is still a `0.x` project, so APIs and behavior may continue to evolve.
 
 ## Contributing
 

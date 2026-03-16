@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            archive_ext: tar.gz
+            binary_name: langcodec
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive_ext: tar.gz
+            binary_name: langcodec
+          - os: macos-14
+            target: aarch64-apple-darwin
+            archive_ext: tar.gz
+            binary_name: langcodec
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            archive_ext: zip
+            binary_name: langcodec.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release -p langcodec-cli --target ${{ matrix.target }}
+
+      - name: Package artifact (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME}"
+          archive="langcodec-${version}-${{ matrix.target }}.${{ matrix.archive_ext }}"
+          binary_dir="dist/langcodec-${version}-${{ matrix.target }}"
+          mkdir -p "${binary_dir}"
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "${binary_dir}/langcodec"
+          tar -C dist -czf "${archive}" "langcodec-${version}-${{ matrix.target }}"
+          shasum -a 256 "${archive}" > "${archive}.sha256"
+
+      - name: Package artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME
+          $folder = "langcodec-$version-${{ matrix.target }}"
+          $archive = "$folder.${{ matrix.archive_ext }}"
+          New-Item -ItemType Directory -Force -Path "dist/$folder" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "dist/$folder/langcodec.exe"
+          Compress-Archive -Path "dist/$folder" -DestinationPath $archive
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
+          "$hash  $archive" | Out-File -Encoding ascii "$archive.sha256"
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            langcodec-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
+            langcodec-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release and upload binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*

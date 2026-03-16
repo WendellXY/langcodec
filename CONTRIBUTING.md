@@ -132,7 +132,8 @@ When reporting issues:
 
 1. Update version numbers in `Cargo.toml` files
 2. Update CHANGELOG.md
-3. Create a release tag
-4. Publish to crates.io
+3. Create and push a release tag like `v0.10.0`
+4. GitHub Actions will build release binaries and attach them to the GitHub Release automatically
+5. Publish to crates.io
 
 Thank you for contributing to langcodec!
