@@ -14,7 +14,10 @@ fn test_main_help_lists_annotate() {
 
 #[test]
 fn test_annotate_help_mentions_source_root_flag() {
-    let output = langcodec_cmd().args(["annotate", "--help"]).output().unwrap();
+    let output = langcodec_cmd()
+        .args(["annotate", "--help"])
+        .output()
+        .unwrap();
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("--source-root"));

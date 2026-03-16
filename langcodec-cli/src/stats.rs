@@ -1,3 +1,4 @@
+use crate::ui;
 use langcodec::{Codec, collect_resource_plural_issues, types::EntryStatus};
 use serde_json::json;
 use std::collections::HashMap;
@@ -79,6 +80,119 @@ pub fn print_stats(
         let rendered = serde_json::to_string_pretty(&body)
             .map_err(|e| format!("Failed to serialize stats JSON: {}", e))?;
         println!("{}", rendered);
+        return Ok(());
+    }
+
+    if ui::stdout_styled() {
+        println!("{}", ui::header("Stats"));
+        println!("{}", ui::key_value("Languages", resources.len()));
+        println!("{}", ui::key_value("Unique keys", codec.all_keys().count()));
+        if let Some(lang) = lang_filter {
+            println!("{}", ui::key_value("Language filter", lang));
+        }
+
+        for res in &resources {
+            let mut stats = LangStats::default();
+            for e in &res.entries {
+                accumulate(&mut stats, &e.status);
+            }
+            let plural_issues = collect_resource_plural_issues(res);
+            let missing_plural_entries = plural_issues.len();
+            let missing_plural_categories_total: usize =
+                plural_issues.iter().map(|r| r.missing.len()).sum();
+            let percent = if stats.denominator == 0 {
+                100.0
+            } else {
+                (stats.translated as f64) * 100.0 / (stats.denominator as f64)
+            };
+
+            println!("{}", ui::section(&format!("Language {}", res.metadata.language)));
+            println!("{}", ui::divider(28));
+            println!("{}", ui::key_value("Total", stats.total));
+            println!(
+                "{}",
+                ui::key_value(
+                    "Completion",
+                    format!("{} {:.2}%", ui::progress_bar(percent / 100.0, 18), percent),
+                )
+            );
+            println!(
+                "{}",
+                ui::key_value(
+                    "Missing plurals",
+                    format!(
+                        "{} entry issue(s), {} missing categorie(s)",
+                        missing_plural_entries, missing_plural_categories_total
+                    ),
+                )
+            );
+            println!(
+                "{}",
+                ui::key_value(
+                    "translated",
+                    ui::tone_text(
+                        &stats
+                            .by_status
+                            .get("translated")
+                            .copied()
+                            .unwrap_or(0)
+                            .to_string(),
+                        ui::Tone::Success,
+                    ),
+                )
+            );
+            println!(
+                "{}",
+                ui::key_value(
+                    "needs_review",
+                    ui::tone_text(
+                        &stats
+                            .by_status
+                            .get("needs_review")
+                            .copied()
+                            .unwrap_or(0)
+                            .to_string(),
+                        ui::Tone::Warning,
+                    ),
+                )
+            );
+            println!(
+                "{}",
+                ui::key_value(
+                    "stale",
+                    ui::tone_text(
+                        &stats.by_status.get("stale").copied().unwrap_or(0).to_string(),
+                        ui::Tone::Error,
+                    ),
+                )
+            );
+            println!(
+                "{}",
+                ui::key_value(
+                    "new",
+                    ui::tone_text(
+                        &stats.by_status.get("new").copied().unwrap_or(0).to_string(),
+                        ui::Tone::Info,
+                    ),
+                )
+            );
+            println!(
+                "{}",
+                ui::key_value(
+                    "do_not_translate",
+                    ui::tone_text(
+                        &stats
+                            .by_status
+                            .get("do_not_translate")
+                            .copied()
+                            .unwrap_or(0)
+                            .to_string(),
+                        ui::Tone::Muted,
+                    ),
+                )
+            );
+        }
+
         return Ok(());
     }
 

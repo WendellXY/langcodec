@@ -1,4 +1,5 @@
 use crate::convert::read_resources_from_any_input;
+use crate::ui;
 use crate::validation::{validate_file_path, validate_language_code, validate_output_path};
 use langcodec::{DiffOptions as LibDiffOptions, DiffReport, Translation, diff_resources};
 
@@ -29,7 +30,10 @@ fn translation_as_text(value: &Translation) -> String {
 fn print_or_write(output: Option<&String>, content: &str) -> Result<(), String> {
     if let Some(path) = output {
         std::fs::write(path, content).map_err(|e| format!("Failed to write {}: {}", path, e))?;
-        println!("Report written: {}", path);
+        println!(
+            "{}",
+            ui::status_line_stdout(ui::Tone::Success, &format!("Report written: {}", path))
+        );
     } else {
         println!("{}", content);
     }
@@ -37,6 +41,45 @@ fn print_or_write(output: Option<&String>, content: &str) -> Result<(), String> 
 }
 
 fn render_human(report: &DiffReport) -> String {
+    if ui::stdout_styled() {
+        let mut lines = Vec::new();
+        lines.push(ui::header("Diff"));
+        lines.push(ui::key_value("Languages", report.summary.languages));
+        lines.push(ui::key_value("Added", report.summary.added));
+        lines.push(ui::key_value("Removed", report.summary.removed));
+        lines.push(ui::key_value("Changed", report.summary.changed));
+        lines.push(ui::key_value("Unchanged", report.summary.unchanged));
+
+        for lang in &report.languages {
+            lines.push(ui::section(&format!("Language {}", lang.language)));
+            lines.push(ui::divider(28));
+            lines.push(ui::key_value("added", lang.added.len()));
+            lines.push(ui::key_value("removed", lang.removed.len()));
+            lines.push(ui::key_value("changed", lang.changed.len()));
+            lines.push(ui::key_value("unchanged", lang.unchanged));
+            if !lang.added.is_empty() {
+                lines.push(ui::key_value("added keys", lang.added.join(", ")));
+            }
+            if !lang.removed.is_empty() {
+                lines.push(ui::key_value("removed keys", lang.removed.join(", ")));
+            }
+            if !lang.changed.is_empty() {
+                let mut changed_lines = Vec::new();
+                for item in &lang.changed {
+                    changed_lines.push(format!(
+                        "{} ({} → {})",
+                        ui::accent(&item.key),
+                        translation_as_text(&item.target),
+                        translation_as_text(&item.source)
+                    ));
+                }
+                lines.push(ui::key_value("changed keys", changed_lines.join(", ")));
+            }
+        }
+
+        return lines.join("\n");
+    }
+
     let mut lines = Vec::new();
     lines.push("=== Diff ===".to_string());
     lines.push(format!("Languages: {}", report.summary.languages));

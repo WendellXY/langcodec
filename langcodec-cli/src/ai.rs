@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use mentra::{BuiltinProvider, provider::{self, Provider}};
+use mentra::{
+    BuiltinProvider,
+    provider::{self, Provider},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProviderKind {

@@ -1,4 +1,5 @@
 use crate::path_glob;
+use crate::ui;
 use crate::validation::{ValidationContext, validate_context};
 use langcodec::{Codec, Resource, Translation, formats::FormatType};
 use std::path::Path;
@@ -114,7 +115,7 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
         if !has_glob_meta(original) && !Path::new(original).is_file() {
             let msg = format!("Input file does not exist: {}", original);
             if opts.continue_on_error {
-                eprintln!("❌ {}", msg);
+                eprintln!("{}", ui::status_line_stderr(ui::Tone::Error, &msg));
                 failures.push((original.clone(), msg));
                 skip_missing.insert(original.clone());
             } else {
@@ -142,7 +143,7 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
         if let Err(e) = validate_context(&validation_context) {
             let msg = format!("Input validation failed for '{}': {}", input_path, e);
             if opts.continue_on_error {
-                eprintln!("❌ {}", msg);
+                eprintln!("{}", ui::status_line_stderr(ui::Tone::Error, &msg));
                 failures.push((input_path.clone(), msg));
                 continue;
             } else {
@@ -168,7 +169,7 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
         ) {
             let msg = e.to_string();
             if opts.continue_on_error {
-                eprintln!("❌ {}", msg);
+                eprintln!("{}", ui::status_line_stderr(ui::Tone::Error, &msg));
                 failures.push((input_path.clone(), msg));
                 continue;
             } else {
@@ -186,10 +187,20 @@ pub fn run_edit_set_command(opts: EditSetOptions) -> Result<(), String> {
     }
 
     println!(
-        "Summary: processed {}; success: {}; failed: {}",
-        processed_count,
-        success_count,
-        failures.len()
+        "{}",
+        ui::status_line_stdout(
+            if failures.is_empty() {
+                ui::Tone::Success
+            } else {
+                ui::Tone::Warning
+            },
+            &format!(
+                "Summary: processed {}; success: {}; failed: {}",
+                processed_count,
+                success_count,
+                failures.len()
+            ),
+        )
     );
 
     if failures.is_empty() {
@@ -235,15 +246,30 @@ fn apply_set_to_file(
         if let Some(l) = lang.as_deref() {
             if codec.has_entry(key, l) {
                 if dry_run {
-                    println!("DRY-RUN: Would remove '{}' from {} ({})", key, l, input);
+                    println!(
+                        "{}",
+                        ui::status_line_stdout(
+                            ui::Tone::Warning,
+                            &format!("DRY-RUN: Would remove '{}' from {} ({})", key, l, input),
+                        )
+                    );
                 } else {
                     codec.remove_entry(key, l).map_err(|e| e.to_string())?;
-                    println!("✅ Removed '{}' from {} ({})", key, l, input);
+                    println!(
+                        "{}",
+                        ui::status_line_stdout(
+                            ui::Tone::Success,
+                            &format!("Removed '{}' from {} ({})", key, l, input),
+                        )
+                    );
                 }
             } else {
                 println!(
-                    "ℹ️  Key '{}' not found in {} ({}); nothing to remove",
-                    key, l, input
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Info,
+                        &format!("Key '{}' not found in {} ({}); nothing to remove", key, l, input),
+                    )
                 );
             }
         } else {
@@ -252,21 +278,39 @@ fn apply_set_to_file(
             let will_remove = res.entries.iter().any(|e| e.id == key);
             if dry_run {
                 if will_remove {
-                    println!("DRY-RUN: Would remove '{}' ({})", key, input);
+                    println!(
+                        "{}",
+                        ui::status_line_stdout(
+                            ui::Tone::Warning,
+                            &format!("DRY-RUN: Would remove '{}' ({})", key, input),
+                        )
+                    );
                 } else {
                     println!(
-                        "ℹ️  Key '{}' not present ({}); nothing to remove",
-                        key, input
+                        "{}",
+                        ui::status_line_stdout(
+                            ui::Tone::Info,
+                            &format!("Key '{}' not present ({}); nothing to remove", key, input),
+                        )
                     );
                 }
             } else {
                 res.entries.retain(|e| e.id != key);
                 if res.entries.len() < before {
-                    println!("✅ Removed '{}' ({})", key, input);
+                    println!(
+                        "{}",
+                        ui::status_line_stdout(
+                            ui::Tone::Success,
+                            &format!("Removed '{}' ({})", key, input),
+                        )
+                    );
                 } else {
                     println!(
-                        "ℹ️  Key '{}' not present ({}); nothing to remove",
-                        key, input
+                        "{}",
+                        ui::status_line_stdout(
+                            ui::Tone::Info,
+                            &format!("Key '{}' not present ({}); nothing to remove", key, input),
+                        )
                     );
                 }
             }
@@ -297,8 +341,14 @@ fn apply_set_to_file(
                 .unwrap_or_default();
             if dry_run {
                 println!(
-                    "DRY-RUN: Would update '{}' in {}: '{}' -> '{}' ({})",
-                    key, lang_ref, old, val, input
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Warning,
+                        &format!(
+                            "DRY-RUN: Would update '{}' in {}: '{}' -> '{}' ({})",
+                            key, lang_ref, old, val, input
+                        ),
+                    )
                 );
             } else {
                 codec
@@ -314,12 +364,24 @@ fn apply_set_to_file(
                 {
                     entry.comment = comment.clone();
                 }
-                println!("✅ Updated '{}' in {} ({})", key, lang_ref, input);
+                println!(
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Success,
+                        &format!("Updated '{}' in {} ({})", key, lang_ref, input),
+                    )
+                );
             }
         } else if dry_run {
             println!(
-                "DRY-RUN: Would add '{}' to {} with value '{}' ({})",
-                key, lang_ref, val, input
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Warning,
+                    &format!(
+                        "DRY-RUN: Would add '{}' to {} with value '{}' ({})",
+                        key, lang_ref, val, input
+                    ),
+                )
             );
         } else {
             codec
@@ -331,16 +393,31 @@ fn apply_set_to_file(
                     status_parsed.clone(),
                 )
                 .map_err(|e| e.to_string())?;
-            println!("✅ Added '{}' to {} ({})", key, lang_ref, input);
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Success,
+                    &format!("Added '{}' to {} ({})", key, lang_ref, input),
+                )
+            );
         }
     }
 
     if !dry_run {
         write_back(&codec, input, &output.cloned(), lang)?;
         if let Some(out) = output {
-            println!("📄 Wrote changes to {}", out);
+            println!(
+                "{}",
+                ui::status_line_stdout(ui::Tone::Accent, &format!("Wrote changes to {}", out))
+            );
         } else {
-            println!("📄 Updated {} in place", input);
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Accent,
+                    &format!("Updated {} in place", input),
+                )
+            );
         }
     }
 

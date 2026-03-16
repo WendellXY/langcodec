@@ -1,4 +1,5 @@
 use crate::convert::read_resources_from_any_input;
+use crate::ui;
 use crate::validation::{validate_file_path, validate_language_code, validate_output_path};
 use langcodec::{
     Codec, ReadOptions, SyncOptions as LibSyncOptions, SyncReport, formats::FormatType,
@@ -155,25 +156,68 @@ pub fn run_sync_command(opts: SyncOptions) -> Result<(), String> {
         ));
     }
 
-    println!("Sync match language: {}", report.match_language);
-    println!("Total target entries considered: {}", report.total_entries);
-    println!("Updated: {}", report.updated);
-    println!("Unchanged: {}", report.unchanged);
-    println!("Fallback matches used: {}", report.fallback_matches);
-    println!("Skipped (unmatched): {}", report.skipped_unmatched);
-    println!(
-        "Skipped (missing source language value): {}",
-        report.skipped_missing_language
-    );
-    println!(
-        "Skipped (ambiguous fallback): {}",
-        report.skipped_ambiguous_fallback
-    );
-    println!("Skipped (type mismatch): {}", report.skipped_type_mismatch);
+    if ui::stdout_styled() {
+        println!("{}", ui::header("Sync"));
+        println!("{}", ui::key_value("Sync match language", &report.match_language));
+        println!(
+            "{}",
+            ui::key_value("Total target entries considered", report.total_entries)
+        );
+        println!("{}", ui::key_value("Updated", report.updated));
+        println!("{}", ui::key_value("Unchanged", report.unchanged));
+        println!(
+            "{}",
+            ui::key_value("Fallback matches used", report.fallback_matches)
+        );
+        println!(
+            "{}",
+            ui::key_value("Skipped unmatched", report.skipped_unmatched)
+        );
+        println!(
+            "{}",
+            ui::key_value(
+                "Skipped missing source language value",
+                report.skipped_missing_language
+            )
+        );
+        println!(
+            "{}",
+            ui::key_value(
+                "Skipped ambiguous fallback",
+                report.skipped_ambiguous_fallback
+            )
+        );
+        println!(
+            "{}",
+            ui::key_value("Skipped type mismatch", report.skipped_type_mismatch)
+        );
+    } else {
+        println!("Sync match language: {}", report.match_language);
+        println!("Total target entries considered: {}", report.total_entries);
+        println!("Updated: {}", report.updated);
+        println!("Unchanged: {}", report.unchanged);
+        println!("Fallback matches used: {}", report.fallback_matches);
+        println!("Skipped (unmatched): {}", report.skipped_unmatched);
+        println!(
+            "Skipped (missing source language value): {}",
+            report.skipped_missing_language
+        );
+        println!(
+            "Skipped (ambiguous fallback): {}",
+            report.skipped_ambiguous_fallback
+        );
+        println!("Skipped (type mismatch): {}", report.skipped_type_mismatch);
+    }
 
     if let Some(report_path) = &opts.report_json {
         write_report(report_path, &opts, &report)?;
-        println!("Report JSON written: {}", report_path);
+        println!(
+            "{}",
+            ui::status_line_stdout(
+                ui::Tone::Success,
+                &format!("Report JSON written: {}", report_path),
+            )
+        );
     }
 
     let fail_on_unmatched = opts.fail_on_unmatched || opts.strict;
@@ -192,14 +236,20 @@ pub fn run_sync_command(opts: SyncOptions) -> Result<(), String> {
     }
 
     if opts.dry_run {
-        println!("Dry-run mode: no files were written");
+        println!(
+            "{}",
+            ui::status_line_stdout(ui::Tone::Warning, "Dry-run mode: no files were written")
+        );
         return Ok(());
     }
 
     write_back(&target_codec, &opts.target, &opts.output, &opts.lang)?;
     println!(
-        "✅ Sync complete: {}",
-        opts.output.as_deref().unwrap_or(&opts.target)
+        "{}",
+        ui::status_line_stdout(
+            ui::Tone::Success,
+            &format!("Sync complete: {}", opts.output.as_deref().unwrap_or(&opts.target)),
+        )
     );
     Ok(())
 }

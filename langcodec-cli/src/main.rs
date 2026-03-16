@@ -13,9 +13,11 @@ mod stats;
 mod sync;
 mod transformers;
 mod translate;
+mod ui;
 mod validation;
 mod view;
 
+use crate::annotate::{AnnotateOptions, run_annotate_command};
 use crate::convert::{ConvertOptions, run_unified_convert_command, try_custom_format_view};
 use crate::debug::run_debug_command;
 use crate::diff::{DiffOptions, run_diff_command};
@@ -24,7 +26,6 @@ use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::normalize::{NormalizeCliOptions, run_normalize_command};
 use crate::sync::{SyncOptions, run_sync_command};
 use crate::translate::{TranslateOptions, run_translate_command};
-use crate::annotate::{AnnotateOptions, run_annotate_command};
 use crate::validation::{ValidationContext, validate_context, validate_language_code};
 use crate::view::{ViewOptions, print_view, validate_status_filter};
 use clap::{CommandFactory, Parser, Subcommand};
@@ -33,7 +34,7 @@ use clap_complete::{Shell, generate};
 use langcodec::Codec;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None, styles = ui::clap_styles())]
 struct Args {
     /// Enable strict mode (disables parser fallbacks and enforces stricter failures)
     #[arg(long, global = true, default_value_t = false)]
@@ -498,7 +499,10 @@ fn main() {
 
             // Validate all inputs
             if let Err(e) = validate_context(&context) {
-                eprintln!("❌ Validation failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Validation failed: {}", e))
+                );
                 std::process::exit(1);
             }
 
@@ -541,7 +545,10 @@ fn main() {
                 };
 
                 if let Err(e) = run_edit_set_command(opts) {
-                    eprintln!("❌ Edit failed: {}", e);
+                    eprintln!(
+                        "{}",
+                        ui::status_line_stderr(ui::Tone::Error, &format!("Edit failed: {}", e))
+                    );
                     std::process::exit(1);
                 }
             }
@@ -563,7 +570,10 @@ fn main() {
                 context = context.with_output_file(output_path.clone());
             }
             if let Err(e) = validate_context(&context) {
-                eprintln!("❌ Validation failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Validation failed: {}", e))
+                );
                 std::process::exit(1);
             }
 
@@ -575,7 +585,10 @@ fn main() {
                 output,
                 strict,
             }) {
-                eprintln!("❌ Diff failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Diff failed: {}", e))
+                );
                 std::process::exit(1);
             }
         }
@@ -600,13 +613,19 @@ fn main() {
                 context = context.with_language_code(lang_code.clone());
             }
             if let Err(e) = validate_context(&context) {
-                eprintln!("❌ Validation failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Validation failed: {}", e))
+                );
                 std::process::exit(1);
             }
             if let Some(match_lang_code) = &match_lang
                 && let Err(e) = validate_language_code(match_lang_code)
             {
-                eprintln!("❌ Validation failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Validation failed: {}", e))
+                );
                 std::process::exit(1);
             }
 
@@ -622,7 +641,10 @@ fn main() {
                 strict,
                 dry_run,
             }) {
-                eprintln!("❌ Sync failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Sync failed: {}", e))
+                );
                 std::process::exit(1);
             }
         }
@@ -644,18 +666,25 @@ fn main() {
 
             // Validate all inputs
             if let Err(e) = validate_context(&context) {
-                eprintln!("❌ Validation failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Validation failed: {}", e))
+                );
                 std::process::exit(1);
             }
 
             if let Err(e) = validate_status_filter(&status) {
-                eprintln!("❌ {}", e);
+                eprintln!("{}", ui::status_line_stderr(ui::Tone::Error, &e));
                 std::process::exit(1);
             }
 
             if strict && status.is_some() && !input_supports_explicit_status_metadata(&input) {
                 eprintln!(
-                    "❌ Strict mode with --status requires explicit status metadata. Supported in v1: .xcstrings"
+                    "{}",
+                    ui::status_line_stderr(
+                        ui::Tone::Error,
+                        "Strict mode with --status requires explicit status metadata. Supported in v1: .xcstrings",
+                    )
                 );
                 std::process::exit(1);
             }
@@ -663,7 +692,13 @@ fn main() {
             let codec = match load_codec_for_readonly_command(&input, &lang, strict) {
                 Ok(codec) => codec,
                 Err(e) => {
-                    eprintln!("Failed to read file: {}", e);
+                    eprintln!(
+                        "{}",
+                        ui::status_line_stderr(
+                            ui::Tone::Error,
+                            &format!("Failed to read file: {}", e)
+                        )
+                    );
                     std::process::exit(1);
                 }
             };
@@ -681,13 +716,31 @@ fn main() {
                 match codec.validate_plurals() {
                     Ok(()) => {
                         if json || keys_only {
-                            eprintln!("✅ Plural validation passed");
+                            eprintln!(
+                                "{}",
+                                ui::status_line_stderr(
+                                    ui::Tone::Success,
+                                    "Plural validation passed",
+                                )
+                            );
                         } else {
-                            println!("\n✅ Plural validation passed");
+                            println!(
+                                "\n{}",
+                                ui::status_line_stdout(
+                                    ui::Tone::Success,
+                                    "Plural validation passed",
+                                )
+                            );
                         }
                     }
                     Err(e) => {
-                        eprintln!("\n❌ Plural validation failed: {}", e);
+                        eprintln!(
+                            "\n{}",
+                            ui::status_line_stderr(
+                                ui::Tone::Error,
+                                &format!("Plural validation failed: {}", e),
+                            )
+                        );
                         std::process::exit(2);
                     }
                 }
@@ -702,17 +755,35 @@ fn main() {
             version,
         } => {
             // Expand any glob patterns in inputs (e.g., *.strings, **/*.xml)
-            println!("Expanding glob patterns in inputs: {:?}", inputs);
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Info,
+                    &format!("Expanding glob patterns in inputs: {:?}", inputs),
+                )
+            );
             let expanded_inputs = match path_glob::expand_input_globs(&inputs) {
                 Ok(list) => list,
                 Err(e) => {
-                    eprintln!("❌ Failed to expand input patterns: {}", e);
+                    eprintln!(
+                        "{}",
+                        ui::status_line_stderr(
+                            ui::Tone::Error,
+                            &format!("Failed to expand input patterns: {}", e),
+                        )
+                    );
                     std::process::exit(1);
                 }
             };
 
             if expanded_inputs.is_empty() {
-                eprintln!("❌ No input files matched the provided patterns");
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(
+                        ui::Tone::Error,
+                        "No input files matched the provided patterns",
+                    )
+                );
                 std::process::exit(1);
             }
 
@@ -729,7 +800,10 @@ fn main() {
 
             // Validate all inputs
             if let Err(e) = validate_context(&context) {
-                eprintln!("❌ Validation failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Validation failed: {}", e))
+                );
                 std::process::exit(1);
             }
 
@@ -774,12 +848,21 @@ fn main() {
                 context = context.with_language_code(lang_code.clone());
             }
             if let Err(e) = validate_context(&context) {
-                eprintln!("❌ Validation failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Validation failed: {}", e))
+                );
                 std::process::exit(1);
             }
             for lang_code in &target_lang {
                 if let Err(e) = validate_language_code(lang_code) {
-                    eprintln!("❌ Validation failed: {}", e);
+                    eprintln!(
+                        "{}",
+                        ui::status_line_stderr(
+                            ui::Tone::Error,
+                            &format!("Validation failed: {}", e),
+                        )
+                    );
                     std::process::exit(1);
                 }
             }
@@ -798,7 +881,10 @@ fn main() {
                 dry_run,
                 strict,
             }) {
-                eprintln!("❌ Translate failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Translate failed: {}", e),)
+                );
                 std::process::exit(1);
             }
         }
@@ -825,7 +911,10 @@ fn main() {
                 context = context.with_language_code(lang_code.clone());
             }
             if let Err(e) = validate_context(&context) {
-                eprintln!("❌ Validation failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Validation failed: {}", e))
+                );
                 std::process::exit(1);
             }
 
@@ -841,7 +930,10 @@ fn main() {
                 dry_run,
                 check,
             }) {
-                eprintln!("❌ Annotate failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Annotate failed: {}", e),)
+                );
                 std::process::exit(1);
             }
         }
@@ -862,7 +954,10 @@ fn main() {
 
             // Validate all inputs
             if let Err(e) = validate_context(&context) {
-                eprintln!("❌ Validation failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Validation failed: {}", e))
+                );
                 std::process::exit(1);
             }
 
@@ -893,7 +988,10 @@ fn main() {
                 strict,
             };
             if let Err(e) = run_normalize_command(opts) {
-                eprintln!("❌ Normalize failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Normalize failed: {}", e),)
+                );
                 std::process::exit(1);
             }
         }
@@ -904,20 +1002,32 @@ fn main() {
                 context = context.with_language_code(l.clone());
             }
             if let Err(e) = validate_context(&context) {
-                eprintln!("❌ Validation failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Validation failed: {}", e))
+                );
                 std::process::exit(1);
             }
 
             let codec = match load_codec_for_readonly_command(&input, &lang, strict) {
                 Ok(codec) => codec,
                 Err(e) => {
-                    eprintln!("Failed to read file: {}", e);
+                    eprintln!(
+                        "{}",
+                        ui::status_line_stderr(
+                            ui::Tone::Error,
+                            &format!("Failed to read file: {}", e)
+                        )
+                    );
                     std::process::exit(1);
                 }
             };
 
             if let Err(e) = stats::print_stats(&codec, &lang, json) {
-                eprintln!("❌ Stats failed: {}", e);
+                eprintln!(
+                    "{}",
+                    ui::status_line_stderr(ui::Tone::Error, &format!("Stats failed: {}", e))
+                );
                 std::process::exit(1);
             }
         }

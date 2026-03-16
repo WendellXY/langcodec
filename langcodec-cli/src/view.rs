@@ -1,3 +1,4 @@
+use crate::ui;
 use langcodec::{
     Codec,
     types::{EntryStatus, PluralCategory, Translation},
@@ -92,6 +93,16 @@ fn plural_category_label(category: &PluralCategory) -> &'static str {
     }
 }
 
+fn styled_status_label(status: &EntryStatus) -> String {
+    match status {
+        EntryStatus::Translated => ui::tone_text("translated", ui::Tone::Success),
+        EntryStatus::NeedsReview => ui::tone_text("needs_review", ui::Tone::Warning),
+        EntryStatus::Stale => ui::tone_text("stale", ui::Tone::Error),
+        EntryStatus::New => ui::tone_text("new", ui::Tone::Info),
+        EntryStatus::DoNotTranslate => ui::tone_text("do_not_translate", ui::Tone::Muted),
+    }
+}
+
 fn render_json_output(
     filtered_resources: &[(&langcodec::Resource, Vec<&langcodec::types::Entry>)],
     keys_only: bool,
@@ -177,12 +188,15 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
     let text_mode = !opts.json;
     let keys_only_text = opts.keys_only && text_mode;
     if text_mode && !keys_only_text {
-        println!("Processing resources...");
+        println!(
+            "{}",
+            ui::status_line_stdout(ui::Tone::Info, "Processing resources...")
+        );
     }
     let status_filter = match parse_status_filter(&opts.status) {
         Ok(filter) => filter,
         Err(err) => {
-            eprintln!("❌ {}", err);
+            eprintln!("{}", ui::status_line_stderr(ui::Tone::Error, &err));
             std::process::exit(1);
         }
     };
@@ -191,11 +205,20 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
     let resources = if let Some(lang) = lang_filter {
         // Check if the language exists
         if !codec.languages().any(|l| l == lang) {
-            println!("❌ Language not found");
+            println!(
+                "{}",
+                ui::status_line_stdout(ui::Tone::Error, "Language not found")
+            );
             eprintln!(
-                "Language '{}' not found. Available languages: {}",
-                lang,
-                codec.languages().collect::<Vec<_>>().join(", ")
+                "{}",
+                ui::status_line_stderr(
+                    ui::Tone::Error,
+                    &format!(
+                        "Language '{}' not found. Available languages: {}",
+                        lang,
+                        codec.languages().collect::<Vec<_>>().join(", ")
+                    ),
+                )
             );
             std::process::exit(1);
         }
@@ -212,11 +235,23 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
     };
 
     if resources.is_empty() {
-        println!("❌ No resources found");
+        println!(
+            "{}",
+            ui::status_line_stdout(ui::Tone::Error, "No resources found")
+        );
         if let Some(lang) = lang_filter {
-            eprintln!("No resources found for language: {}", lang);
+            eprintln!(
+                "{}",
+                ui::status_line_stderr(
+                    ui::Tone::Error,
+                    &format!("No resources found for language: {}", lang),
+                )
+            );
         } else {
-            eprintln!("No resources found");
+            eprintln!(
+                "{}",
+                ui::status_line_stderr(ui::Tone::Error, "No resources found")
+            );
         }
         std::process::exit(1);
     }
@@ -247,14 +282,20 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
     };
 
     if text_mode && !keys_only_text {
-        println!("✅ Found {} resource(s)", visible_resources.len());
+        println!(
+            "{}",
+            ui::status_line_stdout(
+                ui::Tone::Success,
+                &format!("Found {} resource(s)", visible_resources.len()),
+            )
+        );
     }
 
     if opts.json {
         let rendered = match render_json_output(&visible_resources, opts.keys_only) {
             Ok(text) => text,
             Err(err) => {
-                eprintln!("❌ {}", err);
+                eprintln!("{}", ui::status_line_stderr(ui::Tone::Error, &err));
                 std::process::exit(1);
             }
         };
@@ -273,6 +314,109 @@ pub fn print_view(codec: &Codec, lang_filter: &Option<String>, opts: &ViewOption
                 }
             }
         }
+        return;
+    }
+
+    if ui::stdout_styled() {
+        println!("\n{}", ui::header("Resources"));
+        if let Some(lang) = lang_filter {
+            println!("{}", ui::key_value("Language filter", lang));
+        }
+        if let Some(status) = opts.status.as_deref() {
+            println!("{}", ui::key_value("Status filter", status));
+        }
+        println!(
+            "{}",
+            ui::key_value("Visible resources", visible_resources.len())
+        );
+
+        for (i, (resource, entries)) in visible_resources.iter().enumerate() {
+            println!(
+                "{}",
+                ui::section(&format!("Resource {} · {}", i + 1, resource.metadata.language))
+            );
+            println!("{}", ui::divider(40));
+            if !resource.metadata.domain.is_empty() {
+                println!("{}", ui::key_value("Domain", &resource.metadata.domain));
+            }
+            println!("{}", ui::key_value("Entries", entries.len()));
+
+            for entry in entries {
+                println!();
+                println!("{}", ui::accent(&entry.id));
+                println!("  {}", ui::key_value("Status", styled_status_label(&entry.status)));
+
+                if let Some(comment) = &entry.comment {
+                    println!("  {}", ui::key_value("Comment", comment));
+                }
+
+                match &entry.value {
+                    Translation::Empty => {
+                        println!(
+                            "  {}",
+                            ui::key_value("Type", ui::tone_text("empty", ui::Tone::Muted))
+                        );
+                    }
+                    Translation::Singular(value) => {
+                        println!(
+                            "  {}",
+                            ui::key_value("Type", ui::tone_text("singular", ui::Tone::Accent))
+                        );
+                        let rendered = if opts.full {
+                            value.clone()
+                        } else {
+                            truncate_chars(value, 90)
+                        };
+                        println!("  {}", ui::key_value("Value", rendered));
+                    }
+                    Translation::Plural(plural) => {
+                        println!(
+                            "  {}",
+                            ui::key_value("Type", ui::tone_text("plural", ui::Tone::Accent))
+                        );
+                        println!("  {}", ui::key_value("Plural ID", &plural.id));
+                        for (category, value) in &plural.forms {
+                            let rendered = if opts.full {
+                                value.clone()
+                            } else {
+                                truncate_chars(value, 90)
+                            };
+                            println!(
+                                "  {}",
+                                ui::key_value(plural_category_label(category), rendered)
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        if lang_filter.is_none() {
+            let mut unique_keys = HashSet::new();
+            let mut per_language_counts: BTreeMap<String, usize> = BTreeMap::new();
+            for (resource, entries) in &visible_resources {
+                per_language_counts
+                    .entry(resource.metadata.language.clone())
+                    .and_modify(|count| *count += entries.len())
+                    .or_insert(entries.len());
+                for entry in entries {
+                    unique_keys.insert(entry.id.clone());
+                }
+            }
+
+            println!("{}", ui::section("Summary"));
+            println!("{}", ui::divider(24));
+            println!("{}", ui::key_value("Total languages", per_language_counts.len()));
+            println!("{}", ui::key_value("Total unique keys", unique_keys.len()));
+
+            for (lang, count) in per_language_counts {
+                println!(
+                    "{}",
+                    ui::key_value(&format!("{lang} entries"), count)
+                );
+            }
+        }
+
         return;
     }
 

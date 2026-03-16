@@ -1,5 +1,6 @@
 use crate::formats::parse_custom_format;
 use crate::transformers::custom_format_to_resource;
+use crate::ui;
 
 use langcodec::{Codec, ReadOptions, converter};
 use rayon::prelude::*;
@@ -26,12 +27,21 @@ pub fn run_merge_command(
     strict: bool,
 ) {
     if inputs.is_empty() {
-        eprintln!("Error: At least one input file is required.");
+        eprintln!(
+            "{}",
+            ui::status_line_stderr(ui::Tone::Error, "Error: At least one input file is required.")
+        );
         std::process::exit(1);
     }
 
     // Read all input files concurrently into Codecs, then combine and merge
-    println!("Reading {} input files...", inputs.len());
+    println!(
+        "{}",
+        ui::status_line_stdout(
+            ui::Tone::Info,
+            &format!("Reading {} input files...", inputs.len()),
+        )
+    );
     let read_results: Vec<Result<Codec, String>> = inputs
         .par_iter()
         .map(|input| read_input_to_codec(input, lang.clone(), strict))
@@ -42,7 +52,13 @@ pub fn run_merge_command(
         match res {
             Ok(c) => input_codecs.push(c),
             Err(e) => {
-                println!("❌ Error reading input file {}/{}", idx + 1, inputs.len());
+                println!(
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Error,
+                        &format!("Error reading input file {}/{}", idx + 1, inputs.len()),
+                    )
+                );
                 eprintln!("{}", e);
                 std::process::exit(1);
             }
@@ -55,7 +71,10 @@ pub fn run_merge_command(
     // Skip validation for merge operations since we expect multiple resources with potentially duplicate languages
 
     // Merge resources using the new lib crate method
-    println!("Merging resources...");
+    println!(
+        "{}",
+        ui::status_line_stdout(ui::Tone::Info, "Merging resources...")
+    );
     let conflict_strategy = match strategy {
         ConflictStrategy::First => langcodec::types::ConflictStrategy::First,
         ConflictStrategy::Last => langcodec::types::ConflictStrategy::Last,
@@ -63,12 +82,27 @@ pub fn run_merge_command(
     };
 
     let merge_count = codec.merge_resources(&conflict_strategy);
-    println!("Merged {} language groups", merge_count);
+    println!(
+        "{}",
+        ui::status_line_stdout(
+            ui::Tone::Success,
+            &format!("Merged {} language groups", merge_count),
+        )
+    );
 
-    println!("Writing merged output...");
+    println!(
+        "{}",
+        ui::status_line_stdout(ui::Tone::Info, "Writing merged output...")
+    );
     match converter::infer_format_from_path(output.clone()) {
         Some(format) => {
-            println!("Converting resources to format: {:?}", format);
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Info,
+                    &format!("Converting resources to format: {:?}", format),
+                )
+            );
             // Set source_language field in the resources to make sure xcstrings format would not throw an error
             // First, try to get the source language from the first resource if it exists; otherwise, the first resource's language
             // would be used as the source language. If the two checks fail, the default value "en" would be used.
@@ -94,7 +128,13 @@ pub fn run_merge_command(
                         })
                 });
 
-            println!("Setting metadata.source_language to: {}", source_language);
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Accent,
+                    &format!("Setting metadata.source_language to: {}", source_language),
+                )
+            );
 
             // Set version field in the resources to make sure xcstrings format would not throw an error
             let version = version_override.unwrap_or_else(|| {
@@ -105,7 +145,13 @@ pub fn run_merge_command(
                     .unwrap_or_else(|| "1.0".to_string())
             });
 
-            println!("Setting metadata.version to: {}", version);
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Accent,
+                    &format!("Setting metadata.version to: {}", version),
+                )
+            );
 
             codec.iter_mut().for_each(|r| {
                 r.metadata
@@ -118,23 +164,38 @@ pub fn run_merge_command(
 
             if let Err(e) = converter::convert_resources_to_format(codec.resources, &output, format)
             {
-                println!("❌ Error converting resources to format");
+                println!(
+                    "{}",
+                    ui::status_line_stdout(ui::Tone::Error, "Error converting resources to format")
+                );
                 eprintln!("Error converting to {}: {}", output, e);
                 std::process::exit(1);
             }
         }
         None => {
             if codec.resources.len() == 1 {
-                println!("Writing single resource to output file");
+                println!(
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Info,
+                        "Writing single resource to output file",
+                    )
+                );
                 if let Some(resource) = codec.resources.first()
                     && let Err(e) = Codec::write_resource_to_file(resource, &output)
                 {
-                    println!("❌ Error writing output file");
+                    println!(
+                        "{}",
+                        ui::status_line_stdout(ui::Tone::Error, "Error writing output file")
+                    );
                     eprintln!("Error writing to {}: {}", output, e);
                     std::process::exit(1);
                 }
             } else {
-                println!("❌ Error writing output file");
+                println!(
+                    "{}",
+                    ui::status_line_stdout(ui::Tone::Error, "Error writing output file")
+                );
                 eprintln!("Error writing to {}: multiple resources", output);
                 std::process::exit(1);
             }
@@ -142,9 +203,11 @@ pub fn run_merge_command(
     }
 
     println!(
-        "✅ Successfully merged {} files into {}",
-        inputs.len(),
-        output
+        "{}",
+        ui::status_line_stdout(
+            ui::Tone::Success,
+            &format!("Successfully merged {} files into {}", inputs.len(), output),
+        )
     );
 }
 

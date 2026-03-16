@@ -1,5 +1,6 @@
 use crate::formats::{self, parse_custom_format};
 use crate::transformers::custom_format_to_resource;
+use crate::ui;
 use crate::validation::{self, validate_custom_format_file};
 
 use langcodec::{Codec, ReadOptions, convert_auto, formats::FormatType};
@@ -30,7 +31,13 @@ pub fn run_unified_convert_command(
             .as_deref()
             .is_some_and(|s| s.eq_ignore_ascii_case("xcstrings"));
     if wants_xcstrings {
-        println!("Converting to xcstrings with default sourceLanguage if missing...");
+        println!(
+            "{}",
+            ui::status_line_stdout(
+                ui::Tone::Info,
+                "Converting to xcstrings with default sourceLanguage if missing...",
+            )
+        );
         match read_resources_from_any_input(&input, options.input_format.as_ref(), strict).and_then(
             |mut resources| {
                 // Determine source_language priority: explicit flag > metadata > default
@@ -81,11 +88,20 @@ pub fn run_unified_convert_command(
             },
         ) {
             Ok(()) => {
-                println!("✅ Successfully converted to xcstrings");
+                println!(
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Success,
+                        "Successfully converted to xcstrings",
+                    )
+                );
                 return;
             }
             Err(e) => {
-                println!("❌ Conversion to xcstrings failed");
+                println!(
+                    "{}",
+                    ui::status_line_stdout(ui::Tone::Error, "Conversion to xcstrings failed")
+                );
                 // Preserve legacy expectation for invalid JSON: surface an inference hint
                 if input.ends_with(".json") {
                     eprintln!("Cannot infer input format");
@@ -112,8 +128,14 @@ pub fn run_unified_convert_command(
         };
 
         println!(
-            "Converting input to .langcodec (Resource JSON array){}...",
-            filter_msg
+            "{}",
+            ui::status_line_stdout(
+                ui::Tone::Info,
+                &format!(
+                    "Converting input to .langcodec (Resource JSON array){}...",
+                    filter_msg
+                ),
+            )
         );
         match read_resources_from_any_input(&input, options.input_format.as_ref(), strict).and_then(
             |resources| {
@@ -157,8 +179,14 @@ pub fn run_unified_convert_command(
                     };
 
                 println!(
-                    "✅ Successfully converted to .langcodec (Resource JSON array){}",
-                    filter_msg
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Success,
+                        &format!(
+                            "Successfully converted to .langcodec (Resource JSON array){}",
+                            filter_msg
+                        ),
+                    )
                 );
                 return;
             }
@@ -177,7 +205,13 @@ pub fn run_unified_convert_command(
                         String::new()
                     };
 
-                println!("❌ Conversion to .langcodec failed{}", filter_msg);
+                println!(
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Error,
+                        &format!("Conversion to .langcodec failed{}", filter_msg),
+                    )
+                );
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
@@ -189,13 +223,28 @@ pub fn run_unified_convert_command(
             options.input_format.as_deref(),
             options.output_format.as_deref(),
         ) {
-            println!("Strict mode: converting with explicit format hints only...");
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Info,
+                    "Strict mode: converting with explicit format hints only...",
+                )
+            );
             if let Err(e) = try_explicit_format_conversion(&input, &output, input_fmt, output_fmt) {
-                println!("❌ Strict conversion failed");
+                println!(
+                    "{}",
+                    ui::status_line_stdout(ui::Tone::Error, "Strict conversion failed")
+                );
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
-            println!("✅ Successfully converted in strict mode");
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Success,
+                    "Successfully converted in strict mode",
+                )
+            );
             return;
         }
 
@@ -204,30 +253,72 @@ pub fn run_unified_convert_command(
             || input.ends_with(".yml")
             || input.ends_with(".langcodec")
         {
-            println!("Strict mode: converting custom format without fallback...");
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Info,
+                    "Strict mode: converting custom format without fallback...",
+                )
+            );
             if let Err(e) = try_custom_format_conversion(&input, &output, &options.input_format) {
-                println!("❌ Strict conversion failed");
+                println!(
+                    "{}",
+                    ui::status_line_stdout(ui::Tone::Error, "Strict conversion failed")
+                );
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
-            println!("✅ Successfully converted in strict mode");
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Success,
+                    "Successfully converted in strict mode",
+                )
+            );
             return;
         }
 
-        println!("Strict mode: converting using extension-based standard formats only...");
+        println!(
+            "{}",
+            ui::status_line_stdout(
+                ui::Tone::Info,
+                "Strict mode: converting using extension-based standard formats only...",
+            )
+        );
         if let Err(e) = convert_auto(&input, &output) {
-            println!("❌ Strict conversion failed");
+            println!(
+                "{}",
+                ui::status_line_stdout(ui::Tone::Error, "Strict conversion failed")
+            );
             eprintln!("Error: {}", e);
             std::process::exit(1);
         }
-        println!("✅ Successfully converted in strict mode");
+        println!(
+            "{}",
+            ui::status_line_stdout(
+                ui::Tone::Success,
+                "Successfully converted in strict mode",
+            )
+        );
         return;
     }
 
     // Strategy 1: Try standard lib crate conversion first
-    println!("Trying standard format detection from file extensions...");
+    println!(
+        "{}",
+        ui::status_line_stdout(
+            ui::Tone::Info,
+            "Trying standard format detection from file extensions...",
+        )
+    );
     if let Ok(()) = convert_auto(&input, &output) {
-        println!("✅ Successfully converted using standard format detection");
+        println!(
+            "{}",
+            ui::status_line_stdout(
+                ui::Tone::Success,
+                "Successfully converted using standard format detection",
+            )
+        );
         return;
     }
 
@@ -239,30 +330,66 @@ pub fn run_unified_convert_command(
     {
         // For JSON files without explicit format, try standard format detection first
         if input.ends_with(".json") && options.input_format.is_none() {
-            println!("Trying standard JSON format detection...");
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Info,
+                    "Trying standard JSON format detection...",
+                )
+            );
             // Try to use the standard format detection which will show proper JSON parsing errors
             if let Err(e) = convert_auto(&input, &output) {
-                println!("Trying custom JSON format conversion...");
+                println!(
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Info,
+                        "Trying custom JSON format conversion...",
+                    )
+                );
                 // If standard detection fails, try custom formats
                 if let Ok(()) = try_custom_format_conversion(&input, &output, &options.input_format)
                 {
-                    println!("✅ Successfully converted using custom JSON format");
+                    println!(
+                        "{}",
+                        ui::status_line_stdout(
+                            ui::Tone::Success,
+                            "Successfully converted using custom JSON format",
+                        )
+                    );
                     return;
                 }
                 // If both fail, show the standard error message
-                println!("❌ Conversion failed");
+                println!(
+                    "{}",
+                    ui::status_line_stdout(ui::Tone::Error, "Conversion failed")
+                );
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
         } else {
             // For YAML and langcodec files, try custom formats directly
-            println!("Converting using custom format...");
+            println!(
+                "{}",
+                ui::status_line_stdout(ui::Tone::Info, "Converting using custom format...")
+            );
             if let Err(e) = try_custom_format_conversion(&input, &output, &options.input_format) {
-                println!("❌ Custom format conversion failed");
+                println!(
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Error,
+                        "Custom format conversion failed",
+                    )
+                );
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
             }
-            println!("✅ Successfully converted using custom format");
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Success,
+                    "Successfully converted using custom format",
+                )
+            );
             return;
         }
     }
@@ -271,18 +398,36 @@ pub fn run_unified_convert_command(
     if let (Some(input_fmt), Some(output_fmt)) =
         (options.input_format.clone(), options.output_format.clone())
     {
-        println!("Converting with explicit format hints...");
+        println!(
+            "{}",
+            ui::status_line_stdout(ui::Tone::Info, "Converting with explicit format hints...")
+        );
         if let Err(e) = try_explicit_format_conversion(&input, &output, &input_fmt, &output_fmt) {
-            println!("❌ Explicit format conversion failed");
+            println!(
+                "{}",
+                ui::status_line_stdout(
+                    ui::Tone::Error,
+                    "Explicit format conversion failed",
+                )
+            );
             eprintln!("Error: {}", e);
             std::process::exit(1);
         }
-        println!("✅ Successfully converted with explicit formats");
+        println!(
+            "{}",
+            ui::status_line_stdout(
+                ui::Tone::Success,
+                "Successfully converted with explicit formats",
+            )
+        );
         return;
     }
 
     // If all strategies failed, provide helpful error message
-    println!("❌ All conversion strategies failed");
+    println!(
+        "{}",
+        ui::status_line_stdout(ui::Tone::Error, "All conversion strategies failed")
+    );
     print_conversion_error(&input, &output);
     std::process::exit(1);
 }
