@@ -9,8 +9,8 @@ mod normalize;
 mod path_glob;
 mod stats;
 mod sync;
-mod translate;
 mod transformers;
+mod translate;
 mod validation;
 mod view;
 
@@ -259,9 +259,9 @@ enum Commands {
 
     /// Translate source entries into a target language using Mentra-backed providers.
     Translate {
-        /// Source localization file
+        /// Source localization file. Required unless configured in `langcodec.toml`.
         #[arg(short = 's', long)]
-        source: String,
+        source: Option<String>,
 
         /// Optional target localization file. If omitted, translates in-place within multi-language files.
         #[arg(short = 't', long)]
@@ -275,9 +275,9 @@ enum Commands {
         #[arg(long)]
         source_lang: Option<String>,
 
-        /// Target language code.
-        #[arg(long)]
-        target_lang: Option<String>,
+        /// Target language code(s). Comma-separated values are supported for multi-language outputs.
+        #[arg(long, value_name = "LANG", value_delimiter = ',')]
+        target_lang: Vec<String>,
 
         /// Filter target entries by status before translating (default: new,stale)
         #[arg(long)]
@@ -710,7 +710,10 @@ fn main() {
             config,
             dry_run,
         } => {
-            let mut context = ValidationContext::new().with_input_file(source.clone());
+            let mut context = ValidationContext::new();
+            if let Some(source_path) = &source {
+                context = context.with_input_file(source_path.clone());
+            }
             if let Some(target_path) = &target
                 && std::path::Path::new(target_path).exists()
             {
@@ -728,11 +731,11 @@ fn main() {
                 eprintln!("❌ Validation failed: {}", e);
                 std::process::exit(1);
             }
-            if let Some(lang_code) = &target_lang
-                && let Err(e) = validate_language_code(lang_code)
-            {
-                eprintln!("❌ Validation failed: {}", e);
-                std::process::exit(1);
+            for lang_code in &target_lang {
+                if let Err(e) = validate_language_code(lang_code) {
+                    eprintln!("❌ Validation failed: {}", e);
+                    std::process::exit(1);
+                }
             }
 
             if let Err(e) = run_translate_command(TranslateOptions {
@@ -740,7 +743,7 @@ fn main() {
                 target,
                 output,
                 source_lang,
-                target_lang,
+                target_langs: target_lang,
                 status,
                 provider,
                 model,

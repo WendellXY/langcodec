@@ -9,6 +9,10 @@ pub struct CliConfig {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct TranslateConfig {
+    pub source: Option<String>,
+    pub sources: Option<Vec<String>>,
+    pub target: Option<String>,
+    pub output: Option<String>,
     pub provider: Option<String>,
     pub model: Option<String>,
     pub source_lang: Option<String>,
@@ -28,7 +32,10 @@ pub fn load_config(explicit_path: Option<&str>) -> Result<Option<LoadedConfig>, 
         Some(path) => {
             let resolved = PathBuf::from(path);
             if !resolved.exists() {
-                return Err(format!("Config file does not exist: {}", resolved.display()));
+                return Err(format!(
+                    "Config file does not exist: {}",
+                    resolved.display()
+                ));
             }
             resolved
         }

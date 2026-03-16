@@ -107,12 +107,17 @@ Behavior:
 - writes generated values as `needs_review`
 - skips plural entries in v1
 - writes in-place by default and supports `--dry-run`
+- performs output preflight validation before sending model requests
+- shows live progress in interactive terminals and prints translated result lines after completion
+- supports comma-separated `--target-lang` values for multi-language outputs such as `.xcstrings`, `.csv`, and `.tsv`
+- supports `translate.source` and `translate.sources` in `langcodec.toml`, so `langcodec translate` can run with no path flags
 - supports translate defaults from `langcodec.toml`
 
 Example `langcodec.toml`:
 
 ```toml
 [translate]
+source = "locales/Localizable.xcstrings"
 provider = "openai"
 model = "gpt-4.1-mini"
 source_lang = "en"
@@ -121,10 +126,28 @@ concurrency = 4
 status = ["new", "stale"]
 ```
 
+For multi-language outputs, `target_lang` may also be a comma-separated string such as `"fr,de,ja"`.
+
+For parallel config-driven runs, use:
+
+```toml
+[translate]
+sources = [
+  "features/auth/Localizable.xcstrings",
+  "features/profile/Localizable.xcstrings",
+]
+provider = "openai"
+model = "gpt-4.1-mini"
+source_lang = "en"
+target_lang = "fr,de"
+```
+
 Config notes:
 
 - save the file as `langcodec.toml` in your project root, or pass `--config /absolute/path/to/langcodec.toml`
 - config discovery walks upward from the current directory until it finds `langcodec.toml`
+- `translate.source`, `translate.sources`, `translate.target`, and `translate.output` are resolved relative to the `langcodec.toml` file
+- `translate.sources` fans out into parallel translate runs; it cannot be combined with a single shared `target` or `output`
 - CLI flags still override config values
 
 Provider/auth notes:

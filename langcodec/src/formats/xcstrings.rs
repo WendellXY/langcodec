@@ -185,7 +185,16 @@ impl TryFrom<Format> for Vec<Resource> {
                 continue;
             }
 
+            let source_language = custom_meta
+                .get("source_language")
+                .cloned()
+                .unwrap_or_else(|| "en".to_string());
+            let mut saw_source_language = false;
+
             for (lang_code, localization) in item.localizations {
+                if lang_code == source_language {
+                    saw_source_language = true;
+                }
                 if let Some(translation) = localization.to_translation() {
                     let lang_code = lang_code.to_string();
                     resource_map
@@ -206,6 +215,30 @@ impl TryFrom<Format> for Vec<Resource> {
                             custom: custom.clone(),
                         });
                 }
+            }
+
+            if !saw_source_language && item.should_translate.unwrap_or(true) {
+                resource_map
+                    .entry(source_language.clone())
+                    .or_insert(Resource {
+                        metadata: Metadata {
+                            language: source_language.clone(),
+                            domain: String::default(),
+                            custom: custom_meta.clone(),
+                        },
+                        entries: Vec::new(),
+                    })
+                    .add_entry(Entry {
+                        id: id.clone(),
+                        value: if id.is_empty() {
+                            Translation::Empty
+                        } else {
+                            Translation::Singular(id.clone())
+                        },
+                        comment: item.comment.clone(),
+                        status: EntryStatus::New,
+                        custom: custom.clone(),
+                    });
             }
         }
 
@@ -692,5 +725,52 @@ mod tests {
             )
         );
         assert_eq!(item.is_comment_auto_generated, Some(true));
+    }
+
+    #[test]
+    fn test_missing_source_language_localization_expands_to_key_as_new_entry() {
+        let mut strings = HashMap::new();
+        strings.insert(
+            "99+ users have won tons of blue diamonds here".to_string(),
+            Item {
+                localizations: {
+                    let mut localizations = HashMap::new();
+                    localizations.insert(
+                        "tr".to_string(),
+                        Localization::from(StringUnit::new(
+                            EntryStatus::Translated,
+                            "99+ kullanici burada tonlarca mavi elmas kazandi",
+                        )),
+                    );
+                    localizations
+                },
+                comment: None,
+                extraction_state: None,
+                should_translate: Some(true),
+                is_comment_auto_generated: None,
+            },
+        );
+        let format = Format {
+            source_language: "en".to_string(),
+            version: "1.0".to_string(),
+            strings,
+        };
+
+        let resources = Vec::<Resource>::try_from(format).expect("resources from xcstrings");
+        let en = resources
+            .iter()
+            .find(|resource| resource.metadata.language == "en")
+            .expect("synthetic source-language resource exists");
+        let entry = en
+            .entries
+            .iter()
+            .find(|entry| entry.id == "99+ users have won tons of blue diamonds here")
+            .expect("synthetic source-language entry exists");
+
+        assert_eq!(
+            entry.value,
+            Translation::Singular("99+ users have won tons of blue diamonds here".to_string())
+        );
+        assert_eq!(entry.status, EntryStatus::New);
     }
 }
