@@ -1422,13 +1422,19 @@ mod tests {
     use std::{collections::VecDeque, fs, sync::Mutex};
     use tempfile::TempDir;
 
+    type MockResponseKey = (String, String);
+    type MockResponse = Result<String, String>;
+    type MockResponseQueue = VecDeque<MockResponse>;
+    type MockResponseMap = HashMap<MockResponseKey, MockResponseQueue>;
+    type MockResponseSeed = ((&'static str, &'static str), MockResponse);
+
     #[derive(Clone)]
     struct MockBackend {
-        responses: Arc<Mutex<HashMap<(String, String), VecDeque<Result<String, String>>>>>,
+        responses: Arc<Mutex<MockResponseMap>>,
     }
 
     impl MockBackend {
-        fn new(responses: Vec<((&str, &str), Result<String, String>)>) -> Self {
+        fn new(responses: Vec<MockResponseSeed>) -> Self {
             let mut mapped = HashMap::new();
             for ((key, target_lang), value) in responses {
                 mapped

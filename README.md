@@ -1,181 +1,188 @@
 # langcodec
 
-Universal localization toolkit: library + CLI for Apple/Android/CSV/TSV.
+`langcodec` is a Rust toolkit for working with localization files across Apple, Android, and spreadsheet-style workflows.
 
-- Library crate (`langcodec`): parse, write, convert, merge with a unified model
-- CLI crate (`langcodec-cli`): convert, diff, merge, sync, edit, normalize, view, stats, debug, completions
+It gives you one consistent model for parsing, converting, inspecting, editing, merging, normalizing, and translating files like:
 
----
+- Apple `.strings`
+- Apple `.xcstrings`
+- Android `strings.xml`
+- CSV
+- TSV
 
-## Status
+This workspace includes:
 
-This is a `0.9.1` release available on [crates.io](https://crates.io/crates/langcodec). As a 0.x version, APIs may evolve. Contributions and feedback are very welcome!
+- `langcodec`: the Rust library crate
+- `langcodec-cli`: the `langcodec` command-line tool
 
----
+## Why People Use It
+
+Localization pipelines usually get messy when teams have to move between iOS, Android, translators, spreadsheets, and CI scripts. `langcodec` is built to reduce that friction.
+
+With one toolchain, you can:
+
+- convert catalogs between Apple, Android, CSV, and TSV
+- inspect missing or stale entries
+- merge and sync translations safely
+- edit files in place across formats
+- normalize files to reduce noisy diffs
+- generate draft translations with AI-backed providers
+
+## What It Feels Like
+
+```sh
+# Convert Apple strings to Android XML
+langcodec convert -i Localizable.strings -o strings.xml
+
+# Inspect untranslated entries
+langcodec view -i Localizable.xcstrings --status new,needs_review --keys-only
+
+# Normalize localization files in CI
+langcodec normalize -i 'locales/**/*.{strings,xml,csv,tsv,xcstrings}' --check
+
+# Draft translations into an .xcstrings catalog
+langcodec translate \
+  --source Localizable.xcstrings \
+  --source-lang en \
+  --target-lang fr,de,ja \
+  --provider openai \
+  --model gpt-4.1-mini
+```
+
+## Highlights
+
+- Unified data model for singular and plural translations
+- Read/write support for Apple, Android, CSV, and TSV formats
+- CLI commands for convert, diff, merge, sync, edit, normalize, view, stats, debug, and translate
+- `.xcstrings` and Android plural support
+- Config-driven translate workflows with `langcodec.toml`
+- Rust library API for building your own tooling on top
 
 ## Installation
 
-- CLI: `cargo install langcodec-cli`
-- Lib: add `langcodec = "0.9.1"` to your `Cargo.toml`
+Install the CLI:
 
----
+```sh
+cargo install langcodec-cli
+```
 
-## Features
+Use the library in Rust:
 
-- Parse, write, convert, merge: `.strings`, `.xcstrings`, `strings.xml`, CSV, TSV
-- Unified `Resource` model (`Translation::Singular|Plural`)
-- Plurals: `.xcstrings` and Android `<plurals>` supported
-- CLI helpers: convert, diff, merge, sync, edit, normalize, view, stats, debug, completions
-
----
+```toml
+[dependencies]
+langcodec = "0.9.1"
+```
 
 ## Supported Formats
 
-<!-- markdownlint-disable no-inline-html no-space-in-emphasis -->
+| Format                | Parse | Write | Convert | Merge | Plurals | Comments |
+| --------------------- | :---: | :---: | :-----: | :---: | :-----: | :------: |
+| Apple `.strings`      |  yes  |  yes  |   yes   |  yes  |   no    |   yes    |
+| Apple `.xcstrings`    |  yes  |  yes  |   yes   |  yes  |   yes   |   yes    |
+| Android `strings.xml` |  yes  |  yes  |   yes   |  yes  |   yes   |   yes    |
+| CSV                   |  yes  |  yes  |   yes   |  yes  |   no    |    no    |
+| TSV                   |  yes  |  yes  |   yes   |  yes  |   no    |    no    |
 
-| Format                | Parse | Write | Convert | Merge | Plural Support  | Comments |
-| --------------------- | :---: | :---: | :-----: | :---: | :-------------: | -------- |
-| Apple `.strings`      |   ✔️   |   ✔️   |    ✔️    |   ✔️   |       No        | ✔️        |
-| Apple `.xcstrings`    |   ✔️   |   ✔️   |    ✔️    |   ✔️   | Yes<sup>*</sup> | ✔️        |
-| Android `strings.xml` |   ✔️   |   ✔️   |    ✔️    |   ✔️   |       Yes       | ✔️        |
-| CSV                   |   ✔️   |   ✔️   |    ✔️    |   ✔️   |       No        | –        |
-| TSV                   |   ✔️   |   ✔️   |    ✔️    |   ✔️   |       No        | –        |
+## CLI Quick Start
 
-<sup>* `.xcstrings` plural support is implemented via CLDR categories.</sup>
+### Convert files
 
-<!-- markdownlint-enable no-inline-html no-space-in-emphasis -->
+```sh
+langcodec convert -i input.xcstrings -o output.csv
+langcodec convert -i input.csv -o output.xcstrings --source-language en --version 1.0
+```
 
----
+### Inspect work to do
 
-## Getting Started
+```sh
+langcodec view -i Localizable.xcstrings --status new,needs_review
+langcodec stats -i Localizable.xcstrings --json
+```
 
-- Library guide: see `langcodec/README.md`
-- CLI guide: see `langcodec-cli/README.md`
+### Edit and normalize
 
----
+```sh
+langcodec edit set -i en.strings -k welcome_title -v "Welcome"
+langcodec normalize -i values/strings.xml
+```
 
-### CLI Highlights
+### Merge and sync
 
-- Convert: `langcodec convert -i input.strings -o strings.xml`
-- Diff: `langcodec diff --source A.xcstrings --target B.xcstrings --json`
-- Edit (add/update/remove): `langcodec edit set -i 'locales/**/*.strings' -k welcome -v "Hello"` (use `--dry-run` to preview)
-- Normalize and detect drift: `langcodec normalize -i 'locales/**/*.{strings,xml,csv,tsv,xcstrings}' --check`
-- Sync existing keys only: `langcodec sync --source A.xcstrings --target B.xcstrings --match-lang en`
-- Translate drafts with Mentra: `langcodec translate --source source.xcstrings --target target.xcstrings --source-lang en --target-lang fr --provider openai --model gpt-4.1-mini`
-- View: `langcodec view -i strings.xml --full`
-- View filtered untranslated/review-needed keys: `langcodec view -i Localizable.xcstrings --status new,needs_review --keys-only`
-- View filtered results as JSON: `langcodec view -i Localizable.xcstrings --status new --lang fr --json`
-- Stats (JSON): `langcodec stats -i Localizable.xcstrings --json`
-  - See full options: langcodec-cli/README.md#stats
-  - Example output:
-  
-    ```json
-    {
-      "summary": { "languages": 1, "unique_keys": 42 },
-      "languages": [
-        {
-          "language": "en",
-          "total": 42,
-          "by_status": {
-            "translated": 30,
-            "needs_review": 2,
-            "stale": 0,
-            "new": 10,
-            "do_not_translate": 0
-          },
-          "completion_percent": 75.0
-        }
-      ]
-    }
-    ```
+```sh
+langcodec merge -i a.xcstrings -i b.xcstrings -o merged.xcstrings --strategy last
+langcodec sync --source source.xcstrings --target target.xcstrings --match-lang en
+```
 
-#### Notes
+### Translate with config
 
-- For CSV/TSV single-language files, the language code (`--lang`) may be required.
-- All file-processing commands support Apple `.strings`, `.xcstrings`, Android `strings.xml`, CSV, and TSV.
-- The convert command also supports custom JSON/YAML and `.langcodec` input formats.
-- The CLI will error if you try to merge files of different formats.
-- Edit supports multiple inputs and glob patterns. When multiple inputs are provided, edits are applied in-place and `--output` is not allowed.
-- Normalize supports `.strings`, Android `strings.xml`, `.csv`, `.tsv`, and `.xcstrings`.
-- Normalize options: `--check` (fail on drift), `--dry-run` (preview only), `--no-placeholders` (skip placeholder canonicalization), `--key-style` (`none|snake|kebab|camel`).
-- Normalize multi-input constraint: `--output` is single-input only; pair multi-input workflows with in-place writes.
-- Normalize `--continue-on-error` processes all inputs and returns non-zero if any file fails.
-- Android path inference: `values/strings.xml` (no qualifier) defaults to English (`en`).
-- When converting to `.xcstrings`, if `source_language` or `version` metadata is missing, the CLI defaults them to `en` and `1.0` respectively (overridable via flags).
-- Strict status filtering note: `langcodec --strict view --status ...` requires explicit status metadata (supported in v1: `.xcstrings`).
-- Translate defaults to `new,stale`, writes `needs_review`, skips plurals, and supports `langcodec.toml` for translate-specific defaults.
-
-#### Example `langcodec.toml`
-
-Save this as `langcodec.toml` in your project root, or point to it with `--config`.
-The CLI discovers `langcodec.toml` by searching the current directory and then parent directories.
+Create a `langcodec.toml` in your project:
 
 ```toml
 [translate]
+source = "locales/Localizable.xcstrings"
 provider = "openai"
 model = "gpt-4.1-mini"
 source_lang = "en"
-target_lang = "fr"
-concurrency = 4
+target_lang = "fr,de"
 status = ["new", "stale"]
+concurrency = 4
 ```
 
-There is also a commented example file at `langcodec.toml.example` in the repository root.
+Then run:
 
-#### Plurals
+```sh
+langcodec translate
+```
 
-- Android `<plurals>` are fully supported. They convert to the internal `Translation::Plural` representation and back to `<plurals>` with quantities `zero/one/two/few/many/other`.
-- `.xcstrings` plural variations convert to Android `<plurals>` when targeting Android output.
-- The `view` command prints plural entries with a "Type: Plural" header and each category/value.
+For larger projects, `translate.sources = [...]` can fan out parallel runs from config.
 
-For JSON/YAML custom formats and more examples, see `langcodec-cli/README.md`.
+More CLI details live in [langcodec-cli/README.md](langcodec-cli/README.md).
 
----
+## Library Quick Start
 
-## Data Model
+```rust
+use langcodec::{Codec, convert_auto};
 
-At the core is the `Resource` struct with `Entry` values (singular or plural). See `langcodec/README.md` and docs.rs for details.
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    convert_auto("Localizable.strings", "strings.xml")?;
 
----
+    let mut codec = Codec::new();
+    codec.read_file_by_extension("Localizable.xcstrings", None)?;
 
-## Roadmap & Contributing
+    for language in codec.languages() {
+        println!("{language}");
+    }
 
-- Roadmap: see `ROADMAP.md`
-- Contributions welcome! Please open issues/PRs.
+    Ok(())
+}
+```
 
----
+The library is a good fit if you want to:
 
-## Extending
+- build custom localization pipelines in Rust
+- validate translation assets in CI
+- write converters or format-specific tooling
+- work with a common representation instead of format-specific parsing code
 
-Adding a new localization format?
-Implement the `Parser` trait for your format struct in `formats/`, and add `From`/`TryFrom` conversions to and from `Resource`.
-PRs welcome!
+More library details live in [langcodec/README.md](langcodec/README.md).
 
----
+## Project Layout
 
-## Test Data
+- [langcodec](langcodec): Rust library crate
+- [langcodec-cli](langcodec-cli): command-line interface
+- [tests](tests): shared test data and integration coverage
 
-Sample test files for all supported formats are located in `tests/data/lib/` and `tests/data/cli/` at the workspace root. Use these for development, testing, and examples.
+## Current Status
 
----
+The current release is `0.9.1` on [crates.io](https://crates.io/crates/langcodec). It is already useful in real workflows, but it is still a `0.x` project, so APIs and behavior may continue to evolve.
 
 ## Contributing
 
-Contributions are welcome!
-Please open issues for bugs, suggestions, or new format support.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Issues, ideas, and pull requests are welcome.
 
----
+- Project roadmap: [ROADMAP.md](ROADMAP.md)
+- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## License
 
-This project is licensed under the MIT License.
-
----
-
-## Acknowledgements
-
-- Inspired by the need for universal localization tooling in cross-platform apps
-- Built with love in Rust
-
----
+MIT
