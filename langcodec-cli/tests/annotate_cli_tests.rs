@@ -10,6 +10,7 @@ fn test_main_help_lists_annotate() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("annotate"));
+    assert!(stdout.contains("tolgee"));
 }
 
 #[test]
@@ -35,4 +36,38 @@ fn test_translate_help_mentions_ui_flag() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("--ui"));
     assert!(stdout.contains("auto"));
+    assert!(stdout.contains("--tolgee"));
+    assert!(stdout.contains("--tolgee-config"));
+    assert!(stdout.contains("--tolgee-namespace"));
+}
+
+#[test]
+fn test_tolgee_help_mentions_pull_and_push() {
+    let output = langcodec_cmd().args(["tolgee", "--help"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("pull"));
+    assert!(stdout.contains("push"));
+}
+
+#[test]
+fn test_tolgee_pull_help_mentions_namespace_flag() {
+    let output = langcodec_cmd()
+        .args(["tolgee", "pull", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--namespace"));
+}
+
+#[test]
+fn test_tolgee_push_help_mentions_namespace_flag() {
+    let output = langcodec_cmd()
+        .args(["tolgee", "push", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--namespace"));
 }

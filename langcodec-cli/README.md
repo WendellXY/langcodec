@@ -1,10 +1,10 @@
 # langcodec-cli
 
-`langcodec` is a command-line tool for real localization work.
+`langcodec` is a localization CLI for teams shipping real apps, not demo files.
 
-It helps you move between Apple, Android, and tabular translation formats without building one-off scripts for every project.
+It handles the annoying parts of localization work in one place: format conversion, catalog cleanup, AI-assisted translation, translator-facing comment generation, and Tolgee sync for Apple string catalogs.
 
-Supported inputs and outputs:
+Supported formats:
 
 - Apple `.strings`
 - Apple `.xcstrings`
@@ -12,19 +12,60 @@ Supported inputs and outputs:
 - CSV
 - TSV
 
-## Why Use It
+## Why It Feels Useful
 
-`langcodec` is designed for teams who need to:
+Most localization tooling does one small thing. `langcodec` is designed to cover the loop teams actually run:
 
-- convert localization files across platforms
-- inspect missing, stale, or review-needed strings
-- normalize files to reduce noisy diffs
-- edit translations in place
-- merge or sync catalogs safely
-- draft translations with AI providers
-- generate translator-facing xcstrings comments from source usage
+1. Convert strings between iOS, Android, and spreadsheet formats.
+2. Inspect what is missing, stale, or still needs review.
+3. Normalize files so diffs stop being noisy.
+4. Draft translations with AI.
+5. Generate better comments for translators from real source usage.
+6. Pull from and push back to Tolgee without custom glue scripts.
 
-Instead of treating localization as a pile of ad hoc file conversions, `langcodec` gives you one CLI that works across common formats and workflows.
+## The Cool Stuff
+
+### AI translation with real workflow support
+
+```sh
+langcodec translate \
+  --source Localizable.xcstrings \
+  --source-lang en \
+  --target-lang fr,de,ja \
+  --provider openai \
+  --model gpt-5.4
+```
+
+`translate` is built for app catalogs, not just raw text:
+
+- updates multi-language files like `.xcstrings` in place
+- supports multiple target languages in one run
+- can prefill from Tolgee before using AI fallback
+- shows live progress with `--ui auto|plain|tui`
+- validates output before model requests
+- prints a clear result summary at the end
+
+### AI-generated translator comments
+
+```sh
+langcodec annotate \
+  --input Localizable.xcstrings \
+  --source-root Sources \
+  --source-root Modules \
+  --provider openai \
+  --model gpt-5.4
+```
+
+`annotate` looks through your codebase and writes better `.xcstrings` comments for translators while preserving manual comments.
+
+### Tolgee sync without a pile of project scripts
+
+```sh
+langcodec tolgee pull
+langcodec tolgee push --namespace WebGame
+```
+
+Tolgee support in v1 is intentionally focused on Apple `.xcstrings`. `langcodec.toml` can now be the source of truth, and `langcodec` will synthesize the Tolgee CLI JSON config at runtime.
 
 ## Install
 
@@ -32,19 +73,16 @@ Instead of treating localization as a pile of ad hoc file conversions, `langcode
 cargo install langcodec-cli
 ```
 
-## Start Here
+## Quick Start
 
-The CLI should teach the detailed usage directly:
+Use the CLI help for exact flags:
 
 ```sh
 langcodec --help
-langcodec convert --help
 langcodec translate --help
 langcodec annotate --help
-langcodec view --help
+langcodec tolgee --help
 ```
-
-This README is intentionally brief. Use it to understand what the tool is good at, then use built-in help for exact flags and behavior.
 
 ## Core Workflows
 
@@ -55,7 +93,7 @@ langcodec convert -i Localizable.xcstrings -o translations.csv
 langcodec convert -i translations.csv -o values/strings.xml
 ```
 
-### Find untranslated or review-needed strings
+### Find strings that still need work
 
 ```sh
 langcodec view -i Localizable.xcstrings --status new,needs_review --keys-only
@@ -82,48 +120,6 @@ langcodec sync --source source.xcstrings --target target.xcstrings --match-lang 
 langcodec merge -i a.xcstrings -i b.xcstrings -o merged.xcstrings --strategy last
 ```
 
-### Draft translations with AI
-
-```sh
-langcodec translate \
-  --source Localizable.xcstrings \
-  --source-lang en \
-  --target-lang fr,de,ja \
-  --provider openai \
-  --model gpt-4.1-mini
-```
-
-`translate` supports:
-
-- in-place updates for multi-language files like `.xcstrings`
-- config defaults from `langcodec.toml`
-- multiple target languages for multi-language outputs
-- live progress updates
-- `--ui auto|plain|tui` for dashboard or plain terminal output
-- preflight validation before model requests
-- translation result summaries at the end
-
-### Generate xcstrings comments with AI
-
-```sh
-langcodec annotate \
-  --input Localizable.xcstrings \
-  --source-root Sources \
-  --source-root Modules \
-  --provider openai \
-  --model gpt-4.1-mini
-```
-
-`annotate` supports:
-
-- filling missing xcstrings comments
-- refreshing existing auto-generated comments
-- preserving manual comments
-- config defaults from `langcodec.toml`
-- source shortlisting before agent lookup
-- `--ui auto|plain|tui` for dashboard or plain terminal output
-- `--dry-run` and `--check` for CI-friendly runs
-
 ## Example Config
 
 ```toml
@@ -132,6 +128,7 @@ model = "gpt-5.4"
 
 [translate]
 concurrency = 4
+use_tolgee = true
 
 [translate.input]
 source = "locales/Localizable.xcstrings"
@@ -141,6 +138,24 @@ status = ["new", "stale"]
 [translate.output]
 lang = ["fr", "de"]
 status = "translated"
+
+[tolgee]
+project_id = 36
+api_url = "https://tolgee.example/api"
+api_key = "tgpak_example"
+namespaces = ["WebGame"]
+
+[tolgee.push]
+languages = ["en"]
+force_mode = "KEEP"
+
+[[tolgee.push.files]]
+path = "locales/Localizable.xcstrings"
+namespace = "WebGame"
+
+[tolgee.pull]
+path = "./tolgee-temp"
+file_structure_template = "/{namespace}/Localizable.{extension}"
 
 [annotate]
 input = "locales/Localizable.xcstrings"
@@ -153,11 +168,15 @@ Then run:
 ```sh
 langcodec translate
 langcodec annotate
+langcodec tolgee pull
 ```
 
-When exactly one provider section is configured, `translate` and `annotate` use it automatically. If you configure multiple providers, choose one with `--provider` or `translate.provider`. For larger repos, `translate.input.sources = [...]` can fan out parallel runs from config.
+When exactly one provider section is configured, `translate` and `annotate` use it automatically. If you configure multiple providers, choose one with `--provider` or `translate.provider`.
 
-For annotate fan-out runs, use `annotate.inputs = [...]` and omit `annotate.output` so each catalog is updated in place.
+For larger repos:
+
+- use `translate.input.sources = [...]` to fan out translation runs
+- use `annotate.inputs = [...]` to annotate multiple catalogs in place
 
 ## Main Commands
 
@@ -170,17 +189,18 @@ For annotate fan-out runs, use `annotate.inputs = [...]` and omit `annotate.outp
 - `sync`: update existing target entries from a source file
 - `merge`: combine multiple inputs into one output
 - `translate`: draft translations with AI-backed providers
-- `annotate`: generate translator-facing xcstrings comments with AI-backed source lookup
+- `tolgee`: pull and push mapped `.xcstrings` catalogs with Tolgee
+- `annotate`: generate translator-facing `.xcstrings` comments with AI-backed source lookup
 - `debug`: inspect parsed output as JSON
 
-## When It Fits Best
+## Best Fit
 
-`langcodec` is especially useful if you are:
+`langcodec` shines when you are:
 
-- maintaining both iOS and Android apps
-- passing strings through translators or spreadsheets
-- trying to reduce localization-related CI drift
-- replacing fragile custom scripts with one reusable tool
+- shipping both iOS and Android apps
+- moving strings through translators, spreadsheets, and app catalogs
+- trying to reduce localization drift in CI
+- replacing fragile one-off scripts with one repeatable tool
 
 ## Related Docs
 

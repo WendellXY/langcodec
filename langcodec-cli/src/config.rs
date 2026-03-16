@@ -10,6 +10,8 @@ pub struct CliConfig {
     #[serde(default)]
     pub gemini: ProviderConfig,
     #[serde(default)]
+    pub tolgee: TolgeeConfig,
+    #[serde(default)]
     pub translate: TranslateConfig,
     #[serde(default)]
     pub annotate: AnnotateConfig,
@@ -28,6 +30,7 @@ pub struct TranslateConfig {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub source_lang: Option<String>,
+    pub use_tolgee: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_optional_string_or_vec")]
     pub target_lang: Option<Vec<String>>,
     pub concurrency: Option<usize>,
@@ -36,6 +39,47 @@ pub struct TranslateConfig {
     #[serde(default)]
     pub input: TranslateInputConfig,
     pub output: Option<TranslateOutputScope>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TolgeeConfig {
+    pub config: Option<String>,
+    pub project_id: Option<u64>,
+    pub api_url: Option<String>,
+    pub api_key: Option<String>,
+    pub format: Option<String>,
+    pub schema: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_string_or_vec")]
+    pub namespaces: Option<Vec<String>>,
+    #[serde(default)]
+    pub push: TolgeePushConfig,
+    #[serde(default)]
+    pub pull: TolgeePullConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TolgeePushConfig {
+    #[serde(
+        default,
+        alias = "language",
+        deserialize_with = "deserialize_optional_string_or_vec"
+    )]
+    pub languages: Option<Vec<String>>,
+    pub force_mode: Option<String>,
+    #[serde(default)]
+    pub files: Vec<TolgeePushFileConfig>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TolgeePushFileConfig {
+    pub path: String,
+    pub namespace: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct TolgeePullConfig {
+    pub path: Option<String>,
+    pub file_structure_template: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -106,6 +150,21 @@ impl CliConfig {
             names.push("gemini");
         }
         names
+    }
+}
+
+impl TolgeeConfig {
+    pub fn has_inline_runtime_config(&self) -> bool {
+        self.project_id.is_some()
+            || self.api_url.is_some()
+            || self.api_key.is_some()
+            || self.format.is_some()
+            || self.schema.is_some()
+            || self.push.languages.is_some()
+            || self.push.force_mode.is_some()
+            || !self.push.files.is_empty()
+            || self.pull.path.is_some()
+            || self.pull.file_structure_template.is_some()
     }
 }
 
@@ -425,5 +484,85 @@ status = "translated"
             config.translate.resolved_output_status(),
             Some("translated")
         );
+    }
+
+    #[test]
+    fn load_config_parses_tolgee_defaults() {
+        let config: CliConfig = toml::from_str(
+            r#"
+[tolgee]
+config = ".tolgeerc.json"
+project_id = 36
+api_url = "https://tolgee.example/api"
+api_key = "tgpak_example"
+format = "APPLE_XCSTRINGS"
+schema = "https://docs.tolgee.io/cli-schema.json"
+namespaces = ["WebGame"]
+
+[tolgee.push]
+languages = ["en"]
+force_mode = "KEEP"
+
+[[tolgee.push.files]]
+path = "Modules/WebGame/Localizable.xcstrings"
+namespace = "WebGame"
+
+[tolgee.pull]
+path = "./tolgee-temp"
+file_structure_template = "/{namespace}/Localizable.{extension}"
+
+[translate]
+use_tolgee = true
+"#,
+        )
+        .expect("parse config");
+
+        assert_eq!(config.tolgee.config.as_deref(), Some(".tolgeerc.json"));
+        assert_eq!(config.tolgee.project_id, Some(36));
+        assert_eq!(
+            config.tolgee.api_url.as_deref(),
+            Some("https://tolgee.example/api")
+        );
+        assert_eq!(config.tolgee.api_key.as_deref(), Some("tgpak_example"));
+        assert_eq!(config.tolgee.format.as_deref(), Some("APPLE_XCSTRINGS"));
+        assert_eq!(
+            config.tolgee.schema.as_deref(),
+            Some("https://docs.tolgee.io/cli-schema.json")
+        );
+        assert_eq!(config.tolgee.namespaces, Some(vec!["WebGame".to_string()]));
+        assert_eq!(config.tolgee.push.languages, Some(vec!["en".to_string()]));
+        assert_eq!(config.tolgee.push.force_mode.as_deref(), Some("KEEP"));
+        assert_eq!(config.tolgee.push.files.len(), 1);
+        assert_eq!(
+            config.tolgee.push.files[0].path,
+            "Modules/WebGame/Localizable.xcstrings"
+        );
+        assert_eq!(config.tolgee.pull.path.as_deref(), Some("./tolgee-temp"));
+        assert_eq!(
+            config.tolgee.pull.file_structure_template.as_deref(),
+            Some("/{namespace}/Localizable.{extension}")
+        );
+        assert!(config.tolgee.has_inline_runtime_config());
+        assert_eq!(config.translate.use_tolgee, Some(true));
+    }
+
+    #[test]
+    fn load_config_parses_legacy_tolgee_language_alias() {
+        let config: CliConfig = toml::from_str(
+            r#"
+[tolgee]
+project_id = 36
+
+[tolgee.push]
+language = ["en"]
+
+[[tolgee.push.files]]
+path = "Modules/WebGame/Localizable.xcstrings"
+namespace = "WebGame"
+"#,
+        )
+        .expect("parse config");
+
+        assert_eq!(config.tolgee.push.languages, Some(vec!["en".to_string()]));
     }
 }

@@ -11,6 +11,7 @@ mod normalize;
 mod path_glob;
 mod stats;
 mod sync;
+mod tolgee;
 mod transformers;
 mod translate;
 mod tui;
@@ -26,6 +27,9 @@ use crate::edit::{EditSetOptions, run_edit_set_command};
 use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::normalize::{NormalizeCliOptions, run_normalize_command};
 use crate::sync::{SyncOptions, run_sync_command};
+use crate::tolgee::{
+    TolgeePullOptions, TolgeePushOptions, run_tolgee_pull_command, run_tolgee_push_command,
+};
 use crate::translate::{TranslateOptions, run_translate_command};
 use crate::tui::UiMode;
 use crate::validation::{ValidationContext, validate_context, validate_language_code};
@@ -305,6 +309,18 @@ enum Commands {
         #[arg(long)]
         config: Option<String>,
 
+        /// Enable Tolgee prefill and push-back for this translation run
+        #[arg(long, default_value_t = false)]
+        tolgee: bool,
+
+        /// Optional Tolgee source config path (.tolgeerc.json or langcodec.toml)
+        #[arg(long)]
+        tolgee_config: Option<String>,
+
+        /// Restrict Tolgee operations to one or more namespaces
+        #[arg(long, value_name = "NAMESPACE", value_delimiter = ',')]
+        tolgee_namespace: Vec<String>,
+
         /// Preview the translation run without writing files
         #[arg(long, default_value_t = false)]
         dry_run: bool,
@@ -361,6 +377,12 @@ enum Commands {
         ui_mode: UiMode,
     },
 
+    /// Sync xcstrings catalogs with Tolgee using langcodec.toml or .tolgeerc.json mappings.
+    Tolgee {
+        #[command(subcommand)]
+        command: TolgeeCommands,
+    },
+
     /// Debug: Read a localization file and output as JSON.
     Debug {
         /// The input file to debug
@@ -385,6 +407,39 @@ enum Commands {
         /// Shell to generate completions for (bash, zsh, fish, powershell, elvish)
         #[arg(value_enum)]
         shell: Shell,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum TolgeeCommands {
+    /// Pull translations from Tolgee and merge them into mapped local xcstrings files.
+    Pull {
+        /// Optional Tolgee source config path (.tolgeerc.json or langcodec.toml)
+        #[arg(long)]
+        config: Option<String>,
+
+        /// Restrict the pull to one or more namespaces
+        #[arg(long, value_name = "NAMESPACE", value_delimiter = ',')]
+        namespace: Vec<String>,
+
+        /// Preview the pull without writing local files
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+
+    /// Push mapped local xcstrings files to Tolgee.
+    Push {
+        /// Optional Tolgee source config path (.tolgeerc.json or langcodec.toml)
+        #[arg(long)]
+        config: Option<String>,
+
+        /// Restrict the push to one or more namespaces
+        #[arg(long, value_name = "NAMESPACE", value_delimiter = ',')]
+        namespace: Vec<String>,
+
+        /// Preview the push without invoking Tolgee
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
     },
 }
 
@@ -838,6 +893,9 @@ fn main() {
             model,
             concurrency,
             config,
+            tolgee,
+            tolgee_config,
+            tolgee_namespace,
             dry_run,
             ui_mode,
         } => {
@@ -889,6 +947,9 @@ fn main() {
                 model,
                 concurrency,
                 config,
+                use_tolgee: tolgee,
+                tolgee_config,
+                tolgee_namespaces: tolgee_namespace,
                 dry_run,
                 strict,
                 ui_mode,
@@ -900,6 +961,49 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Tolgee { command } => match command {
+            TolgeeCommands::Pull {
+                config,
+                namespace,
+                dry_run,
+            } => {
+                if let Err(e) = run_tolgee_pull_command(TolgeePullOptions {
+                    config,
+                    namespaces: namespace,
+                    dry_run,
+                    strict,
+                }) {
+                    eprintln!(
+                        "{}",
+                        ui::status_line_stderr(
+                            ui::Tone::Error,
+                            &format!("Tolgee pull failed: {}", e),
+                        )
+                    );
+                    std::process::exit(1);
+                }
+            }
+            TolgeeCommands::Push {
+                config,
+                namespace,
+                dry_run,
+            } => {
+                if let Err(e) = run_tolgee_push_command(TolgeePushOptions {
+                    config,
+                    namespaces: namespace,
+                    dry_run,
+                }) {
+                    eprintln!(
+                        "{}",
+                        ui::status_line_stderr(
+                            ui::Tone::Error,
+                            &format!("Tolgee push failed: {}", e),
+                        )
+                    );
+                    std::process::exit(1);
+                }
+            }
+        },
         Commands::Annotate {
             input,
             source_roots,
