@@ -1,73 +1,58 @@
-# langcodec
+<p align="center">
+  <img src="./assets/langcodec-icon.svg" alt="langcodec" width="160" height="160" />
+</p>
 
-`langcodec` is a Rust toolkit for working with localization files across Apple, Android, and spreadsheet-style workflows.
+<h1 align="center">langcodec</h1>
 
-It gives you one consistent model for parsing, converting, inspecting, editing, merging, normalizing, and translating files like:
+<p align="center">
+  Universal localization tooling for real product workflows.
+</p>
 
-- Apple `.strings`
-- Apple `.xcstrings`
-- Android `strings.xml`
-- CSV
-- TSV
+<p align="center">
+  Convert, inspect, normalize, translate, annotate, and sync localization assets across Apple, Android, CSV, TSV, and Tolgee-backed pipelines.
+</p>
 
-This workspace includes:
+<p align="center">
+  <a href="https://crates.io/crates/langcodec-cli">CLI</a> |
+  <a href="https://crates.io/crates/langcodec">Library</a> |
+  <a href="https://docs.rs/langcodec">docs.rs</a> |
+  <a href="./langcodec-cli/README.md">CLI Guide</a> |
+  <a href="./langcodec/README.md">Library Guide</a> |
+  <a href="./CONTRIBUTING.md">Contributing</a>
+</p>
 
-- `langcodec`: the Rust library crate
-- `langcodec-cli`: the `langcodec` command-line tool
+<p align="center">
+  <a href="https://github.com/WendellXY/langcodec/actions/workflows/rust.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/WendellXY/langcodec/rust.yml?branch=main&label=ci&logo=github" alt="CI status" />
+  </a>
+  <a href="https://crates.io/crates/langcodec-cli">
+    <img src="https://img.shields.io/crates/v/langcodec-cli?logo=rust" alt="langcodec-cli on crates.io" />
+  </a>
+  <a href="https://docs.rs/langcodec">
+    <img src="https://img.shields.io/docsrs/langcodec?logo=docsdotrs" alt="langcodec docs.rs" />
+  </a>
+</p>
 
-## Why People Use It
+## Why langcodec?
 
-Localization pipelines usually get messy when teams have to move between iOS, Android, translators, spreadsheets, and CI scripts. `langcodec` is built to reduce that friction.
+Most localization workflows are a pile of one-off scripts, format-specific tools, spreadsheet exports, and CI glue. `langcodec` gives you one Rust-native toolkit for the loop teams actually run:
 
-With one toolchain, you can:
-
-- convert catalogs between Apple, Android, CSV, and TSV
-- inspect missing or stale entries
-- merge and sync translations safely
-- edit files in place across formats
-- normalize files to reduce noisy diffs
-- generate draft translations with AI-backed providers
-- generate translator-facing xcstrings comments from source usage
-
-## What It Feels Like
-
-```sh
-# Convert Apple strings to Android XML
-langcodec convert -i Localizable.strings -o strings.xml
-
-# Inspect untranslated entries
-langcodec view -i Localizable.xcstrings --status new,needs_review --keys-only
-
-# Normalize localization files in CI
-langcodec normalize -i 'locales/**/*.{strings,xml,csv,tsv,xcstrings}' --check
-
-# Draft translations into an .xcstrings catalog
-langcodec translate \
-  --source Localizable.xcstrings \
-  --source-lang en \
-  --target-lang fr,de,ja \
-  --provider openai \
-  --model gpt-4.1-mini
-
-# Generate xcstrings comments with source-aware AI annotation
-langcodec annotate \
-  --input Localizable.xcstrings \
-  --source-root Sources \
-  --source-root Modules \
-  --provider openai \
-  --model gpt-4.1-mini
-```
+- move between Apple, Android, and tabular formats without losing structure
+- inspect stale, missing, or incomplete strings before they ship
+- normalize files so diffs stay readable in review and CI
+- draft translations with AI-backed providers
+- generate better translator comments from real source usage
+- sync `.xcstrings` catalogs with Tolgee without custom release scripts
 
 ## Highlights
 
 - Unified data model for singular and plural translations
-- Read/write support for Apple, Android, CSV, and TSV formats
-- CLI commands for convert, diff, merge, sync, edit, normalize, view, stats, debug, translate, and annotate
-- `.xcstrings` and Android plural support
-- Config-driven translate and annotate workflows with `langcodec.toml`
-- Rust library API for building your own tooling on top
+- Read and write support for Apple `.strings`, Apple `.xcstrings`, Android `strings.xml`, CSV, and TSV
+- CLI commands for convert, diff, merge, sync, edit, normalize, view, stats, debug, translate, annotate, and Tolgee sync
+- Config-driven AI workflows with `langcodec.toml`
+- Rust library API for teams building custom localization pipelines
 
-## Installation
+## Quick Start
 
 Install the CLI:
 
@@ -75,14 +60,50 @@ Install the CLI:
 cargo install langcodec-cli
 ```
 
-Use the library in Rust:
+Use the library:
 
 ```toml
 [dependencies]
-langcodec = "0.9.1"
+langcodec = "0.10.0"
 ```
 
-## Supported Formats
+Try the workflow:
+
+```sh
+# Convert Apple strings to Android XML
+langcodec convert -i Localizable.strings -o values/strings.xml
+
+# Inspect work that still needs attention
+langcodec view -i Localizable.xcstrings --status new,needs_review --keys-only
+
+# Normalize catalogs in CI
+langcodec normalize -i 'locales/**/*.{strings,xml,csv,tsv,xcstrings}' --check
+
+# Draft translations into an existing string catalog
+langcodec translate \
+  --source Localizable.xcstrings \
+  --source-lang en \
+  --target-lang fr,de,ja \
+  --provider openai \
+  --model gpt-5.4
+
+# Generate translator-facing comments from source usage
+langcodec annotate \
+  --input Localizable.xcstrings \
+  --source-root Sources \
+  --source-root Modules \
+  --provider openai \
+  --model gpt-5.4
+```
+
+## Packages
+
+| Package                            | What it is             | Best for                                                                    |
+| ---------------------------------- | ---------------------- | --------------------------------------------------------------------------- |
+| [`langcodec`](./langcodec)         | Rust library crate     | Building custom localization tooling, validation, and conversions in Rust   |
+| [`langcodec-cli`](./langcodec-cli) | Command-line interface | Day-to-day conversion, cleanup, translation, annotation, and sync workflows |
+
+## Format Support
 
 | Format                | Parse | Write | Convert | Merge | Plurals | Comments |
 | --------------------- | :---: | :---: | :-----: | :---: | :-----: | :------: |
@@ -92,39 +113,9 @@ langcodec = "0.9.1"
 | CSV                   |  yes  |  yes  |   yes   |  yes  |   no    |    no    |
 | TSV                   |  yes  |  yes  |   yes   |  yes  |   no    |    no    |
 
-## CLI Quick Start
+## AI Workflows
 
-### Convert files
-
-```sh
-langcodec convert -i input.xcstrings -o output.csv
-langcodec convert -i input.csv -o output.xcstrings --source-language en --version 1.0
-```
-
-### Inspect work to do
-
-```sh
-langcodec view -i Localizable.xcstrings --status new,needs_review
-langcodec stats -i Localizable.xcstrings --json
-```
-
-### Edit and normalize
-
-```sh
-langcodec edit set -i en.strings -k welcome_title -v "Welcome"
-langcodec normalize -i values/strings.xml
-```
-
-### Merge and sync
-
-```sh
-langcodec merge -i a.xcstrings -i b.xcstrings -o merged.xcstrings --strategy last
-langcodec sync --source source.xcstrings --target target.xcstrings --match-lang en
-```
-
-### AI workflows with config
-
-Create a `langcodec.toml` in your project:
+`langcodec` is built for app localization workflows, not just isolated text snippets. `translate` and `annotate` can be driven from a shared `langcodec.toml`, use supported providers such as OpenAI, Anthropic, and Gemini, and scale from a single catalog to config-driven runs across larger repos.
 
 ```toml
 [openai]
@@ -132,6 +123,7 @@ model = "gpt-5.4"
 
 [translate]
 concurrency = 4
+use_tolgee = true
 
 [translate.input]
 source = "locales/Localizable.xcstrings"
@@ -153,15 +145,12 @@ Then run:
 ```sh
 langcodec translate
 langcodec annotate
+langcodec tolgee pull
 ```
 
-When exactly one provider section is configured, `translate` and `annotate` use it automatically. If you configure multiple providers, choose one with `--provider` or `translate.provider`. For larger projects, `translate.input.sources = [...]` can fan out parallel runs from config.
+For deeper CLI examples, head to [langcodec-cli/README.md](./langcodec-cli/README.md).
 
-`annotate` also supports `annotate.inputs = [...]` for config-driven in-place runs across multiple xcstrings files.
-
-More CLI details live in [langcodec-cli/README.md](langcodec-cli/README.md).
-
-## Library Quick Start
+## Rust API
 
 ```rust
 use langcodec::{Codec, convert_auto};
@@ -180,32 +169,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The library is a good fit if you want to:
+The library is a good fit if you want to build custom pipelines, validate assets in CI, or work with a consistent representation instead of format-specific parsers.
 
-- build custom localization pipelines in Rust
-- validate translation assets in CI
-- write converters or format-specific tooling
-- work with a common representation instead of format-specific parsing code
+## Documentation
 
-More library details live in [langcodec/README.md](langcodec/README.md).
-
-## Project Layout
-
-- [langcodec](langcodec): Rust library crate
-- [langcodec-cli](langcodec-cli): command-line interface
-- [tests](tests): shared test data and integration coverage
-
-## Current Status
-
-The current release is `0.10.0` on [crates.io](https://crates.io/crates/langcodec). It is already useful in real workflows, but it is still a `0.x` project, so APIs and behavior may continue to evolve.
-
-## Contributing
-
-Issues, ideas, and pull requests are welcome.
-
-- Project roadmap: [ROADMAP.md](ROADMAP.md)
-- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- [CLI guide](./langcodec-cli/README.md)
+- [Library guide](./langcodec/README.md)
+- [Contribution guide](./CONTRIBUTING.md)
+- [Project roadmap](./ROADMAP.md)
 
 ## License
 
-MIT
+[MIT](./LICENSE)

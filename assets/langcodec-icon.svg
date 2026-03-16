@@ -1,0 +1,45 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="langcodec-bg" x1="88" y1="64" x2="424" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#48D7FF"/>
+      <stop offset="0.52" stop-color="#4474FF"/>
+      <stop offset="1" stop-color="#FFC14B"/>
+    </linearGradient>
+    <linearGradient id="langcodec-sheen" x1="136" y1="96" x2="368" y2="392" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="white" stop-opacity="0.68"/>
+      <stop offset="1" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="langcodec-shadow" x="24" y="24" width="464" height="464" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="18"/>
+      <feGaussianBlur stdDeviation="20"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0980392 0 0 0 0 0.168627 0 0 0 0 0.384314 0 0 0 0.22 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#langcodec-shadow)">
+    <path d="M256 48L404 132V300L256 464L108 300V132L256 48Z" fill="url(#langcodec-bg)"/>
+    <path d="M256 92L368 156V280L256 404L144 280V156L256 92Z" fill="url(#langcodec-sheen)" opacity="0.75"/>
+    <path d="M256 76L384 149V292L256 432L128 292V149L256 76Z" stroke="#FFFFFF" stroke-opacity="0.26" stroke-width="10"/>
+  </g>
+
+  <path d="M180 160C141 160 132 193 132 224C132 244 122 256 108 264C122 272 132 284 132 304C132 335 141 368 180 368" stroke="#08244E" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M332 160C371 160 380 193 380 224C380 244 390 256 404 264C390 272 380 284 380 304C380 335 371 368 332 368" stroke="#08244E" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <circle cx="256" cy="264" r="66" fill="#F8FBFF"/>
+  <circle cx="256" cy="264" r="58" stroke="#0E4CC9" stroke-width="8"/>
+  <path d="M198 264H314" stroke="#0E4CC9" stroke-width="8" stroke-linecap="round"/>
+  <path d="M256 206C238 222 228 243 228 264C228 285 238 306 256 322" stroke="#0E4CC9" stroke-width="8" stroke-linecap="round"/>
+  <path d="M256 206C274 222 284 243 284 264C284 285 274 306 256 322" stroke="#0E4CC9" stroke-width="8" stroke-linecap="round"/>
+  <path d="M212 232C228 240 244 244 256 244C268 244 284 240 300 232" stroke="#0E4CC9" stroke-width="8" stroke-linecap="round"/>
+  <path d="M212 296C228 288 244 284 256 284C268 284 284 288 300 296" stroke="#0E4CC9" stroke-width="8" stroke-linecap="round"/>
+
+  <circle cx="256" cy="264" r="10" fill="#FFC14B"/>
+  <circle cx="182" cy="160" r="12" fill="#48D7FF"/>
+  <circle cx="330" cy="160" r="12" fill="#4474FF"/>
+  <circle cx="180" cy="368" r="12" fill="#FFC14B"/>
+  <circle cx="332" cy="368" r="12" fill="#48D7FF"/>
+</svg>
