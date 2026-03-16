@@ -22,6 +22,7 @@ Supported inputs and outputs:
 - edit translations in place
 - merge or sync catalogs safely
 - draft translations with AI providers
+- generate translator-facing xcstrings comments from source usage
 
 Instead of treating localization as a pile of ad hoc file conversions, `langcodec` gives you one CLI that works across common formats and workflows.
 
@@ -39,6 +40,7 @@ The CLI should teach the detailed usage directly:
 langcodec --help
 langcodec convert --help
 langcodec translate --help
+langcodec annotate --help
 langcodec view --help
 ```
 
@@ -100,16 +102,43 @@ langcodec translate \
 - preflight validation before model requests
 - translation result summaries at the end
 
+### Generate xcstrings comments with AI
+
+```sh
+langcodec annotate \
+  --input Localizable.xcstrings \
+  --source-root Sources \
+  --source-root Modules \
+  --provider openai \
+  --model gpt-4.1-mini
+```
+
+`annotate` supports:
+
+- filling missing xcstrings comments
+- refreshing existing auto-generated comments
+- preserving manual comments
+- config defaults from `langcodec.toml`
+- source shortlisting before agent lookup
+- `--dry-run` and `--check` for CI-friendly runs
+
 ## Example Config
 
 ```toml
-[translate]
-source = "locales/Localizable.xcstrings"
+[ai]
 provider = "openai"
 model = "gpt-4.1-mini"
+
+[translate]
+source = "locales/Localizable.xcstrings"
 source_lang = "en"
 target_lang = "fr,de"
 status = ["new", "stale"]
+concurrency = 4
+
+[annotate]
+input = "locales/Localizable.xcstrings"
+source_roots = ["Sources", "Modules"]
 concurrency = 4
 ```
 
@@ -117,9 +146,12 @@ Then run:
 
 ```sh
 langcodec translate
+langcodec annotate
 ```
 
-For larger repos, `translate.sources = [...]` can fan out parallel runs from config.
+Legacy configs using `translate.provider` and `translate.model` still work. For larger repos, `translate.sources = [...]` can fan out parallel runs from config.
+
+For annotate fan-out runs, use `annotate.inputs = [...]` and omit `annotate.output` so each catalog is updated in place.
 
 ## Main Commands
 
@@ -132,6 +164,7 @@ For larger repos, `translate.sources = [...]` can fan out parallel runs from con
 - `sync`: update existing target entries from a source file
 - `merge`: combine multiple inputs into one output
 - `translate`: draft translations with AI-backed providers
+- `annotate`: generate translator-facing xcstrings comments with AI-backed source lookup
 - `debug`: inspect parsed output as JSON
 
 ## When It Fits Best

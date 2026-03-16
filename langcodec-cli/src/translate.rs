@@ -1,4 +1,7 @@
-use crate::config::{LoadedConfig, load_config};
+use crate::{
+    ai::{ProviderKind, build_provider, resolve_model, resolve_provider},
+    config::{LoadedConfig, load_config, resolve_config_relative_path},
+};
 use crate::validation::{validate_language_code, validate_output_path};
 use async_trait::async_trait;
 use langcodec::{
@@ -44,43 +47,6 @@ pub struct TranslateOptions {
     pub config: Option<String>,
     pub dry_run: bool,
     pub strict: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ProviderKind {
-    OpenAI,
-    Anthropic,
-    Gemini,
-}
-
-impl ProviderKind {
-    fn parse(value: &str) -> Result<Self, String> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "openai" => Ok(Self::OpenAI),
-            "anthropic" => Ok(Self::Anthropic),
-            "gemini" => Ok(Self::Gemini),
-            other => Err(format!(
-                "Unsupported provider '{}'. Expected one of: openai, anthropic, gemini",
-                other
-            )),
-        }
-    }
-
-    fn display_name(&self) -> &'static str {
-        match self {
-            Self::OpenAI => "openai",
-            Self::Anthropic => "anthropic",
-            Self::Gemini => "gemini",
-        }
-    }
-
-    fn api_key_env(&self) -> &'static str {
-        match self {
-            Self::OpenAI => "OPENAI_API_KEY",
-            Self::Anthropic => "ANTHROPIC_API_KEY",
-            Self::Gemini => "GEMINI_API_KEY",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -195,12 +161,6 @@ struct PreparedTranslation {
     target_codec: Codec,
     jobs: Vec<TranslationJob>,
     summary: TranslationSummary,
-}
-
-#[derive(Clone)]
-struct ProviderSetup {
-    provider_kind: ProviderKind,
-    provider: Arc<dyn Provider>,
 }
 
 #[derive(Clone)]
@@ -412,18 +372,6 @@ fn resolve_config_sources(
     }
 
     Ok(Vec::new())
-}
-
-fn resolve_config_relative_path(config_dir: Option<&Path>, path: &str) -> String {
-    let path_obj = Path::new(path);
-    if path_obj.is_absolute() {
-        return path.to_string();
-    }
-
-    match config_dir {
-        Some(dir) => dir.join(path).to_string_lossy().to_string(),
-        None => path.to_string(),
-    }
 }
 
 fn run_prepared_translation(
@@ -1052,17 +1000,14 @@ fn resolve_options(
 
     let provider = resolve_provider(
         opts.provider.as_deref(),
+        config.and_then(|item| item.data.shared_provider()),
         cfg.and_then(|item| item.provider.as_deref()),
     )?;
-    let model = opts
-        .model
-        .clone()
-        .or_else(|| cfg.and_then(|item| item.model.clone()))
-        .or_else(|| std::env::var("MENTRA_MODEL").ok())
-        .ok_or_else(|| {
-            "--model is required (or set translate.model in langcodec.toml or MENTRA_MODEL)"
-                .to_string()
-        })?;
+    let model = resolve_model(
+        opts.model.as_deref(),
+        config.and_then(|item| item.data.shared_model()),
+        cfg.and_then(|item| item.model.as_deref()),
+    )?;
 
     let concurrency = opts
         .concurrency
@@ -1093,38 +1038,6 @@ fn resolve_options(
         dry_run: opts.dry_run,
         strict: opts.strict,
     })
-}
-
-fn resolve_provider(cli: Option<&str>, cfg: Option<&str>) -> Result<ProviderKind, String> {
-    if let Some(value) = cli {
-        return ProviderKind::parse(value);
-    }
-    if let Some(value) = cfg {
-        return ProviderKind::parse(value);
-    }
-
-    let mut available = Vec::new();
-    for kind in [
-        ProviderKind::OpenAI,
-        ProviderKind::Anthropic,
-        ProviderKind::Gemini,
-    ] {
-        if std::env::var(kind.api_key_env()).is_ok() {
-            available.push(kind);
-        }
-    }
-
-    match available.len() {
-        1 => Ok(available.remove(0)),
-        0 => Err(
-            "--provider is required (or set translate.provider in langcodec.toml or configure exactly one provider API key)"
-                .to_string(),
-        ),
-        _ => Err(
-            "Multiple provider API keys are configured; specify --provider or translate.provider in langcodec.toml"
-                .to_string(),
-        ),
-    }
 }
 
 fn parse_status_filter(
@@ -1329,27 +1242,6 @@ fn create_mentra_backend(opts: &ResolvedOptions) -> Result<MentraBackend, String
     Ok(MentraBackend {
         provider: setup.provider,
         model: opts.model.clone(),
-    })
-}
-
-fn build_provider(kind: &ProviderKind) -> Result<ProviderSetup, String> {
-    let api_key = std::env::var(kind.api_key_env()).map_err(|_| {
-        format!(
-            "Missing {} environment variable for {} provider",
-            kind.api_key_env(),
-            kind.display_name()
-        )
-    })?;
-
-    let provider: Arc<dyn Provider> = match kind {
-        ProviderKind::OpenAI => Arc::new(provider::openai::OpenAIProvider::new(api_key)),
-        ProviderKind::Anthropic => Arc::new(provider::anthropic::AnthropicProvider::new(api_key)),
-        ProviderKind::Gemini => Arc::new(provider::gemini::GeminiProvider::new(api_key)),
-    };
-
-    Ok(ProviderSetup {
-        provider_kind: kind.clone(),
-        provider,
     })
 }
 

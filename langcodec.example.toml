@@ -3,16 +3,20 @@
 # langcodec looks for this file in the current directory and then walks up
 # parent directories until it finds one. You can also pass an explicit path:
 #   langcodec translate --config /absolute/path/to/langcodec.toml
+#   langcodec annotate --config /absolute/path/to/langcodec.toml
 #
-# Today, config file support is used by the `translate` command.
+# Config file support is currently used by the `translate` and `annotate` commands.
 
-[translate]
+[ai]
 # Required unless you pass --provider.
 # Supported values: openai, anthropic, gemini
 provider = "openai"
 
 # Required unless you pass --model or set MENTRA_MODEL.
 model = "gpt-4.1-mini"
+
+[translate]
+source = "locales/Localizable.xcstrings"
 
 # Optional, but useful when the source contains multiple languages.
 source_lang = "en"
@@ -26,3 +30,20 @@ concurrency = 4
 # Optional. Defaults to ["new", "stale"].
 # Only target entries with one of these statuses will be translated.
 status = ["new", "stale"]
+
+[annotate]
+input = "locales/Localizable.xcstrings"
+source_roots = ["Sources", "Modules"]
+
+# Optional. Defaults to in-place updates of `input`.
+# output = "locales/Localizable.annotated.xcstrings"
+
+# Optional alternative for fan-out runs across multiple catalogs.
+# Cannot be combined with `input` or `output`.
+# inputs = ["locales/App.xcstrings", "locales/Shared.xcstrings"]
+
+# Optional. Defaults to the catalog's sourceLanguage.
+source_lang = "en"
+
+# Optional. Defaults to 4.
+concurrency = 4

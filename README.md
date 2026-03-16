@@ -27,6 +27,7 @@ With one toolchain, you can:
 - edit files in place across formats
 - normalize files to reduce noisy diffs
 - generate draft translations with AI-backed providers
+- generate translator-facing xcstrings comments from source usage
 
 ## What It Feels Like
 
@@ -47,15 +48,23 @@ langcodec translate \
   --target-lang fr,de,ja \
   --provider openai \
   --model gpt-4.1-mini
+
+# Generate xcstrings comments with source-aware AI annotation
+langcodec annotate \
+  --input Localizable.xcstrings \
+  --source-root Sources \
+  --source-root Modules \
+  --provider openai \
+  --model gpt-4.1-mini
 ```
 
 ## Highlights
 
 - Unified data model for singular and plural translations
 - Read/write support for Apple, Android, CSV, and TSV formats
-- CLI commands for convert, diff, merge, sync, edit, normalize, view, stats, debug, and translate
+- CLI commands for convert, diff, merge, sync, edit, normalize, view, stats, debug, translate, and annotate
 - `.xcstrings` and Android plural support
-- Config-driven translate workflows with `langcodec.toml`
+- Config-driven translate and annotate workflows with `langcodec.toml`
 - Rust library API for building your own tooling on top
 
 ## Installation
@@ -113,18 +122,25 @@ langcodec merge -i a.xcstrings -i b.xcstrings -o merged.xcstrings --strategy las
 langcodec sync --source source.xcstrings --target target.xcstrings --match-lang en
 ```
 
-### Translate with config
+### AI workflows with config
 
 Create a `langcodec.toml` in your project:
 
 ```toml
-[translate]
-source = "locales/Localizable.xcstrings"
+[ai]
 provider = "openai"
 model = "gpt-4.1-mini"
+
+[translate]
+source = "locales/Localizable.xcstrings"
 source_lang = "en"
 target_lang = "fr,de"
 status = ["new", "stale"]
+concurrency = 4
+
+[annotate]
+input = "locales/Localizable.xcstrings"
+source_roots = ["Sources", "Modules"]
 concurrency = 4
 ```
 
@@ -132,9 +148,12 @@ Then run:
 
 ```sh
 langcodec translate
+langcodec annotate
 ```
 
-For larger projects, `translate.sources = [...]` can fan out parallel runs from config.
+`translate` still accepts legacy `translate.provider` and `translate.model` if you have older config files. For larger projects, `translate.sources = [...]` can fan out parallel runs from config.
+
+`annotate` also supports `annotate.inputs = [...]` for config-driven in-place runs across multiple xcstrings files.
 
 More CLI details live in [langcodec-cli/README.md](langcodec-cli/README.md).
 

@@ -1,3 +1,5 @@
+mod ai;
+mod annotate;
 mod config;
 mod convert;
 mod debug;
@@ -22,6 +24,7 @@ use crate::merge::{ConflictStrategy, run_merge_command};
 use crate::normalize::{NormalizeCliOptions, run_normalize_command};
 use crate::sync::{SyncOptions, run_sync_command};
 use crate::translate::{TranslateOptions, run_translate_command};
+use crate::annotate::{AnnotateOptions, run_annotate_command};
 use crate::validation::{ValidationContext, validate_context, validate_language_code};
 use crate::view::{ViewOptions, print_view, validate_status_filter};
 use clap::{CommandFactory, Parser, Subcommand};
@@ -302,6 +305,49 @@ enum Commands {
         /// Preview the translation run without writing files
         #[arg(long, default_value_t = false)]
         dry_run: bool,
+    },
+
+    /// Generate translator-facing xcstrings comments from source usage with a Mentra agent.
+    Annotate {
+        /// Xcode string catalog to annotate. Required unless configured in `langcodec.toml`.
+        #[arg(short, long)]
+        input: Option<String>,
+
+        /// Swift source roots to scan and expose to the agent. Repeat for multiple roots.
+        #[arg(long = "source-root")]
+        source_roots: Vec<String>,
+
+        /// Optional output file. Defaults to writing back to the input catalog.
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Override the source language used to resolve source values from the catalog.
+        #[arg(long)]
+        source_lang: Option<String>,
+
+        /// Mentra provider to use: openai, anthropic, gemini
+        #[arg(long)]
+        provider: Option<String>,
+
+        /// Model identifier to use with Mentra
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Number of concurrent annotation workers
+        #[arg(long)]
+        concurrency: Option<usize>,
+
+        /// Optional langcodec.toml path
+        #[arg(long)]
+        config: Option<String>,
+
+        /// Preview changes without writing files
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        /// Exit non-zero if comments would be added or refreshed
+        #[arg(long, default_value_t = false)]
+        check: bool,
     },
 
     /// Debug: Read a localization file and output as JSON.
@@ -753,6 +799,49 @@ fn main() {
                 strict,
             }) {
                 eprintln!("❌ Translate failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Annotate {
+            input,
+            source_roots,
+            output,
+            source_lang,
+            provider,
+            model,
+            concurrency,
+            config,
+            dry_run,
+            check,
+        } => {
+            let mut context = ValidationContext::new();
+            if let Some(input_path) = &input {
+                context = context.with_input_file(input_path.clone());
+            }
+            if let Some(output_path) = &output {
+                context = context.with_output_file(output_path.clone());
+            }
+            if let Some(lang_code) = &source_lang {
+                context = context.with_language_code(lang_code.clone());
+            }
+            if let Err(e) = validate_context(&context) {
+                eprintln!("❌ Validation failed: {}", e);
+                std::process::exit(1);
+            }
+
+            if let Err(e) = run_annotate_command(AnnotateOptions {
+                input,
+                source_roots,
+                output,
+                source_lang,
+                provider,
+                model,
+                concurrency,
+                config,
+                dry_run,
+                check,
+            }) {
+                eprintln!("❌ Annotate failed: {}", e);
                 std::process::exit(1);
             }
         }
