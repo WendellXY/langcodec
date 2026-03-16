@@ -4,19 +4,19 @@ use crate::{
     validation::validate_language_code,
 };
 use async_trait::async_trait;
-use ignore::WalkBuilder;
 use langcodec::{
-    Resource, Translation, normalize_placeholders,
+    Resource, Translation,
     formats::{XcstringsFormat, xcstrings::Item},
     traits::Parser,
 };
 use mentra::{
     AgentConfig, ContentBlock, ModelInfo, Runtime,
-    agent::{ToolProfile, WorkspaceConfig},
+    agent::{AgentEvent, ToolProfile, WorkspaceConfig},
     provider::ProviderRequestOptions,
     runtime::RunOptions,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     fs,
@@ -26,13 +26,13 @@ use std::{
 };
 use tokio::{
     runtime::Builder,
-    sync::{Mutex as AsyncMutex, mpsc},
+    sync::{Mutex as AsyncMutex, broadcast, mpsc},
     task::JoinSet,
 };
 
 const DEFAULT_CONCURRENCY: usize = 4;
-const DEFAULT_TOOL_BUDGET: usize = 8;
-const ANNOTATION_SYSTEM_PROMPT: &str = "You write translator-facing comments for Xcode xcstrings entries. Use the files tool to inspect source code when needed. Prefer a short, concrete explanation of where or how the text is used so a translator can choose the right wording. If you are uncertain, say what the UI usage appears to be instead of inventing product meaning. Return JSON only with the shape {\"comment\":\"...\",\"confidence\":\"high|medium|low\"}.";
+const DEFAULT_TOOL_BUDGET: usize = 16;
+const ANNOTATION_SYSTEM_PROMPT: &str = "You write translator-facing comments for Xcode xcstrings entries. Use the files tool or shell tool when needed to inspect source code. Prefer shell commands like rg for fast code search, then read the most relevant files before drafting. Prefer a short, concrete explanation of where or how the text is used so a translator can choose the right wording. If you are uncertain, say what the UI usage appears to be instead of inventing product meaning. Return JSON only with the shape {\"comment\":\"...\",\"confidence\":\"high|medium|low\"}.";
 
 #[derive(Debug, Clone)]
 pub struct AnnotateOptions {
@@ -69,14 +69,6 @@ struct AnnotationRequest {
     source_value: String,
     existing_comment: Option<String>,
     source_roots: Vec<String>,
-    candidates: Vec<CandidateFile>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CandidateFile {
-    path: String,
-    matches: Vec<String>,
-    score: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -115,22 +107,6 @@ impl AnnotateProgressRenderer {
     fn print_message(&mut self, message: &str) {
         self.finish_line();
         eprintln!("{}", message);
-    }
-
-    fn start_scan(&mut self, total: usize, source_roots: &[String]) {
-        self.print_message(&format!(
-            "Scanning {} xcstrings entr{} across {} source root(s)...",
-            total,
-            if total == 1 { "y" } else { "ies" },
-            source_roots.len()
-        ));
-    }
-
-    fn update_scan(&mut self, completed: usize, total: usize) {
-        self.render_line(&format!(
-            "Scan progress: {}/{} entries shortlisted",
-            completed, total
-        ));
     }
 
     fn start_annotation(&mut self, total: usize, concurrency: usize) {
@@ -211,7 +187,10 @@ impl AnnotateProgressRenderer {
 
 #[async_trait]
 trait AnnotationBackend: Send + Sync {
-    async fn annotate(&self, request: AnnotationRequest) -> Result<Option<AnnotationResponse>, String>;
+    async fn annotate(
+        &self,
+        request: AnnotationRequest,
+    ) -> Result<Option<AnnotationResponse>, String>;
 }
 
 struct MentraAnnotatorBackend {
@@ -248,12 +227,16 @@ impl MentraAnnotatorBackend {
 
 #[async_trait]
 impl AnnotationBackend for MentraAnnotatorBackend {
-    async fn annotate(&self, request: AnnotationRequest) -> Result<Option<AnnotationResponse>, String> {
+    async fn annotate(
+        &self,
+        request: AnnotationRequest,
+    ) -> Result<Option<AnnotationResponse>, String> {
         let config = build_agent_config(&self.workspace_root);
         let mut agent = self
             .runtime
             .spawn_with_config("annotate", self.model.clone(), config)
             .map_err(|e| format!("Failed to spawn Mentra agent: {}", e))?;
+        let tool_logger = spawn_tool_call_logger(agent.subscribe_events(), request.key.clone());
 
         let response = agent
             .run(
@@ -263,8 +246,11 @@ impl AnnotationBackend for MentraAnnotatorBackend {
                     ..RunOptions::default()
                 },
             )
-            .await
-            .map_err(|e| format!("Annotation agent failed: {}", e))?;
+            .await;
+        tool_logger.abort();
+        let _ = tool_logger.await;
+
+        let response = response.map_err(|e| format!("Annotation agent failed: {}", e))?;
 
         parse_annotation_response(&response.text()).map(Some)
     }
@@ -469,7 +455,8 @@ fn resolve_annotate_options(
 ) -> Result<ResolvedAnnotateOptions, String> {
     let cfg = config.map(|item| &item.data.annotate);
     let config_dir = config.and_then(LoadedConfig::config_dir);
-    let cwd = std::env::current_dir().map_err(|e| format!("Failed to determine current directory: {}", e))?;
+    let cwd = std::env::current_dir()
+        .map_err(|e| format!("Failed to determine current directory: {}", e))?;
 
     let input = if let Some(input) = &opts.input {
         absolutize_path(input, &cwd)
@@ -488,19 +475,26 @@ fn resolve_annotate_options(
             .map(|path| absolutize_path(path, &cwd))
             .collect::<Vec<_>>()
     } else if let Some(roots) = cfg.and_then(|item| item.source_roots.as_ref()) {
-        roots.iter()
+        roots
+            .iter()
             .map(|path| absolutize_path(&resolve_config_relative_path(config_dir, path), &cwd))
             .collect::<Vec<_>>()
     } else {
         Vec::new()
     };
     if source_roots.is_empty() {
-        return Err("--source-root is required unless annotate.source_roots is set in langcodec.toml".to_string());
+        return Err(
+            "--source-root is required unless annotate.source_roots is set in langcodec.toml"
+                .to_string(),
+        );
     }
     for root in &source_roots {
         let path = Path::new(root);
         if !path.is_dir() {
-            return Err(format!("Source root does not exist or is not a directory: {}", root));
+            return Err(format!(
+                "Source root does not exist or is not a directory: {}",
+                root
+            ));
         }
     }
 
@@ -588,13 +582,11 @@ fn annotate_requests(
                     };
 
                     let key = request.key.clone();
-                    let candidate_count = request.candidates.len();
-                    let top_candidate = request.candidates.first().map(|item| item.path.clone());
                     let _ = tx.send(WorkerUpdate::Started {
                         worker_id,
                         key: key.clone(),
-                        candidate_count,
-                        top_candidate,
+                        candidate_count: 0,
+                        top_candidate: None,
                     });
                     let result = backend.annotate(request).await;
                     let _ = tx.send(WorkerUpdate::Finished {
@@ -687,26 +679,12 @@ fn build_annotation_requests(
     source_values: &HashMap<String, String>,
     source_roots: &[String],
     workspace_root: &Path,
-    progress: &mut AnnotateProgressRenderer,
+    _progress: &mut AnnotateProgressRenderer,
 ) -> Result<Vec<AnnotationRequest>, String> {
     let mut keys = catalog.strings.keys().cloned().collect::<Vec<_>>();
     keys.sort();
-    let total = keys
-        .iter()
-        .filter(|key| {
-            catalog
-                .strings
-                .get(*key)
-                .is_some_and(|item| !should_preserve_manual_comment(item))
-        })
-        .count();
-
-    if total > 0 {
-        progress.start_scan(total, source_roots);
-    }
 
     let mut requests = Vec::new();
-    let mut completed = 0usize;
     for key in keys {
         let Some(item) = catalog.strings.get(&key) else {
             continue;
@@ -719,7 +697,6 @@ fn build_annotation_requests(
             .get(&key)
             .cloned()
             .unwrap_or_else(|| key.clone());
-        let candidates = shortlist_candidate_files(source_roots, workspace_root, &key, &source_value)?;
 
         requests.push(AnnotationRequest {
             key,
@@ -730,10 +707,7 @@ fn build_annotation_requests(
                 .iter()
                 .map(|root| display_path(workspace_root, Path::new(root)))
                 .collect(),
-            candidates,
         });
-        completed += 1;
-        progress.update_scan(completed, total);
     }
 
     Ok(requests)
@@ -751,7 +725,12 @@ fn source_value_map(resources: &[Resource], source_lang: &str) -> HashMap<String
             resource
                 .entries
                 .iter()
-                .map(|entry| (entry.id.clone(), translation_to_text(&entry.value, &entry.id)))
+                .map(|entry| {
+                    (
+                        entry.id.clone(),
+                        translation_to_text(&entry.value, &entry.id),
+                    )
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -770,136 +749,12 @@ fn translation_to_text(value: &Translation, fallback_key: &str) -> String {
     }
 }
 
-fn shortlist_candidate_files(
-    source_roots: &[String],
-    workspace_root: &Path,
-    key: &str,
-    source_value: &str,
-) -> Result<Vec<CandidateFile>, String> {
-    let mut candidates = Vec::new();
-    for root in source_roots {
-        let mut builder = WalkBuilder::new(root);
-        builder.hidden(false);
-        builder.git_ignore(true);
-        builder.git_exclude(true);
-        builder.parents(true);
-
-        for result in builder.build() {
-            let entry = result.map_err(|e| format!("Failed to walk source roots: {}", e))?;
-            if !entry.file_type().is_some_and(|file_type| file_type.is_file()) {
-                continue;
-            }
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("swift") {
-                continue;
-            }
-
-            let Ok(content) = fs::read_to_string(path) else {
-                continue;
-            };
-
-            if let Some(candidate) = score_candidate_file(workspace_root, path, &content, key, source_value) {
-                candidates.push(candidate);
-            }
-        }
-    }
-
-    candidates.sort_by(|left, right| {
-        right
-            .score
-            .cmp(&left.score)
-            .then_with(|| left.path.cmp(&right.path))
-    });
-    candidates.truncate(8);
-    Ok(candidates)
-}
-
-fn score_candidate_file(
-    workspace_root: &Path,
-    path: &Path,
-    content: &str,
-    key: &str,
-    source_value: &str,
-) -> Option<CandidateFile> {
-    let normalized_source = normalize_search_text(source_value);
-    let mut matches = Vec::new();
-    let mut score = 0usize;
-
-    for (index, line) in content.lines().enumerate() {
-        if matches.len() >= 3 {
-            break;
-        }
-
-        let line_number = index + 1;
-        if !key.is_empty() && line.contains(key) {
-            matches.push(format!("line {}: key match", line_number));
-            score = score.max(100);
-            continue;
-        }
-        if !source_value.is_empty() && line.contains(source_value) {
-            matches.push(format!("line {}: source text match", line_number));
-            score = score.max(90);
-            continue;
-        }
-        if !normalized_source.is_empty()
-            && normalize_search_text(line).contains(&normalized_source)
-        {
-            matches.push(format!("line {}: placeholder-normalized text match", line_number));
-            score = score.max(80);
-        }
-    }
-
-    if matches.is_empty() {
-        return None;
-    }
-
-    Some(CandidateFile {
-        path: display_path(workspace_root, path),
-        matches,
-        score,
-    })
-}
-
-fn normalize_search_text(text: &str) -> String {
-    normalize_placeholders(&replace_swift_interpolations(text))
-}
-
-fn replace_swift_interpolations(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut chars = text.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if ch == '\\' && chars.peek() == Some(&'(') {
-            chars.next();
-            let mut depth = 1usize;
-            for next in chars.by_ref() {
-                match next {
-                    '(' => depth += 1,
-                    ')' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            out.push_str("%s");
-            continue;
-        }
-
-        out.push(ch);
-    }
-
-    out
-}
-
 fn build_agent_config(workspace_root: &Path) -> AgentConfig {
     AgentConfig {
         system: Some(ANNOTATION_SYSTEM_PROMPT.to_string()),
         temperature: Some(0.2),
         max_output_tokens: Some(512),
-        tool_profile: ToolProfile::only(["files"]),
+        tool_profile: ToolProfile::only(["files", "shell"]),
         provider_request_options: ProviderRequestOptions {
             openai: mentra::provider::OpenAIRequestOptions {
                 parallel_tool_calls: Some(false),
@@ -933,25 +788,59 @@ fn build_annotation_prompt(request: &AnnotationRequest) -> String {
         prompt.push('\n');
     }
 
-    if !request.candidates.is_empty() {
-        prompt.push_str("\nShortlisted files from local matching:\n");
-        for candidate in &request.candidates {
-            prompt.push_str("- ");
-            prompt.push_str(&candidate.path);
-            prompt.push_str(" (");
-            prompt.push_str(&candidate.matches.join(", "));
-            prompt.push_str(")\n");
-        }
-    } else {
-        prompt.push_str(
-            "\nNo local shortlist hit. Use the files tool to search the source roots for this text or key before drafting the comment.\n",
-        );
-    }
+    prompt.push_str(
+        "\nUse the shell tool for fast code search, preferably with rg, within these roots before drafting when the usage is not already obvious. Then use files reads for only the most relevant hits. Avoid broad repeated searches or directory listings.\n",
+    );
 
     prompt.push_str(
-        "\nRequirements:\n- Keep the comment concise and useful for translators.\n- Prefer describing UI role or user-facing context.\n- If confidence is low, mention the concrete code usage instead of guessing product meaning.\n- Return JSON only: {\"comment\":\"...\",\"confidence\":\"high|medium|low\"}.\n",
+        "\nRequirements:\n- Keep the comment concise and useful for translators.\n- Prefer describing UI role or user-facing context.\n- If confidence is low, mention the concrete code usage you found instead of guessing product meaning.\n- Use as few tool calls as practical; usually one rg search plus a small number of targeted file reads is enough.\n- Do not mention internal file paths unless they clarify usage.\n- Return JSON only: {\"comment\":\"...\",\"confidence\":\"high|medium|low\"}.\n",
     );
     prompt
+}
+
+fn spawn_tool_call_logger(
+    mut events: broadcast::Receiver<AgentEvent>,
+    key: String,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            match events.recv().await {
+                Ok(AgentEvent::ToolExecutionStarted { call }) => {
+                    eprintln!(
+                        "Tool call key={} tool={} input={}",
+                        key,
+                        call.name,
+                        compact_tool_input(&call.input)
+                    );
+                }
+                Ok(AgentEvent::ToolExecutionFinished { result }) => {
+                    let status = match result {
+                        ContentBlock::ToolResult { is_error, .. } if is_error => "error",
+                        ContentBlock::ToolResult { .. } => "ok",
+                        _ => "unknown",
+                    };
+                    eprintln!("Tool result key={} status={}", key, status);
+                }
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Closed) => break,
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+            }
+        }
+    })
+}
+
+fn compact_tool_input(input: &Value) -> String {
+    const MAX_TOOL_INPUT_CHARS: usize = 180;
+
+    let rendered = serde_json::to_string(input).unwrap_or_else(|_| "<unserializable>".to_string());
+    let mut preview = rendered
+        .chars()
+        .take(MAX_TOOL_INPUT_CHARS)
+        .collect::<String>();
+    if rendered.chars().count() > MAX_TOOL_INPUT_CHARS {
+        preview.push_str("...");
+    }
+    preview
 }
 
 fn parse_annotation_response(text: &str) -> Result<AnnotationResponse, String> {
@@ -1008,7 +897,8 @@ fn derive_workspace_root(input: &str, source_roots: &[String], fallback: &Path) 
         candidates.push(path_root_candidate(Path::new(root)));
     }
 
-    common_ancestor(candidates.into_iter().flatten().collect::<Vec<_>>()).unwrap_or_else(|| fallback.to_path_buf())
+    common_ancestor(candidates.into_iter().flatten().collect::<Vec<_>>())
+        .unwrap_or_else(|| fallback.to_path_buf())
 }
 
 fn path_root_candidate(path: &Path) -> Option<PathBuf> {
@@ -1064,7 +954,11 @@ mod tests {
     use super::*;
     use mentra::{
         BuiltinProvider, ModelInfo, ProviderDescriptor,
-        provider::{Provider, ProviderEventStream, Request, Response, Role, provider_event_stream_from_response},
+        provider::{
+            ContentBlockDelta, ContentBlockStart, Provider, ProviderEvent, ProviderEventStream,
+            Request, Response, Role, provider_event_stream_from_response,
+        },
+        runtime::RunOptions,
     };
     use std::sync::{Arc, Mutex};
     use tempfile::TempDir;
@@ -1075,7 +969,10 @@ mod tests {
 
     #[async_trait]
     impl AnnotationBackend for FakeBackend {
-        async fn annotate(&self, request: AnnotationRequest) -> Result<Option<AnnotationResponse>, String> {
+        async fn annotate(
+            &self,
+            request: AnnotationRequest,
+        ) -> Result<Option<AnnotationResponse>, String> {
             Ok(self.responses.get(&request.key).cloned().flatten())
         }
     }
@@ -1099,6 +996,11 @@ mod tests {
 
     struct RecordingProvider {
         requests: Arc<Mutex<Vec<Request<'static>>>>,
+    }
+
+    struct ScriptedStreamingProvider {
+        requests: Arc<Mutex<Vec<Request<'static>>>>,
+        scripts: Arc<Mutex<VecDeque<Vec<ProviderEvent>>>>,
     }
 
     #[async_trait]
@@ -1132,11 +1034,45 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl Provider for ScriptedStreamingProvider {
+        fn descriptor(&self) -> ProviderDescriptor {
+            ProviderDescriptor::new(BuiltinProvider::OpenAI)
+        }
+
+        async fn list_models(&self) -> Result<Vec<ModelInfo>, mentra::provider::ProviderError> {
+            Ok(vec![ModelInfo::new("test-model", BuiltinProvider::OpenAI)])
+        }
+
+        async fn stream(
+            &self,
+            request: Request<'_>,
+        ) -> Result<ProviderEventStream, mentra::provider::ProviderError> {
+            self.requests
+                .lock()
+                .expect("requests lock")
+                .push(request.clone().into_owned());
+            let script = self
+                .scripts
+                .lock()
+                .expect("scripts lock")
+                .pop_front()
+                .expect("missing scripted response");
+
+            let (tx, rx) = mpsc::unbounded_channel();
+            for event in script {
+                tx.send(Ok(event)).expect("send provider event");
+            }
+            Ok(rx)
+        }
+    }
+
     #[test]
     fn build_agent_config_limits_tools_to_files() {
         let config = build_agent_config(Path::new("/tmp/project"));
         assert!(config.tool_profile.allows("files"));
-        assert!(!config.tool_profile.allows("shell"));
+        assert!(config.tool_profile.allows("shell"));
+        assert!(!config.tool_profile.allows("task"));
     }
 
     #[test]
@@ -1155,36 +1091,16 @@ mod tests {
     }
 
     #[test]
-    fn shortlist_candidate_files_matches_swift_interpolation() {
-        let temp_dir = TempDir::new().expect("temp dir");
-        let root = temp_dir.path().join("Sources");
-        fs::create_dir_all(&root).expect("create root");
-        fs::write(
-            root.join("GameView.swift"),
-            r#"Text("Confirm exit \(name) to enter \(room)", bundle: .module)"#,
-        )
-        .expect("write swift");
-
-        let candidates = shortlist_candidate_files(
-            &[root.to_string_lossy().to_string()],
-            temp_dir.path(),
-            "Confirm exit %@ to enter %@",
-            "Confirm exit %@ to enter %@",
-        )
-        .expect("shortlist");
-
-        assert_eq!(candidates.len(), 1);
-        assert!(candidates[0].matches[0].contains("placeholder-normalized"));
-    }
-
-    #[test]
     fn run_annotate_updates_missing_and_auto_generated_comments_only() {
         let temp_dir = TempDir::new().expect("temp dir");
         let input = temp_dir.path().join("Localizable.xcstrings");
         let source_root = temp_dir.path().join("Sources");
         fs::create_dir_all(&source_root).expect("create root");
-        fs::write(source_root.join("GameView.swift"), r#"Text("Start", bundle: .module)"#)
-            .expect("write swift");
+        fs::write(
+            source_root.join("GameView.swift"),
+            r#"Text("Start", bundle: .module)"#,
+        )
+        .expect("write swift");
         fs::write(
             &input,
             r#"{
@@ -1379,11 +1295,6 @@ mod tests {
             source_value: "Start".to_string(),
             existing_comment: None,
             source_roots: vec!["Sources".to_string()],
-            candidates: vec![CandidateFile {
-                path: "Sources/GameView.swift".to_string(),
-                matches: vec!["line 1: source text match".to_string()],
-                score: 90,
-            }],
         }];
         let backend: Arc<dyn AnnotationBackend> = Arc::new(RuntimeHoldingBackend {
             _runtime: Arc::new(
@@ -1465,7 +1376,10 @@ concurrency = 2
         assert_eq!(resolved.input, input.to_string_lossy().to_string());
         assert_eq!(
             resolved.output,
-            project_dir.join("Annotated.xcstrings").to_string_lossy().to_string()
+            project_dir
+                .join("Annotated.xcstrings")
+                .to_string_lossy()
+                .to_string()
         );
         assert_eq!(
             resolved.source_roots,
@@ -1533,7 +1447,12 @@ concurrency = 2
             &AnnotateOptions {
                 input: Some(cli_input.to_string_lossy().to_string()),
                 source_roots: vec![cli_sources_dir.to_string_lossy().to_string()],
-                output: Some(project_dir.join("Output.xcstrings").to_string_lossy().to_string()),
+                output: Some(
+                    project_dir
+                        .join("Output.xcstrings")
+                        .to_string_lossy()
+                        .to_string(),
+                ),
                 source_lang: Some("fr".to_string()),
                 provider: Some("anthropic".to_string()),
                 model: Some("claude-sonnet".to_string()),
@@ -1745,11 +1664,6 @@ output = "Annotated.xcstrings"
                 source_value: "Start".to_string(),
                 existing_comment: None,
                 source_roots: vec!["Sources".to_string()],
-                candidates: vec![CandidateFile {
-                    path: "Sources/GameView.swift".to_string(),
-                    matches: vec!["line 12: source text match".to_string()],
-                    score: 90,
-                }],
             })
             .await
             .expect("annotate")
@@ -1758,7 +1672,97 @@ output = "Annotated.xcstrings"
         assert_eq!(response.comment, "A button label that starts the game.");
         let recorded = requests.lock().expect("requests lock");
         assert_eq!(recorded.len(), 1);
-        assert_eq!(recorded[0].tools.len(), 1);
-        assert_eq!(recorded[0].tools[0].name, "files");
+        let tool_names = recorded[0]
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<Vec<_>>();
+        assert!(tool_names.contains(&"files"));
+        assert!(tool_names.contains(&"shell"));
+    }
+
+    #[tokio::test]
+    async fn old_tool_enabled_annotate_flow_recovers_from_malformed_tool_json_on_mentra_030() {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let scripts = VecDeque::from([
+            vec![
+                ProviderEvent::MessageStarted {
+                    id: "msg-1".to_string(),
+                    model: "test-model".to_string(),
+                    role: Role::Assistant,
+                },
+                ProviderEvent::ContentBlockStarted {
+                    index: 0,
+                    kind: ContentBlockStart::ToolUse {
+                        id: "tool-1".to_string(),
+                        name: "files".to_string(),
+                    },
+                },
+                ProviderEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: ContentBlockDelta::ToolUseInputJson(
+                        r#"{"path":"Sources/GameView.swift"#.to_string(),
+                    ),
+                },
+                ProviderEvent::ContentBlockStopped { index: 0 },
+                ProviderEvent::MessageStopped,
+            ],
+            Response {
+                id: "resp-2".to_string(),
+                model: "test-model".to_string(),
+                role: Role::Assistant,
+                content: vec![ContentBlock::text(
+                    r#"{"comment":"A button label that starts the game.","confidence":"high"}"#,
+                )],
+                stop_reason: Some("end_turn".to_string()),
+                usage: None,
+            }
+            .into_provider_events(),
+        ]);
+        let provider = ScriptedStreamingProvider {
+            requests: Arc::clone(&requests),
+            scripts: Arc::new(Mutex::new(scripts)),
+        };
+        let runtime = Runtime::builder()
+            .with_provider_instance(provider)
+            .build()
+            .expect("build runtime");
+        let mut agent = runtime
+            .spawn_with_config(
+                "annotate",
+                ModelInfo::new("test-model", BuiltinProvider::OpenAI),
+                build_agent_config(Path::new("/tmp/project")),
+            )
+            .expect("spawn agent");
+        let request = AnnotationRequest {
+            key: "start".to_string(),
+            source_lang: "en".to_string(),
+            source_value: "Start".to_string(),
+            existing_comment: None,
+            source_roots: vec!["Sources".to_string()],
+        };
+
+        let response = agent
+            .run(
+                vec![ContentBlock::text(build_annotation_prompt(&request))],
+                RunOptions {
+                    tool_budget: Some(DEFAULT_TOOL_BUDGET),
+                    ..RunOptions::default()
+                },
+            )
+            .await
+            .expect("run annotate");
+        let parsed = parse_annotation_response(&response.text()).expect("parse annotation");
+
+        assert_eq!(parsed.comment, "A button label that starts the game.");
+        let recorded = requests.lock().expect("requests lock");
+        assert_eq!(recorded.len(), 2);
+        assert!(
+            recorded[1]
+                .messages
+                .iter()
+                .flat_map(|message| message.content.iter())
+                .any(|block| matches!(block, ContentBlock::Text { text } if text.contains("One or more tool calls could not be executed because their JSON arguments were invalid.")))
+        );
     }
 }
