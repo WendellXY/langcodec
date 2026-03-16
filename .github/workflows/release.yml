@@ -1,9 +1,15 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Existing release tag to build and upload assets for
+        required: true
+        type: string
 
 permissions:
   contents: write
