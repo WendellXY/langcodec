@@ -87,11 +87,27 @@ langcodec translate \
   --provider openai \
   --model gpt-5.4
 
+# Draft translations between single-language files too
+langcodec translate \
+  --source en.lproj/Localizable.strings \
+  --target values-fr/strings.xml \
+  --source-lang en \
+  --target-lang fr \
+  --provider openai \
+  --model gpt-5.4
+
 # Generate translator-facing comments from source usage
 langcodec annotate \
   --input Localizable.xcstrings \
   --source-root Sources \
   --source-root Modules \
+  --provider openai \
+  --model gpt-5.4
+
+# Annotate Apple .strings or Android XML inline
+langcodec annotate \
+  --input en.lproj/Localizable.strings \
+  --source-root Sources \
   --provider openai \
   --model gpt-5.4
 ```
@@ -115,7 +131,7 @@ langcodec annotate \
 
 ## AI Workflows
 
-`langcodec` is built for app localization workflows, not just isolated text snippets. `translate` and `annotate` can be driven from a shared `langcodec.toml`, use supported providers such as OpenAI, Anthropic, and Gemini, and scale from a single catalog to config-driven runs across larger repos.
+`langcodec` is built for app localization workflows, not just isolated text snippets. `translate` and `annotate` can be driven from a shared `langcodec.toml`, use supported providers such as OpenAI, Anthropic, and Gemini, and scale from single-language files or `.xcstrings` catalogs to config-driven runs across larger repos.
 
 ```toml
 [openai]
