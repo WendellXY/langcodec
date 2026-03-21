@@ -330,21 +330,21 @@ enum Commands {
         ui_mode: UiMode,
     },
 
-    /// Generate translator-facing xcstrings comments from source usage with a Mentra agent.
+    /// Generate translator-facing localization comments from source usage with a Mentra agent.
     Annotate {
-        /// Xcode string catalog to annotate. Required unless configured in `langcodec.toml`.
+        /// Localization file to annotate (`.xcstrings`, `.strings`, or Android `strings.xml`). Required unless configured in `langcodec.toml`.
         #[arg(short, long)]
         input: Option<String>,
 
-        /// Swift source roots to scan and expose to the agent. Repeat for multiple roots.
+        /// Source roots to scan and expose to the agent. Repeat for multiple roots.
         #[arg(long = "source-root")]
         source_roots: Vec<String>,
 
-        /// Optional output file. Defaults to writing back to the input catalog.
+        /// Optional output file in the same format as the input. Defaults to writing back to the input file.
         #[arg(short, long)]
         output: Option<String>,
 
-        /// Override the source language used to resolve source values from the catalog.
+        /// Override the source language used to resolve source values from the input file.
         #[arg(long)]
         source_lang: Option<String>,
 
