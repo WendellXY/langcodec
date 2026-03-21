@@ -1870,6 +1870,68 @@ cp "{payload_path}" "$pull_path/$namespace/Localizable.xcstrings"
     }
 
     #[test]
+    fn translates_strings_source_into_android_target_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("en.strings");
+        let target_dir = temp_dir.path().join("values-fr");
+        let target = target_dir.join("strings.xml");
+        fs::create_dir_all(&target_dir).unwrap();
+        fs::write(
+            &source,
+            "\"welcome\" = \"Welcome\";\n\"bye\" = \"Goodbye\";\n",
+        )
+        .unwrap();
+
+        let prepared = prepare_translation(&base_options(&source, Some(&target))).unwrap();
+        let outcome = run_prepared_translation(
+            prepared,
+            Some(Arc::new(MockBackend::new(vec![
+                (("welcome", "fr"), Ok("Bienvenue".to_string())),
+                (("bye", "fr"), Ok("Au revoir".to_string())),
+            ]))),
+        )
+        .unwrap();
+
+        assert_eq!(outcome.translated, 2);
+        let written = fs::read_to_string(&target).unwrap();
+        assert!(written.contains("<string name=\"welcome\">Bienvenue</string>"));
+        assert!(written.contains("<string name=\"bye\">Au revoir</string>"));
+    }
+
+    #[test]
+    fn translates_android_source_into_strings_target_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path().join("values");
+        let source = source_dir.join("strings.xml");
+        let target = temp_dir.path().join("fr.strings");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::write(
+            &source,
+            r#"<resources>
+<string name="welcome">Welcome</string>
+<string name="bye">Goodbye</string>
+</resources>
+"#,
+        )
+        .unwrap();
+
+        let prepared = prepare_translation(&base_options(&source, Some(&target))).unwrap();
+        let outcome = run_prepared_translation(
+            prepared,
+            Some(Arc::new(MockBackend::new(vec![
+                (("welcome", "fr"), Ok("Bienvenue".to_string())),
+                (("bye", "fr"), Ok("Au revoir".to_string())),
+            ]))),
+        )
+        .unwrap();
+
+        assert_eq!(outcome.translated, 2);
+        let written = fs::read_to_string(&target).unwrap();
+        assert!(written.contains("\"welcome\" = \"Bienvenue\";"));
+        assert!(written.contains("\"bye\" = \"Au revoir\";"));
+    }
+
+    #[test]
     fn dry_run_does_not_write_target() {
         let temp_dir = TempDir::new().unwrap();
         let source = temp_dir.path().join("en.strings");
