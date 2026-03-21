@@ -24,6 +24,8 @@ fn test_annotate_help_mentions_source_root_flag() {
     assert!(stdout.contains("--source-root"));
     assert!(stdout.contains("--check"));
     assert!(stdout.contains("--ui"));
+    assert!(stdout.contains(".strings"));
+    assert!(stdout.contains("strings.xml"));
 }
 
 #[test]

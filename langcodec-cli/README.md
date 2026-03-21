@@ -39,6 +39,7 @@ langcodec translate \
 `translate` is built for app catalogs, not just raw text:
 
 - updates multi-language files like `.xcstrings` in place
+- supports single-language Apple `.strings` and Android `strings.xml` files too
 - supports multiple target languages in one run
 - can prefill from Tolgee before using AI fallback
 - shows live progress with `--ui auto|plain|tui`
@@ -56,7 +57,15 @@ langcodec annotate \
   --model gpt-5.4
 ```
 
-`annotate` looks through your codebase and writes better `.xcstrings` comments for translators while preserving manual comments.
+`annotate` looks through your codebase and writes better translator comments for `.xcstrings`, Apple `.strings`, and Android `strings.xml` files while preserving manual comments.
+
+```sh
+langcodec annotate \
+  --input en.lproj/Localizable.strings \
+  --source-root Sources \
+  --provider openai \
+  --model gpt-5.4
+```
 
 ### Tolgee sync without a pile of project scripts
 

@@ -10,8 +10,9 @@ use crate::{
 };
 use async_trait::async_trait;
 use langcodec::{
-    Resource, Translation,
-    formats::{XcstringsFormat, xcstrings::Item},
+    Codec, Entry, FormatType, ReadOptions, Resource, Translation,
+    formats::{AndroidStringsFormat, StringsFormat, XcstringsFormat},
+    infer_format_from_extension, infer_language_from_path,
     traits::Parser,
 };
 use mentra::{
@@ -36,7 +37,8 @@ use tokio::{
 
 const DEFAULT_CONCURRENCY: usize = 4;
 const DEFAULT_TOOL_BUDGET: usize = 16;
-const ANNOTATION_SYSTEM_PROMPT: &str = "You write translator-facing comments for Xcode xcstrings entries. Use the files tool or shell tool when needed to inspect source code. Prefer shell commands like rg for fast code search, then read the most relevant files before drafting. Prefer a short, concrete explanation of where or how the text is used so a translator can choose the right wording. If you are uncertain, say what the UI usage appears to be instead of inventing product meaning. Return JSON only with the shape {\"comment\":\"...\",\"confidence\":\"high|medium|low\"}.";
+const GENERATED_COMMENT_MARKER: &str = "langcodec:auto-generated";
+const ANNOTATION_SYSTEM_PROMPT: &str = "You write translator-facing comments for application localization entries. Use the files tool or shell tool when needed to inspect source code. Prefer shell commands like rg for fast code search, then read the most relevant files before drafting. Prefer a short, concrete explanation of where or how the text is used so a translator can choose the right wording. If you are uncertain, say what the UI usage appears to be instead of inventing product meaning. Return JSON only with the shape {\"comment\":\"...\",\"confidence\":\"high|medium|low\"}.";
 
 #[derive(Debug, Clone)]
 pub struct AnnotateOptions {
@@ -81,6 +83,29 @@ struct AnnotationRequest {
 struct AnnotationResponse {
     comment: String,
     confidence: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AnnotationFormat {
+    Xcstrings,
+    Strings,
+    AndroidStrings,
+}
+
+impl AnnotationFormat {
+    fn to_format_type(self) -> FormatType {
+        match self {
+            Self::Xcstrings => FormatType::Xcstrings,
+            Self::Strings => FormatType::Strings(None),
+            Self::AndroidStrings => FormatType::AndroidStrings(None),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct AnnotationTarget {
+    key: String,
+    existing_comment: Option<String>,
 }
 
 enum WorkerUpdate {
@@ -191,25 +216,29 @@ fn run_annotate_with_backend(
     opts: ResolvedAnnotateOptions,
     backend: Arc<dyn AnnotationBackend>,
 ) -> Result<(), String> {
-    let mut catalog = XcstringsFormat::read_from(&opts.input)
-        .map_err(|e| format!("Failed to read '{}': {}", opts.input, e))?;
-    let resources = Vec::<Resource>::try_from(catalog.clone())
-        .map_err(|e| format!("Failed to decode xcstrings '{}': {}", opts.input, e))?;
-
+    let annotation_format = annotation_format_from_path(&opts.input)?;
+    let mut codec = read_annotation_codec(&opts.input, annotation_format)?;
     let source_lang = opts
         .source_lang
         .clone()
-        .unwrap_or_else(|| catalog.source_language.clone());
+        .or_else(|| default_source_language(&codec))
+        .ok_or_else(|| {
+            format!(
+                "Could not infer source language for '{}'; pass --source-lang",
+                opts.input
+            )
+        })?;
     validate_language_code(&source_lang)?;
 
-    let source_values = source_value_map(&resources, &source_lang);
+    let source_values = source_value_map(&codec.resources, &source_lang);
     let requests = build_annotation_requests(
-        &catalog,
+        &codec,
+        annotation_format,
         &source_lang,
         &source_values,
         &opts.source_roots,
         &opts.workspace_root,
-    )?;
+    );
 
     if requests.is_empty() {
         println!("No entries require annotation updates.");
@@ -230,28 +259,20 @@ fn run_annotate_with_backend(
             opts.concurrency
         ),
     });
-    let results = annotate_requests(requests, backend, opts.concurrency, &mut *reporter);
+    let results = annotate_requests(requests.clone(), backend, opts.concurrency, &mut *reporter);
     let results = results?;
     let mut changed = 0usize;
     let mut unmatched = 0usize;
 
-    let mut keys = catalog.strings.keys().cloned().collect::<Vec<_>>();
-    keys.sort();
-    for key in keys {
-        let Some(item) = catalog.strings.get_mut(&key) else {
-            continue;
-        };
-        if should_preserve_manual_comment(item) {
-            continue;
-        }
-
-        match results.get(&key) {
+    for request in &requests {
+        match results.get(&request.key) {
             Some(Some(annotation)) => {
-                if item.comment.as_deref() != Some(annotation.comment.as_str())
-                    || item.is_comment_auto_generated != Some(true)
-                {
-                    item.comment = Some(annotation.comment.clone());
-                    item.is_comment_auto_generated = Some(true);
+                if apply_annotation(
+                    &mut codec,
+                    annotation_format,
+                    &request.key,
+                    &annotation.comment,
+                )? {
                     changed += 1;
                 }
             }
@@ -306,7 +327,7 @@ fn run_annotate_with_backend(
         tone: DashboardLogTone::Info,
         message: format!("Writing {}", opts.output),
     });
-    if let Err(err) = catalog.write_to(&opts.output) {
+    if let Err(err) = write_annotated_codec(&codec, annotation_format, &opts.output) {
         let err = format!("Failed to write '{}': {}", opts.output, err);
         reporter.emit(DashboardEvent::Log {
             tone: DashboardLogTone::Error,
@@ -466,6 +487,7 @@ fn resolve_annotate_options(
     } else {
         input.clone()
     };
+    validate_annotate_paths(&input, &output)?;
 
     let concurrency = opts
         .concurrency
@@ -511,6 +533,57 @@ fn resolve_annotate_options(
         workspace_root,
         ui_mode,
     })
+}
+
+fn validate_annotate_paths(input: &str, output: &str) -> Result<(), String> {
+    let input_format = annotation_format_from_path(input)?;
+    let output_format = annotation_format_from_path(output)?;
+    if input_format != output_format {
+        return Err(format!(
+            "Annotate output format must match input format (input='{}', output='{}')",
+            input, output
+        ));
+    }
+    Ok(())
+}
+
+fn annotation_format_from_path(path: &str) -> Result<AnnotationFormat, String> {
+    match infer_format_from_extension(path)
+        .ok_or_else(|| format!("Cannot infer annotate format from path: {}", path))?
+    {
+        FormatType::Xcstrings => Ok(AnnotationFormat::Xcstrings),
+        FormatType::Strings(_) => Ok(AnnotationFormat::Strings),
+        FormatType::AndroidStrings(_) => Ok(AnnotationFormat::AndroidStrings),
+        _ => Err(format!(
+            "annotate supports only .xcstrings, .strings, and Android strings.xml files, got '{}'",
+            path
+        )),
+    }
+}
+
+fn read_annotation_codec(path: &str, format: AnnotationFormat) -> Result<Codec, String> {
+    let format_type = format.to_format_type();
+    let language_hint = infer_language_from_path(path, &format_type).ok().flatten();
+    let mut codec = Codec::new();
+    codec
+        .read_file_by_extension_with_options(
+            path,
+            &ReadOptions::new().with_language_hint(language_hint),
+        )
+        .map_err(|e| format!("Failed to read '{}': {}", path, e))?;
+    Ok(codec)
+}
+
+fn default_source_language(codec: &Codec) -> Option<String> {
+    codec
+        .resources
+        .iter()
+        .find_map(|resource| resource.metadata.custom.get("source_language").cloned())
+        .or_else(|| {
+            (codec.resources.len() == 1)
+                .then(|| codec.resources[0].metadata.language.trim().to_string())
+                .filter(|lang| !lang.is_empty())
+        })
 }
 
 fn annotate_requests(
@@ -699,34 +772,25 @@ fn annotate_requests(
 }
 
 fn build_annotation_requests(
-    catalog: &XcstringsFormat,
+    codec: &Codec,
+    annotation_format: AnnotationFormat,
     source_lang: &str,
     source_values: &HashMap<String, String>,
     source_roots: &[String],
     workspace_root: &Path,
-) -> Result<Vec<AnnotationRequest>, String> {
-    let mut keys = catalog.strings.keys().cloned().collect::<Vec<_>>();
-    keys.sort();
-
+) -> Vec<AnnotationRequest> {
     let mut requests = Vec::new();
-    for key in keys {
-        let Some(item) = catalog.strings.get(&key) else {
-            continue;
-        };
-        if should_preserve_manual_comment(item) {
-            continue;
-        }
-
+    for target in collect_annotation_targets(codec, annotation_format) {
         let source_value = source_values
-            .get(&key)
+            .get(&target.key)
             .cloned()
-            .unwrap_or_else(|| key.clone());
+            .unwrap_or_else(|| target.key.clone());
 
         requests.push(AnnotationRequest {
-            key,
+            key: target.key,
             source_lang: source_lang.to_string(),
             source_value,
-            existing_comment: item.comment.clone(),
+            existing_comment: target.existing_comment,
             source_roots: source_roots
                 .iter()
                 .map(|root| display_path(workspace_root, Path::new(root)))
@@ -734,11 +798,231 @@ fn build_annotation_requests(
         });
     }
 
-    Ok(requests)
+    requests
 }
 
-fn should_preserve_manual_comment(item: &Item) -> bool {
-    item.comment.is_some() && item.is_comment_auto_generated != Some(true)
+fn collect_annotation_targets(
+    codec: &Codec,
+    annotation_format: AnnotationFormat,
+) -> Vec<AnnotationTarget> {
+    let mut targets = BTreeMap::<String, AnnotationTarget>::new();
+    let mut preserve_manual = BTreeMap::<String, bool>::new();
+
+    for resource in &codec.resources {
+        for entry in &resource.entries {
+            let key = entry.id.clone();
+            let target = targets
+                .entry(key.clone())
+                .or_insert_with(|| AnnotationTarget {
+                    key: key.clone(),
+                    existing_comment: None,
+                });
+
+            if target.existing_comment.is_none() {
+                target.existing_comment = display_comment(annotation_format, entry);
+            }
+
+            if should_preserve_manual_comment(annotation_format, entry) {
+                preserve_manual.insert(key, true);
+            }
+        }
+    }
+
+    targets
+        .into_iter()
+        .filter_map(|(key, target)| {
+            (!preserve_manual.get(&key).copied().unwrap_or(false)).then_some(target)
+        })
+        .collect()
+}
+
+fn should_preserve_manual_comment(annotation_format: AnnotationFormat, entry: &Entry) -> bool {
+    let Some(raw_comment) = entry.comment.as_deref() else {
+        return false;
+    };
+
+    match annotation_format {
+        AnnotationFormat::Xcstrings => !entry
+            .custom
+            .get("is_comment_auto_generated")
+            .and_then(|value| value.parse::<bool>().ok())
+            .unwrap_or(false),
+        AnnotationFormat::Strings | AnnotationFormat::AndroidStrings => {
+            !is_generated_inline_comment(annotation_format, raw_comment)
+        }
+    }
+}
+
+fn display_comment(annotation_format: AnnotationFormat, entry: &Entry) -> Option<String> {
+    let raw_comment = entry.comment.as_deref()?;
+    let comment = match annotation_format {
+        AnnotationFormat::Xcstrings => raw_comment.trim().to_string(),
+        AnnotationFormat::Strings => normalize_strings_comment(raw_comment),
+        AnnotationFormat::AndroidStrings => normalize_inline_comment(raw_comment),
+    };
+
+    (!comment.is_empty()).then_some(comment)
+}
+
+fn normalize_strings_comment(raw_comment: &str) -> String {
+    let stripped = if raw_comment.starts_with("/*") && raw_comment.ends_with("*/") {
+        raw_comment[2..raw_comment.len() - 2].trim()
+    } else if let Some(comment) = raw_comment.strip_prefix("//") {
+        comment.trim()
+    } else {
+        raw_comment.trim()
+    };
+
+    extract_generated_comment_body(stripped)
+        .unwrap_or(stripped)
+        .trim()
+        .to_string()
+}
+
+fn normalize_inline_comment(raw_comment: &str) -> String {
+    let trimmed = raw_comment.trim();
+    extract_generated_comment_body(trimmed)
+        .unwrap_or(trimmed)
+        .trim()
+        .to_string()
+}
+
+fn extract_generated_comment_body(comment: &str) -> Option<&str> {
+    let trimmed = comment.trim();
+    if trimmed == GENERATED_COMMENT_MARKER {
+        return Some("");
+    }
+
+    trimmed
+        .strip_prefix(GENERATED_COMMENT_MARKER)
+        .map(str::trim_start)
+}
+
+fn is_generated_inline_comment(annotation_format: AnnotationFormat, raw_comment: &str) -> bool {
+    match annotation_format {
+        AnnotationFormat::Xcstrings => false,
+        AnnotationFormat::Strings => {
+            extract_generated_comment_body(&normalize_strings_comment_storage(raw_comment))
+                .is_some()
+        }
+        AnnotationFormat::AndroidStrings => extract_generated_comment_body(raw_comment).is_some(),
+    }
+}
+
+fn normalize_strings_comment_storage(raw_comment: &str) -> String {
+    if raw_comment.starts_with("/*") && raw_comment.ends_with("*/") {
+        raw_comment[2..raw_comment.len() - 2].trim().to_string()
+    } else if let Some(comment) = raw_comment.strip_prefix("//") {
+        comment.trim().to_string()
+    } else {
+        raw_comment.trim().to_string()
+    }
+}
+
+fn generated_comment_storage(annotation_format: AnnotationFormat, comment: &str) -> String {
+    match annotation_format {
+        AnnotationFormat::Xcstrings => comment.to_string(),
+        AnnotationFormat::Strings => {
+            let body = comment.replace("*/", "* /").trim().to_string();
+            format!("/* {}\n{} */", GENERATED_COMMENT_MARKER, body)
+        }
+        AnnotationFormat::AndroidStrings => {
+            format!("{}\n{}", GENERATED_COMMENT_MARKER, comment.trim())
+        }
+    }
+}
+
+fn apply_annotation(
+    codec: &mut Codec,
+    annotation_format: AnnotationFormat,
+    key: &str,
+    comment: &str,
+) -> Result<bool, String> {
+    let stored_comment = generated_comment_storage(annotation_format, comment);
+    let mut changed = false;
+    let mut matched = false;
+
+    for resource in &mut codec.resources {
+        for entry in &mut resource.entries {
+            if entry.id != key {
+                continue;
+            }
+
+            matched = true;
+            match annotation_format {
+                AnnotationFormat::Xcstrings => {
+                    let already_generated = entry
+                        .custom
+                        .get("is_comment_auto_generated")
+                        .and_then(|value| value.parse::<bool>().ok())
+                        .unwrap_or(false);
+                    if entry.comment.as_deref() != Some(comment) || !already_generated {
+                        changed = true;
+                    }
+                    entry.comment = Some(comment.to_string());
+                    entry
+                        .custom
+                        .insert("is_comment_auto_generated".to_string(), "true".to_string());
+                }
+                AnnotationFormat::Strings | AnnotationFormat::AndroidStrings => {
+                    if entry.comment.as_deref() != Some(stored_comment.as_str()) {
+                        changed = true;
+                    }
+                    entry.comment = Some(stored_comment.clone());
+                }
+            }
+        }
+    }
+
+    if !matched {
+        return Err(format!(
+            "Annotation target '{}' was not found in loaded resources",
+            key
+        ));
+    }
+
+    Ok(changed)
+}
+
+fn write_annotated_codec(
+    codec: &Codec,
+    annotation_format: AnnotationFormat,
+    output: &str,
+) -> Result<(), String> {
+    match annotation_format {
+        AnnotationFormat::Xcstrings => XcstringsFormat::try_from(codec.resources.clone())
+            .map_err(|e| format!("Failed to build xcstrings output: {}", e))?
+            .write_to(output)
+            .map_err(|e| e.to_string()),
+        AnnotationFormat::Strings => {
+            let resource = single_resource_for_annotation(codec, output)?;
+            StringsFormat::try_from(resource.clone())
+                .map_err(|e| format!("Failed to build .strings output: {}", e))?
+                .write_to(output)
+                .map_err(|e| e.to_string())
+        }
+        AnnotationFormat::AndroidStrings => {
+            let resource = single_resource_for_annotation(codec, output)?;
+            AndroidStringsFormat::from(resource.clone())
+                .write_to(output)
+                .map_err(|e| e.to_string())
+        }
+    }
+}
+
+fn single_resource_for_annotation<'a>(
+    codec: &'a Codec,
+    output: &str,
+) -> Result<&'a Resource, String> {
+    if codec.resources.len() != 1 {
+        return Err(format!(
+            "Expected exactly one resource when writing '{}', found {}",
+            output,
+            codec.resources.len()
+        ));
+    }
+
+    Ok(&codec.resources[0])
 }
 
 fn create_annotate_reporter(
@@ -890,7 +1174,7 @@ fn build_agent_config(workspace_root: &Path) -> AgentConfig {
 
 fn build_annotation_prompt(request: &AnnotationRequest) -> String {
     let mut prompt = format!(
-        "Write one translator-facing comment for this xcstrings entry.\n\nKey: {}\nSource language: {}\nSource value: {}\n",
+        "Write one translator-facing comment for this localization entry.\n\nKey: {}\nSource language: {}\nSource value: {}\n",
         request.key, request.source_lang, request.source_value
     );
 
@@ -1323,6 +1607,186 @@ mod tests {
             payload["strings"]["cancel"]["comment"],
             serde_json::Value::String("Written by a human.".to_string())
         );
+    }
+
+    #[test]
+    fn run_annotate_supports_apple_strings_files() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let input_dir = temp_dir.path().join("en.lproj");
+        let input = input_dir.join("Localizable.strings");
+        let source_root = temp_dir.path().join("Sources");
+        fs::create_dir_all(&input_dir).expect("create input dir");
+        fs::create_dir_all(&source_root).expect("create root");
+        fs::write(
+            &input,
+            r#"/* Written by a human. */
+"cancel" = "Cancel";
+"start" = "Start";
+/* langcodec:auto-generated
+Old auto comment */
+"retry" = "Retry";
+"#,
+        )
+        .expect("write strings");
+
+        let mut responses = HashMap::new();
+        responses.insert(
+            "start".to_string(),
+            Some(AnnotationResponse {
+                comment: "A button label that starts the game.".to_string(),
+                confidence: "high".to_string(),
+            }),
+        );
+        responses.insert(
+            "retry".to_string(),
+            Some(AnnotationResponse {
+                comment: "A button label shown when the user can try the action again.".to_string(),
+                confidence: "high".to_string(),
+            }),
+        );
+
+        let opts = ResolvedAnnotateOptions {
+            input: input.to_string_lossy().to_string(),
+            output: input.to_string_lossy().to_string(),
+            source_roots: vec![source_root.to_string_lossy().to_string()],
+            source_lang: Some("en".to_string()),
+            provider: ProviderKind::OpenAI,
+            model: "test-model".to_string(),
+            concurrency: 1,
+            dry_run: false,
+            check: false,
+            workspace_root: temp_dir.path().to_path_buf(),
+            ui_mode: ResolvedUiMode::Plain,
+        };
+
+        run_annotate_with_backend(opts, Arc::new(FakeBackend { responses }))
+            .expect("annotate strings");
+
+        let format = StringsFormat::read_from(&input).expect("read strings output");
+        let mut comments = HashMap::new();
+        for pair in format.pairs {
+            let key = pair.key.clone();
+            comments.insert(
+                key,
+                pair.comment
+                    .as_deref()
+                    .map(normalize_strings_comment)
+                    .unwrap_or_default(),
+            );
+        }
+
+        assert_eq!(
+            comments.get("start").map(String::as_str),
+            Some("A button label that starts the game.")
+        );
+        assert_eq!(
+            comments.get("retry").map(String::as_str),
+            Some("A button label shown when the user can try the action again.")
+        );
+        assert_eq!(
+            comments.get("cancel").map(String::as_str),
+            Some("Written by a human.")
+        );
+
+        let written = fs::read_to_string(&input).expect("read written strings");
+        assert!(written.contains("langcodec:auto-generated"));
+    }
+
+    #[test]
+    fn run_annotate_supports_android_strings_files() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let values_dir = temp_dir.path().join("values");
+        let input = values_dir.join("strings.xml");
+        let source_root = temp_dir.path().join("Sources");
+        fs::create_dir_all(&values_dir).expect("create values dir");
+        fs::create_dir_all(&source_root).expect("create root");
+        fs::write(
+            &input,
+            r#"<resources>
+<!-- Written by a human. -->
+<string name="cancel">Cancel</string>
+<string name="start">Start</string>
+<!-- langcodec:auto-generated
+Old auto comment -->
+<string name="retry">Retry</string>
+<plurals name="apples">
+<item quantity="one">One apple</item>
+<item quantity="other">%d apples</item>
+</plurals>
+</resources>
+"#,
+        )
+        .expect("write xml");
+
+        let mut responses = HashMap::new();
+        responses.insert(
+            "start".to_string(),
+            Some(AnnotationResponse {
+                comment: "A button label that starts the game.".to_string(),
+                confidence: "high".to_string(),
+            }),
+        );
+        responses.insert(
+            "retry".to_string(),
+            Some(AnnotationResponse {
+                comment: "A button label shown when the user can try the action again.".to_string(),
+                confidence: "high".to_string(),
+            }),
+        );
+        responses.insert(
+            "apples".to_string(),
+            Some(AnnotationResponse {
+                comment: "Pluralized inventory count for apples.".to_string(),
+                confidence: "high".to_string(),
+            }),
+        );
+
+        let opts = ResolvedAnnotateOptions {
+            input: input.to_string_lossy().to_string(),
+            output: input.to_string_lossy().to_string(),
+            source_roots: vec![source_root.to_string_lossy().to_string()],
+            source_lang: Some("en".to_string()),
+            provider: ProviderKind::OpenAI,
+            model: "test-model".to_string(),
+            concurrency: 1,
+            dry_run: false,
+            check: false,
+            workspace_root: temp_dir.path().to_path_buf(),
+            ui_mode: ResolvedUiMode::Plain,
+        };
+
+        run_annotate_with_backend(opts, Arc::new(FakeBackend { responses }))
+            .expect("annotate android");
+
+        let format = AndroidStringsFormat::read_from(&input).expect("read android output");
+        let mut string_comments = HashMap::new();
+        for item in format.strings {
+            string_comments.insert(item.name, item.comment.unwrap_or_default());
+        }
+        let mut plural_comments = HashMap::new();
+        for item in format.plurals {
+            plural_comments.insert(item.name, item.comment.unwrap_or_default());
+        }
+
+        assert_eq!(
+            normalize_inline_comment(string_comments["start"].as_str()),
+            "A button label that starts the game."
+        );
+        assert_eq!(
+            normalize_inline_comment(string_comments["retry"].as_str()),
+            "A button label shown when the user can try the action again."
+        );
+        assert_eq!(
+            normalize_inline_comment(string_comments["cancel"].as_str()),
+            "Written by a human."
+        );
+        assert_eq!(
+            normalize_inline_comment(plural_comments["apples"].as_str()),
+            "Pluralized inventory count for apples."
+        );
+
+        let written = fs::read_to_string(&input).expect("read written xml");
+        assert!(written.contains("langcodec:auto-generated"));
     }
 
     #[test]

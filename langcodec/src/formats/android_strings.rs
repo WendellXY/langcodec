@@ -39,16 +39,22 @@ impl Parser for Format {
         let mut buf = Vec::new();
         let mut string_resources = Vec::new();
         let mut plural_resources: Vec<PluralsResource> = Vec::new();
+        let mut pending_comment: Option<String> = None;
 
         loop {
             match xml_reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) if e.name().as_ref() == b"string" => {
-                    let sr = parse_string_resource(e, &mut xml_reader)?;
+                    let mut sr = parse_string_resource(e, &mut xml_reader)?;
+                    sr.comment = pending_comment.take();
                     string_resources.push(sr);
                 }
                 Ok(Event::Start(ref e)) if e.name().as_ref() == b"plurals" => {
-                    let pr = parse_plurals_resource(e, &mut xml_reader)?;
+                    let mut pr = parse_plurals_resource(e, &mut xml_reader)?;
+                    pr.comment = pending_comment.take();
                     plural_resources.push(pr);
+                }
+                Ok(Event::Comment(comment)) => {
+                    pending_comment = Some(parse_xml_comment(comment.as_ref()));
                 }
                 Ok(Event::Eof) => break,
                 Ok(_) => {}
@@ -75,6 +81,7 @@ impl Parser for Format {
         xml_writer.write_event(Event::Text(BytesText::new("\n")))?;
 
         for sr in &self.strings {
+            write_xml_comment(&mut xml_writer, sr.comment.as_deref())?;
             let mut elem = BytesStart::new("string");
             elem.push_attribute(("name", sr.name.as_str()));
             if let Some(trans) = sr.translatable {
@@ -89,6 +96,7 @@ impl Parser for Format {
 
         // Write plurals
         for pr in &self.plurals {
+            write_xml_comment(&mut xml_writer, pr.comment.as_deref())?;
             let mut elem = BytesStart::new("plurals");
             elem.push_attribute(("name", pr.name.as_str()));
             if let Some(trans) = pr.translatable {
@@ -151,6 +159,7 @@ impl From<Resource> for Format {
                     plurals.push(PluralsResource {
                         name: entry.id,
                         items,
+                        comment: entry.comment,
                         translatable: match entry.status {
                             EntryStatus::Translated => Some(true),
                             EntryStatus::DoNotTranslate => Some(false),
@@ -199,7 +208,7 @@ impl From<Format> for Resource {
             entries.push(Entry {
                 id: pr.name.clone(),
                 value: Translation::Plural(Plural { id: pr.name, forms }),
-                comment: None,
+                comment: pr.comment,
                 status,
                 custom: HashMap::new(),
             });
@@ -221,6 +230,7 @@ pub struct StringResource {
     pub name: String,
     pub value: String,
     pub translatable: Option<bool>,
+    pub comment: Option<String>,
 }
 
 impl StringResource {
@@ -229,6 +239,7 @@ impl StringResource {
             name,
             value,
             translatable,
+            comment,
         } = self;
 
         let is_value_empty = value.is_empty();
@@ -236,7 +247,7 @@ impl StringResource {
         Entry {
             id: name,
             value: Translation::Singular(value),
-            comment: None,
+            comment,
             status: match translatable {
                 Some(true) => EntryStatus::Translated,
                 Some(false) => EntryStatus::DoNotTranslate,
@@ -255,6 +266,7 @@ impl StringResource {
                 Translation::Singular(v) => v.clone(),
                 Translation::Plural(_) => String::new(), // Plurals not supported in strings.xml
             },
+            comment: entry.comment.clone(),
             translatable: match entry.status {
                 EntryStatus::Translated => Some(true),
                 EntryStatus::DoNotTranslate => Some(false),
@@ -276,6 +288,7 @@ pub struct PluralsResource {
     pub name: String,
     pub items: Vec<PluralItem>,
     pub translatable: Option<bool>,
+    pub comment: Option<String>,
 }
 
 fn parse_string_resource<R: BufRead>(
@@ -334,6 +347,7 @@ fn parse_string_resource<R: BufRead>(
         name,
         value,
         translatable,
+        comment: None,
     })
 }
 
@@ -411,7 +425,35 @@ fn parse_plurals_resource<R: BufRead>(
         name,
         items,
         translatable,
+        comment: None,
     })
+}
+
+fn parse_xml_comment(raw: &[u8]) -> String {
+    String::from_utf8_lossy(raw).trim().to_string()
+}
+
+fn sanitize_xml_comment(comment: &str) -> String {
+    let mut sanitized = comment.replace("--", "- -");
+    if sanitized.ends_with('-') {
+        sanitized.push(' ');
+    }
+    sanitized
+}
+
+fn write_xml_comment<W: Write>(
+    xml_writer: &mut Writer<W>,
+    comment: Option<&str>,
+) -> Result<(), Error> {
+    let Some(comment) = comment.map(str::trim).filter(|comment| !comment.is_empty()) else {
+        return Ok(());
+    };
+
+    xml_writer.write_event(Event::Comment(BytesText::new(&sanitize_xml_comment(
+        comment,
+    ))))?;
+    xml_writer.write_event(Event::Text(BytesText::new("\n")))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -546,6 +588,58 @@ World
             assert_eq!(orig.translatable, new.translatable);
             assert_eq!(orig.items.len(), new.items.len());
         }
+    }
+
+    #[test]
+    fn test_parse_and_round_trip_entry_comments() {
+        let xml = r#"
+        <resources>
+            <!-- Greeting shown on the start screen. -->
+            <string name="greet">Hi</string>
+            <!-- Pluralized inventory count for apples. -->
+            <plurals name="apples">
+                <item quantity="one">One apple</item>
+                <item quantity="other">%d apples</item>
+            </plurals>
+        </resources>
+        "#;
+
+        let format = Format::from_str(xml).unwrap();
+        assert_eq!(
+            format.strings[0].comment.as_deref(),
+            Some("Greeting shown on the start screen.")
+        );
+        assert_eq!(
+            format.plurals[0].comment.as_deref(),
+            Some("Pluralized inventory count for apples.")
+        );
+
+        let resource = Resource::from(format);
+        assert_eq!(
+            resource.find_entry("greet").unwrap().comment.as_deref(),
+            Some("Greeting shown on the start screen.")
+        );
+        assert_eq!(
+            resource.find_entry("apples").unwrap().comment.as_deref(),
+            Some("Pluralized inventory count for apples.")
+        );
+
+        let round_trip = Format::from(resource);
+        let mut out = Vec::new();
+        round_trip.to_writer(&mut out).unwrap();
+        let out_str = String::from_utf8(out).unwrap();
+        assert!(out_str.contains("<!--Greeting shown on the start screen.-->"));
+        assert!(out_str.contains("<!--Pluralized inventory count for apples.-->"));
+
+        let reparsed = Format::from_str(&out_str).unwrap();
+        assert_eq!(
+            reparsed.strings[0].comment.as_deref(),
+            Some("Greeting shown on the start screen.")
+        );
+        assert_eq!(
+            reparsed.plurals[0].comment.as_deref(),
+            Some("Pluralized inventory count for apples.")
+        );
     }
 
     #[test]
