@@ -2773,6 +2773,56 @@ target = "translated.xcstrings"
     }
 
     #[test]
+    fn tolgee_translate_ignores_unmapped_catalogs_without_namespace_filter() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path();
+        let source = project_root.join("ModuleExport.xcstrings");
+
+        fs::write(
+            &source,
+            r#"{
+  "sourceLanguage" : "en",
+  "version" : "1.0",
+  "strings" : {
+    "welcome" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bienvenue"
+          }
+        }
+      }
+    }
+  }
+}"#,
+        )
+        .unwrap();
+
+        let tolgee_config = write_translate_tolgee_config(project_root);
+        let mut options = base_options(&source, None);
+        options.target_langs = vec!["fr".to_string()];
+        options.provider = None;
+        options.model = None;
+        options.use_tolgee = true;
+        options.tolgee_config = Some(tolgee_config.to_string_lossy().to_string());
+
+        let prepared = prepare_translation(&options).unwrap();
+        assert!(prepared.tolgee_context.is_none());
+        assert!(prepared.jobs.is_empty());
+
+        let outcome = run_prepared_translation(prepared, None).unwrap();
+        assert_eq!(outcome.translated, 0);
+        assert_eq!(outcome.failed, 0);
+    }
+
+    #[test]
     fn falls_back_to_xcstrings_key_when_source_locale_entry_is_missing() {
         let temp_dir = TempDir::new().unwrap();
         let source = temp_dir.path().join("Localizable.xcstrings");

@@ -197,7 +197,15 @@ pub fn prefill_translate_from_tolgee(
     }
 
     let project = load_tolgee_project(settings.config.as_deref())?;
-    let mapping = resolve_mapping_for_catalog(&project, local_catalog_path)?;
+    let Some(mapping) = find_mapping_for_catalog(&project, local_catalog_path)? else {
+        if settings.namespaces.is_empty() {
+            return Ok(None);
+        }
+        return Err(format!(
+            "Catalog '{}' is not configured in Tolgee push.files",
+            local_catalog_path
+        ));
+    };
 
     if !settings.namespaces.is_empty()
         && !settings
@@ -523,22 +531,16 @@ fn select_mappings(
     Ok(selected)
 }
 
-fn resolve_mapping_for_catalog(
+fn find_mapping_for_catalog(
     project: &TolgeeProject,
     local_catalog_path: &str,
-) -> Result<TolgeeMappedFile, String> {
+) -> Result<Option<TolgeeMappedFile>, String> {
     let resolved = absolute_from_current_dir(local_catalog_path)?;
-    project
+    Ok(project
         .mappings
         .iter()
         .find(|mapping| mapping.absolute_path == resolved)
-        .cloned()
-        .ok_or_else(|| {
-            format!(
-                "Catalog '{}' is not configured in Tolgee push.files",
-                local_catalog_path
-            )
-        })
+        .cloned())
 }
 
 fn discover_tolgee_cli(project_root: &Path) -> Result<TolgeeCliInvocation, String> {
