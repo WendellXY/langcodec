@@ -2,6 +2,7 @@ use crate::validation::{validate_language_code, validate_output_path};
 use crate::{
     ai::{ProviderKind, build_provider, resolve_model, resolve_provider},
     config::{LoadedConfig, load_config, resolve_config_relative_path},
+    path_glob,
     tolgee::{
         TranslateTolgeeContext, TranslateTolgeeSettings, prefill_translate_from_tolgee,
         push_translate_results_to_tolgee,
@@ -358,12 +359,21 @@ fn resolve_config_sources(
     cfg: Option<&crate::config::TranslateConfig>,
     config_dir: Option<&Path>,
 ) -> Result<Vec<String>, String> {
+    fn has_glob_meta(path: &str) -> bool {
+        path.bytes().any(|b| matches!(b, b'*' | b'?' | b'[' | b'{'))
+    }
+
     if let Some(source) = &opts.source {
         return Ok(vec![source.clone()]);
     }
 
     if let Some(source) = cfg.and_then(|item| item.resolved_source()) {
-        return Ok(vec![resolve_config_relative_path(config_dir, source)]);
+        let resolved = vec![resolve_config_relative_path(config_dir, source)];
+        return if resolved.iter().any(|path| has_glob_meta(path)) {
+            path_glob::expand_input_globs(&resolved)
+        } else {
+            Ok(resolved)
+        };
     }
 
     if let Some(sources) = cfg.and_then(|item| item.resolved_sources()) {
@@ -371,7 +381,11 @@ fn resolve_config_sources(
             .iter()
             .map(|source| resolve_config_relative_path(config_dir, source))
             .collect::<Vec<_>>();
-        return Ok(resolved);
+        return if resolved.iter().any(|path| has_glob_meta(path)) {
+            path_glob::expand_input_globs(&resolved)
+        } else {
+            Ok(resolved)
+        };
     }
 
     Ok(Vec::new())
@@ -2314,6 +2328,72 @@ sources = ["one.xcstrings", "two.xcstrings"]
                     .to_string()
             )
         );
+    }
+
+    #[test]
+    fn expands_globbed_sources_from_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_dir = temp_dir.path().join("project");
+        let feature_a = config_dir.join("Modules").join("FeatureA");
+        let feature_b = config_dir.join("Modules").join("FeatureB");
+        fs::create_dir_all(&feature_a).unwrap();
+        fs::create_dir_all(&feature_b).unwrap();
+
+        let first = feature_a.join("Localizable.xcstrings");
+        let second = feature_b.join("Localizable.xcstrings");
+        fs::write(
+            &first,
+            r#"{"sourceLanguage":"en","version":"1.0","strings":{}}"#,
+        )
+        .unwrap();
+        fs::write(
+            &second,
+            r#"{"sourceLanguage":"en","version":"1.0","strings":{}}"#,
+        )
+        .unwrap();
+
+        let config = config_dir.join("langcodec.toml");
+        fs::write(
+            &config,
+            r#"[translate.input]
+sources = ["Modules/*/Localizable.xcstrings"]
+"#,
+        )
+        .unwrap();
+
+        let runs = expand_translate_invocations(&TranslateOptions {
+            source: None,
+            target: None,
+            output: None,
+            source_lang: None,
+            target_langs: Vec::new(),
+            status: None,
+            provider: None,
+            model: None,
+            concurrency: None,
+            config: Some(config.to_string_lossy().to_string()),
+            use_tolgee: false,
+            tolgee_config: None,
+            tolgee_namespaces: Vec::new(),
+            dry_run: true,
+            strict: false,
+            ui_mode: UiMode::Plain,
+        })
+        .unwrap();
+
+        let mut sources = runs
+            .into_iter()
+            .map(|run| run.source.expect("source"))
+            .collect::<Vec<_>>();
+        sources.sort();
+
+        let mut expected = vec![
+            first.to_string_lossy().to_string(),
+            second.to_string_lossy().to_string(),
+        ];
+        expected.sort();
+
+        assert_eq!(sources, expected);
     }
 
     #[test]

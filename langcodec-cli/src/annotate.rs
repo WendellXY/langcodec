@@ -1,6 +1,7 @@
 use crate::{
     ai::{ProviderKind, read_api_key, resolve_model, resolve_provider},
     config::{LoadedConfig, load_config, resolve_config_relative_path},
+    path_glob,
     tui::{
         DashboardEvent, DashboardInit, DashboardItem, DashboardItemStatus, DashboardKind,
         DashboardLogTone, PlainReporter, ResolvedUiMode, RunReporter, SummaryRow, TuiReporter,
@@ -413,19 +414,33 @@ fn resolve_config_inputs(
     cfg: Option<&crate::config::AnnotateConfig>,
     config_dir: Option<&Path>,
 ) -> Result<Vec<String>, String> {
+    fn has_glob_meta(path: &str) -> bool {
+        path.bytes().any(|b| matches!(b, b'*' | b'?' | b'[' | b'{'))
+    }
+
     if let Some(input) = &opts.input {
         return Ok(vec![input.clone()]);
     }
 
     if let Some(input) = cfg.and_then(|item| item.input.as_ref()) {
-        return Ok(vec![resolve_config_relative_path(config_dir, input)]);
+        let resolved = vec![resolve_config_relative_path(config_dir, input)];
+        return if resolved.iter().any(|path| has_glob_meta(path)) {
+            path_glob::expand_input_globs(&resolved)
+        } else {
+            Ok(resolved)
+        };
     }
 
     if let Some(inputs) = cfg.and_then(|item| item.inputs.as_ref()) {
-        return Ok(inputs
+        let resolved = inputs
             .iter()
             .map(|input| resolve_config_relative_path(config_dir, input))
-            .collect());
+            .collect::<Vec<_>>();
+        return if resolved.iter().any(|path| has_glob_meta(path)) {
+            path_glob::expand_input_globs(&resolved)
+        } else {
+            Ok(resolved)
+        };
     }
 
     Ok(Vec::new())
@@ -2156,6 +2171,77 @@ concurrency = 2
             runs[1].source_roots,
             vec![sources_dir.to_string_lossy().to_string()]
         );
+    }
+
+    #[test]
+    fn expand_annotate_invocations_expands_globbed_config_inputs() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let project_dir = temp_dir.path().join("project");
+        let sources_dir = project_dir.join("Sources");
+        let app_dir = project_dir.join("App").join("Resources");
+        let module_dir = project_dir.join("Modules").join("Feature");
+        fs::create_dir_all(&sources_dir).expect("create Sources");
+        fs::create_dir_all(&app_dir).expect("create app dir");
+        fs::create_dir_all(&module_dir).expect("create module dir");
+
+        let first = app_dir.join("Localizable.xcstrings");
+        let second = module_dir.join("Localizable.xcstrings");
+        fs::write(
+            &first,
+            r#"{"sourceLanguage":"en","version":"1.0","strings":{}}"#,
+        )
+        .expect("write first");
+        fs::write(
+            &second,
+            r#"{"sourceLanguage":"en","version":"1.0","strings":{}}"#,
+        )
+        .expect("write second");
+
+        let config_path = project_dir.join("langcodec.toml");
+        fs::write(
+            &config_path,
+            r#"[openai]
+model = "gpt-5.4"
+
+[annotate]
+inputs = ["*/**/Localizable.xcstrings"]
+source_roots = ["Sources"]
+"#,
+        )
+        .expect("write config");
+
+        let loaded = load_config(Some(config_path.to_str().expect("config path")))
+            .expect("load config")
+            .expect("config present");
+
+        let runs = expand_annotate_invocations(
+            &AnnotateOptions {
+                input: None,
+                source_roots: Vec::new(),
+                output: None,
+                source_lang: None,
+                provider: None,
+                model: None,
+                concurrency: None,
+                config: Some(config_path.to_string_lossy().to_string()),
+                dry_run: false,
+                check: false,
+                ui_mode: UiMode::Plain,
+            },
+            Some(&loaded),
+        )
+        .expect("expand annotate invocations");
+
+        let mut inputs = runs.into_iter().map(|run| run.input).collect::<Vec<_>>();
+        inputs.sort();
+
+        let mut expected = vec![
+            first.to_string_lossy().to_string(),
+            second.to_string_lossy().to_string(),
+        ];
+        expected.sort();
+
+        assert_eq!(inputs, expected);
     }
 
     #[test]

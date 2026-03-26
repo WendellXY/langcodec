@@ -5,6 +5,7 @@ pub mod annotate;
 pub mod config;
 pub mod formats;
 pub mod merge;
+pub mod path_glob;
 pub mod tolgee;
 pub mod transformers;
 pub mod translate;
