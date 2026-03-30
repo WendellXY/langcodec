@@ -19,7 +19,7 @@ use langcodec::{
 use mentra::{
     AgentConfig, ContentBlock, ModelInfo, Runtime,
     agent::{AgentEvent, ToolProfile, WorkspaceConfig},
-    provider::ProviderRequestOptions,
+    provider::{ProviderRequestOptions, ResponsesRequestOptions},
     runtime::RunOptions,
 };
 use serde::{Deserialize, Serialize};
@@ -1174,8 +1174,9 @@ fn build_agent_config(workspace_root: &Path) -> AgentConfig {
         max_output_tokens: Some(512),
         tool_profile: ToolProfile::only(["files", "shell"]),
         provider_request_options: ProviderRequestOptions {
-            openai: mentra::provider::OpenAIRequestOptions {
+            responses: ResponsesRequestOptions {
                 parallel_tool_calls: Some(false),
+                ..ResponsesRequestOptions::default()
             },
             ..ProviderRequestOptions::default()
         },
