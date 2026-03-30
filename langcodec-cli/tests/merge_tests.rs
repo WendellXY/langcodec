@@ -161,6 +161,61 @@ fn test_merge_with_conflicts_skip_strategy() {
 }
 
 #[test]
+fn test_merge_with_conflicts_skip_strategy_removes_triply_duplicated_key() {
+    let resource1 = Resource {
+        metadata: Metadata {
+            language: "en".to_string(),
+            domain: "test".to_string(),
+            custom: HashMap::new(),
+        },
+        entries: vec![Entry {
+            id: "hello".to_string(),
+            value: Translation::Singular("Hello".to_string()),
+            comment: None,
+            status: EntryStatus::Translated,
+            custom: HashMap::new(),
+        }],
+    };
+
+    let resource2 = Resource {
+        metadata: Metadata {
+            language: "en".to_string(),
+            domain: "test".to_string(),
+            custom: HashMap::new(),
+        },
+        entries: vec![Entry {
+            id: "hello".to_string(),
+            value: Translation::Singular("Hi".to_string()),
+            comment: None,
+            status: EntryStatus::Translated,
+            custom: HashMap::new(),
+        }],
+    };
+
+    let resource3 = Resource {
+        metadata: Metadata {
+            language: "en".to_string(),
+            domain: "test".to_string(),
+            custom: HashMap::new(),
+        },
+        entries: vec![Entry {
+            id: "hello".to_string(),
+            value: Translation::Singular("Hey".to_string()),
+            comment: None,
+            status: EntryStatus::Translated,
+            custom: HashMap::new(),
+        }],
+    };
+
+    let merged = converter::merge_resources(
+        &[resource1, resource2, resource3],
+        &ConflictStrategy::Skip,
+    )
+    .unwrap();
+    assert!(merged.entries.is_empty());
+}
+
+#[test]
 fn test_merge_empty_resources() {
     let resource1 = Resource {
         metadata: Metadata {

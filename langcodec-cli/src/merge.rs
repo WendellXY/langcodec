@@ -16,6 +16,37 @@ pub enum ConflictStrategy {
     Skip,
 }
 
+fn resolve_merge_output_format(output: &str, lang: Option<&String>) -> Result<langcodec::FormatType, String> {
+    let mut output_format = converter::infer_format_from_path(output)
+        .ok_or_else(|| format!("Cannot infer format from output path: {}", output))?;
+
+    let path_language = match &output_format {
+        langcodec::FormatType::Strings(Some(language))
+        | langcodec::FormatType::AndroidStrings(Some(language)) => Some(language.clone()),
+        _ => None,
+    };
+
+    match &output_format {
+        langcodec::FormatType::Strings(_) | langcodec::FormatType::AndroidStrings(_) => {
+            if let Some(language) = lang {
+                if let Some(path_language) = path_language
+                    && path_language != *language
+                {
+                    return Err(format!(
+                        "--lang '{}' conflicts with language '{}' implied by output path '{}'",
+                        language, path_language, output
+                    ));
+                }
+                output_format = output_format.with_language(Some(language.clone()));
+            }
+            Ok(output_format)
+        }
+        langcodec::FormatType::Xcstrings
+        | langcodec::FormatType::CSV
+        | langcodec::FormatType::TSV => Ok(output_format),
+    }
+}
+
 /// Run the merge command: merge multiple localization files into one output file.
 pub fn run_merge_command(
     inputs: Vec<String>,
@@ -97,8 +128,8 @@ pub fn run_merge_command(
         "{}",
         ui::status_line_stdout(ui::Tone::Info, "Writing merged output...")
     );
-    match converter::infer_format_from_path(output.clone()) {
-        Some(format) => {
+    match resolve_merge_output_format(&output, lang.as_ref()) {
+        Ok(format) => {
             println!(
                 "{}",
                 ui::status_line_stdout(
@@ -175,33 +206,13 @@ pub fn run_merge_command(
                 std::process::exit(1);
             }
         }
-        None => {
-            if codec.resources.len() == 1 {
-                println!(
-                    "{}",
-                    ui::status_line_stdout(
-                        ui::Tone::Info,
-                        "Writing single resource to output file",
-                    )
-                );
-                if let Some(resource) = codec.resources.first()
-                    && let Err(e) = Codec::write_resource_to_file(resource, &output)
-                {
-                    println!(
-                        "{}",
-                        ui::status_line_stdout(ui::Tone::Error, "Error writing output file")
-                    );
-                    eprintln!("Error writing to {}: {}", output, e);
-                    std::process::exit(1);
-                }
-            } else {
-                println!(
-                    "{}",
-                    ui::status_line_stdout(ui::Tone::Error, "Error writing output file")
-                );
-                eprintln!("Error writing to {}: multiple resources", output);
-                std::process::exit(1);
-            }
+        Err(e) => {
+            println!(
+                "{}",
+                ui::status_line_stdout(ui::Tone::Error, "Error writing output file")
+            );
+            eprintln!("Error writing to {}: {}", output, e);
+            std::process::exit(1);
         }
     }
 

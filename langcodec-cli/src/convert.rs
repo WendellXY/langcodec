@@ -13,8 +13,77 @@ pub struct ConvertOptions {
     pub output_format: Option<String>,
     pub source_language: Option<String>,
     pub version: Option<String>,
+    pub output_lang: Option<String>,
     pub exclude_lang: Vec<String>,
     pub include_lang: Vec<String>,
+}
+
+fn parse_standard_output_format(format: &str) -> Result<FormatType, String> {
+    match format.to_lowercase().as_str() {
+        "strings" => Ok(FormatType::Strings(None)),
+        "android" | "androidstrings" => Ok(FormatType::AndroidStrings(None)),
+        "xcstrings" => Ok(FormatType::Xcstrings),
+        "csv" => Ok(FormatType::CSV),
+        "tsv" => Ok(FormatType::TSV),
+        _ => Err(format!(
+            "Unsupported output format: '{}'. Supported formats: strings, android, xcstrings, csv, tsv",
+            format
+        )),
+    }
+}
+
+fn infer_output_path_language(path: &str) -> Option<String> {
+    match langcodec::infer_format_from_path(path) {
+        Some(FormatType::Strings(Some(lang))) | Some(FormatType::AndroidStrings(Some(lang))) => {
+            Some(lang)
+        }
+        _ => None,
+    }
+}
+
+fn resolve_convert_output_format(
+    output: &str,
+    output_format_hint: Option<&String>,
+    output_lang: Option<&String>,
+) -> Result<FormatType, String> {
+    let mut output_format = if let Some(format_hint) = output_format_hint {
+        parse_standard_output_format(format_hint)?
+    } else {
+        langcodec::infer_format_from_path(output)
+            .or_else(|| langcodec::infer_format_from_extension(output))
+            .ok_or_else(|| format!("Cannot infer output format from extension: {}", output))?
+    };
+
+    let path_language = infer_output_path_language(output);
+
+    match &output_format {
+        FormatType::Strings(_) | FormatType::AndroidStrings(_) => {
+            if let Some(language) = output_lang {
+                if let Some(path_language) = path_language
+                    && path_language != *language
+                {
+                    return Err(format!(
+                        "--output-lang '{}' conflicts with language '{}' implied by output path '{}'",
+                        language, path_language, output
+                    ));
+                }
+                output_format = output_format.with_language(Some(language.clone()));
+            } else if let Some(path_language) = path_language {
+                output_format = output_format.with_language(Some(path_language));
+            }
+            Ok(output_format)
+        }
+        FormatType::Xcstrings | FormatType::CSV | FormatType::TSV => {
+            if let Some(language) = output_lang {
+                Err(format!(
+                    "--output-lang '{}' is only supported for single-language outputs (.strings, strings.xml)",
+                    language
+                ))
+            } else {
+                Ok(output_format)
+            }
+        }
+    }
 }
 
 pub fn run_unified_convert_command(
@@ -23,6 +92,54 @@ pub fn run_unified_convert_command(
     options: ConvertOptions,
     strict: bool,
 ) {
+    if let Some(output_lang) = options.output_lang.as_ref() {
+        if output.ends_with(".langcodec") {
+            eprintln!(
+                "Error: --output-lang '{}' is not supported for .langcodec output. Use --include-lang instead.",
+                output_lang
+            );
+            std::process::exit(1);
+        }
+
+        println!(
+            "{}",
+            ui::status_line_stdout(
+                ui::Tone::Info,
+                &format!("Converting with explicit output language '{}'", output_lang),
+            )
+        );
+        match read_resources_from_any_input(&input, options.input_format.as_ref(), strict).and_then(
+            |resources| {
+                let output_format = resolve_convert_output_format(
+                    &output,
+                    options.output_format.as_ref(),
+                    options.output_lang.as_ref(),
+                )?;
+                convert_resources_to_format(resources, &output, output_format)
+                    .map_err(|e| format!("Error converting to output format: {}", e))
+            },
+        ) {
+            Ok(()) => {
+                println!(
+                    "{}",
+                    ui::status_line_stdout(
+                        ui::Tone::Success,
+                        "Successfully converted with explicit output language",
+                    )
+                );
+                return;
+            }
+            Err(e) => {
+                println!(
+                    "{}",
+                    ui::status_line_stdout(ui::Tone::Error, "Conversion failed")
+                );
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     // Special handling: when targeting xcstrings, ensure required metadata exists.
     // If source_language/version are missing, default to en/1.0 respectively.
     let wants_xcstrings = output.ends_with(".xcstrings")
@@ -230,7 +347,13 @@ pub fn run_unified_convert_command(
                     "Strict mode: converting with explicit format hints only...",
                 )
             );
-            if let Err(e) = try_explicit_format_conversion(&input, &output, input_fmt, output_fmt) {
+            if let Err(e) = try_explicit_format_conversion(
+                &input,
+                &output,
+                input_fmt,
+                output_fmt,
+                options.output_lang.as_ref(),
+            ) {
                 println!(
                     "{}",
                     ui::status_line_stdout(ui::Tone::Error, "Strict conversion failed")
@@ -257,7 +380,13 @@ pub fn run_unified_convert_command(
                     "Strict mode: converting custom format without fallback...",
                 )
             );
-            if let Err(e) = try_custom_format_conversion(&input, &output, &options.input_format) {
+            if let Err(e) = try_custom_format_conversion(
+                &input,
+                &output,
+                &options.input_format,
+                options.output_format.as_ref(),
+                options.output_lang.as_ref(),
+            ) {
                 println!(
                     "{}",
                     ui::status_line_stdout(ui::Tone::Error, "Strict conversion failed")
@@ -326,7 +455,7 @@ pub fn run_unified_convert_command(
                 ui::status_line_stdout(ui::Tone::Info, "Trying standard JSON format detection...",)
             );
             // Try to use the standard format detection which will show proper JSON parsing errors
-            if let Err(e) = convert_auto(&input, &output) {
+            if convert_auto(&input, &output).is_err() {
                 println!(
                     "{}",
                     ui::status_line_stdout(
@@ -335,24 +464,34 @@ pub fn run_unified_convert_command(
                     )
                 );
                 // If standard detection fails, try custom formats
-                if let Ok(()) = try_custom_format_conversion(&input, &output, &options.input_format)
-                {
-                    println!(
-                        "{}",
-                        ui::status_line_stdout(
-                            ui::Tone::Success,
-                            "Successfully converted using custom JSON format",
-                        )
-                    );
-                    return;
+                match try_custom_format_conversion(
+                    &input,
+                    &output,
+                    &options.input_format,
+                    options.output_format.as_ref(),
+                    options.output_lang.as_ref(),
+                ) {
+                    Ok(()) => {
+                        println!(
+                            "{}",
+                            ui::status_line_stdout(
+                                ui::Tone::Success,
+                                "Successfully converted using custom JSON format",
+                            )
+                        );
+                        return;
+                    }
+                    Err(custom_error) => {
+                        // If both fail, show the custom conversion error because it is usually
+                        // more actionable than the initial extension-based failure.
+                        println!(
+                            "{}",
+                            ui::status_line_stdout(ui::Tone::Error, "Conversion failed")
+                        );
+                        eprintln!("Error: {}", custom_error);
+                        std::process::exit(1);
+                    }
                 }
-                // If both fail, show the standard error message
-                println!(
-                    "{}",
-                    ui::status_line_stdout(ui::Tone::Error, "Conversion failed")
-                );
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
             }
         } else {
             // For YAML and langcodec files, try custom formats directly
@@ -360,7 +499,13 @@ pub fn run_unified_convert_command(
                 "{}",
                 ui::status_line_stdout(ui::Tone::Info, "Converting using custom format...")
             );
-            if let Err(e) = try_custom_format_conversion(&input, &output, &options.input_format) {
+            if let Err(e) = try_custom_format_conversion(
+                &input,
+                &output,
+                &options.input_format,
+                options.output_format.as_ref(),
+                options.output_lang.as_ref(),
+            ) {
                 println!(
                     "{}",
                     ui::status_line_stdout(ui::Tone::Error, "Custom format conversion failed",)
@@ -387,7 +532,13 @@ pub fn run_unified_convert_command(
             "{}",
             ui::status_line_stdout(ui::Tone::Info, "Converting with explicit format hints...")
         );
-        if let Err(e) = try_explicit_format_conversion(&input, &output, &input_fmt, &output_fmt) {
+        if let Err(e) = try_explicit_format_conversion(
+            &input,
+            &output,
+            &input_fmt,
+            &output_fmt,
+            options.output_lang.as_ref(),
+        ) {
             println!(
                 "{}",
                 ui::status_line_stdout(ui::Tone::Error, "Explicit format conversion failed",)
@@ -418,6 +569,8 @@ fn try_custom_format_conversion(
     input: &str,
     output: &str,
     input_format: &Option<String>,
+    output_format: Option<&String>,
+    output_lang: Option<&String>,
 ) -> Result<(), String> {
     // Validate custom format file
     validate_custom_format_file(input)?;
@@ -443,8 +596,7 @@ fn try_custom_format_conversion(
     }
 
     // Get output format type
-    let output_format_type = langcodec::infer_format_from_extension(output)
-        .ok_or_else(|| format!("Cannot infer output format from extension: {}", output))?;
+    let output_format_type = resolve_convert_output_format(output, output_format, output_lang)?;
 
     // Convert to target format
     convert_resources_to_format(resources, output, output_format_type)
@@ -511,6 +663,7 @@ fn try_explicit_format_conversion(
     output: &str,
     input_format: &str,
     output_format: &str,
+    output_lang: Option<&String>,
 ) -> Result<(), String> {
     // Validate input file exists
     validation::validate_file_path(input)?;
@@ -543,19 +696,8 @@ fn try_explicit_format_conversion(
         write_resources_as_langcodec(&codec.resources, output)
     } else {
         // Parse output format
-        let output_format_type = match output_format.to_lowercase().as_str() {
-            "strings" => langcodec::formats::FormatType::Strings(None),
-            "android" | "androidstrings" => langcodec::formats::FormatType::AndroidStrings(None),
-            "xcstrings" => langcodec::formats::FormatType::Xcstrings,
-            "csv" => langcodec::formats::FormatType::CSV,
-            "tsv" => langcodec::formats::FormatType::TSV,
-            _ => {
-                return Err(format!(
-                    "Unsupported output format: '{}'. Supported formats: strings, android, xcstrings, csv, tsv",
-                    output_format
-                ));
-            }
-        };
+        let output_format_type =
+            resolve_convert_output_format(output, Some(&output_format.to_string()), output_lang)?;
 
         // Use the lib crate's convert function
         langcodec::convert(input, input_format_type, output, output_format_type)
@@ -748,23 +890,25 @@ pub fn read_resources_from_any_input(
                 let err_prefix = format!("Failed to read input with language '{}': ", lang);
 
                 let format_type = if input.ends_with(".strings") {
-                    langcodec::formats::FormatType::Strings(Some(lang))
+                    Some(langcodec::formats::FormatType::Strings(Some(lang)))
                 } else if input.ends_with(".xml") {
-                    langcodec::formats::FormatType::AndroidStrings(Some(lang))
+                    Some(langcodec::formats::FormatType::AndroidStrings(Some(lang)))
                 } else if input.ends_with(".xcstrings") {
-                    langcodec::formats::FormatType::Xcstrings
+                    Some(langcodec::formats::FormatType::Xcstrings)
                 } else if input.ends_with(".csv") {
-                    langcodec::formats::FormatType::CSV
+                    Some(langcodec::formats::FormatType::CSV)
                 } else if input.ends_with(".tsv") {
-                    langcodec::formats::FormatType::TSV
+                    Some(langcodec::formats::FormatType::TSV)
                 } else {
-                    return Err(format!("Unsupported file extension for input: {}", input));
+                    None
                 };
 
-                let mut codec = Codec::new();
-                codec
-                    .read_file_by_type(input, format_type)
-                    .map_err(|e2| format!("{err_prefix}{e2}"))?;
+                if let Some(format_type) = format_type {
+                    let mut codec = Codec::new();
+                    codec
+                        .read_file_by_type(input, format_type)
+                        .map_err(|e2| format!("{err_prefix}{e2}"))?;
+                }
             } else {
                 eprintln!("Standard format detection failed: {}", e);
             }

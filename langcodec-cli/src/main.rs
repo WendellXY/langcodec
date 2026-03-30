@@ -78,6 +78,9 @@ enum Commands {
         /// For xcstrings output: override version (default: 1.0)
         #[arg(long)]
         version: Option<String>,
+        /// Select the output language for single-language outputs like `.strings` or `strings.xml`
+        #[arg(long, value_name = "LANG")]
+        output_lang: Option<String>,
         /// Language codes to exclude from output (e.g., "en", "fr"). Can be specified multiple times or as comma-separated values (e.g., "--exclude-lang en,fr,zh-hans"). Only affects .langcodec output format.
         #[arg(long, value_name = "LANG", value_delimiter = ',')]
         exclude_lang: Vec<String>,
@@ -545,6 +548,7 @@ fn main() {
             output,
             input_format,
             output_format,
+            output_lang,
             exclude_lang,
             include_lang,
             source_language,
@@ -560,6 +564,9 @@ fn main() {
             }
             if let Some(format) = &output_format {
                 context = context.with_output_format(format.clone());
+            }
+            if let Some(lang) = &output_lang {
+                context = context.with_language_code(lang.clone());
             }
 
             // Validate all inputs
@@ -579,6 +586,7 @@ fn main() {
                     output_format,
                     source_language,
                     version,
+                    output_lang,
                     exclude_lang,
                     include_lang,
                 },

@@ -13,6 +13,7 @@ use crate::{
     traits::Parser,
     types::Resource,
 };
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 fn ensure_xcstrings_metadata(resources: &mut [Resource]) {
@@ -33,6 +34,77 @@ fn ensure_xcstrings_metadata(resources: &mut [Resource]) {
             .custom
             .entry("version".to_string())
             .or_insert_with(|| "1.0".to_string());
+    }
+}
+
+fn single_language_output_label(output_format: &FormatType) -> &'static str {
+    match output_format {
+        FormatType::AndroidStrings(_) => "Android strings.xml",
+        FormatType::Strings(_) => "Apple .strings",
+        FormatType::Xcstrings | FormatType::CSV | FormatType::TSV => "single-language",
+    }
+}
+
+fn describe_resource_languages(resources: &[Resource]) -> String {
+    let languages = resources
+        .iter()
+        .filter_map(|resource| {
+            let language = resource.metadata.language.trim();
+            if language.is_empty() {
+                None
+            } else {
+                Some(language.to_string())
+            }
+        })
+        .collect::<BTreeSet<_>>();
+
+    if languages.is_empty() {
+        "unknown".to_string()
+    } else {
+        languages.into_iter().collect::<Vec<_>>().join(", ")
+    }
+}
+
+fn select_single_language_resource(
+    resources: &[Resource],
+    output_format: &FormatType,
+) -> Result<Resource, Error> {
+    if resources.is_empty() {
+        return Err(Error::InvalidResource("No resources to convert".to_string()));
+    }
+
+    let output_label = single_language_output_label(output_format);
+
+    match output_format {
+        FormatType::AndroidStrings(Some(language)) | FormatType::Strings(Some(language)) => {
+            let matches = resources
+                .iter()
+                .filter(|resource| resource.metadata.language == *language)
+                .collect::<Vec<_>>();
+
+            match matches.len() {
+                1 => Ok(matches[0].clone()),
+                0 => Err(Error::InvalidResource(format!(
+                    "{output_label} output requires language '{language}', but it was not found. Available languages: {}. Use --output-lang or a language-specific output path.",
+                    describe_resource_languages(resources)
+                ))),
+                count => Err(Error::InvalidResource(format!(
+                    "{output_label} output requires exactly one resource for language '{language}', but found {count} matching resources. Merge resources before writing."
+                ))),
+            }
+        }
+        FormatType::AndroidStrings(None) | FormatType::Strings(None) => match resources {
+            [resource] => Ok(resource.clone()),
+            _ => Err(Error::InvalidResource(format!(
+                "{output_label} output is single-language, but {} resources were provided (languages: {}). Use --output-lang or a language-specific output path.",
+                resources.len(),
+                describe_resource_languages(resources)
+            ))),
+        },
+        FormatType::Xcstrings | FormatType::CSV | FormatType::TSV => Err(Error::InvalidResource(
+            "single-language resource selection requires a single-language output format"
+                .to_string(),
+        )),
     }
 }
 
@@ -73,38 +145,25 @@ pub fn convert_resources_to_format(
     output_path: &str,
     output_format: FormatType,
 ) -> Result<(), Error> {
-    match output_format {
+    match &output_format {
         FormatType::AndroidStrings(_) => {
-            if let Some(resource) = resources.into_iter().next() {
-                AndroidStringsFormat::from(resource)
-                    .write_to(Path::new(output_path))
-                    .map_err(|e| {
-                        Error::conversion_error(
-                            format!("Error writing AndroidStrings output: {}", e),
-                            None,
-                        )
-                    })
-            } else {
-                Err(Error::InvalidResource(
-                    "No resources to convert".to_string(),
-                ))
-            }
+            let resource = select_single_language_resource(&resources, &output_format)?;
+            AndroidStringsFormat::from(resource)
+                .write_to(Path::new(output_path))
+                .map_err(|e| {
+                    Error::conversion_error(
+                        format!("Error writing AndroidStrings output: {}", e),
+                        None,
+                    )
+                })
         }
         FormatType::Strings(_) => {
-            if let Some(resource) = resources.into_iter().next() {
-                StringsFormat::try_from(resource)
-                    .and_then(|f| f.write_to(Path::new(output_path)))
-                    .map_err(|e| {
-                        Error::conversion_error(
-                            format!("Error writing Strings output: {}", e),
-                            None,
-                        )
-                    })
-            } else {
-                Err(Error::InvalidResource(
-                    "No resources to convert".to_string(),
-                ))
-            }
+            let resource = select_single_language_resource(&resources, &output_format)?;
+            StringsFormat::try_from(resource)
+                .and_then(|f| f.write_to(Path::new(output_path)))
+                .map_err(|e| {
+                    Error::conversion_error(format!("Error writing Strings output: {}", e), None)
+                })
         }
         FormatType::Xcstrings => {
             ensure_xcstrings_metadata(&mut resources);
@@ -189,34 +248,14 @@ pub fn convert<P: AsRef<Path>>(
         ensure_xcstrings_metadata(&mut resources);
     }
 
-    // Helper to extract resource by language if present, or first one
-    let pick_resource = |lang: Option<String>| -> Option<Resource> {
-        match lang {
-            Some(l) => resources.iter().find(|r| r.metadata.language == l).cloned(),
-            None => resources.first().cloned(),
+    match &output_format {
+        FormatType::AndroidStrings(_) => {
+            let resource = select_single_language_resource(&resources, &output_format)?;
+            AndroidStringsFormat::from(resource).write_to(output)
         }
-    };
-
-    match output_format {
-        FormatType::AndroidStrings(lang) => {
-            let resource = pick_resource(lang);
-            if let Some(res) = resource {
-                AndroidStringsFormat::from(res).write_to(output)
-            } else {
-                Err(Error::InvalidResource(
-                    "No matching resource for output language.".to_string(),
-                ))
-            }
-        }
-        FormatType::Strings(lang) => {
-            let resource = pick_resource(lang);
-            if let Some(res) = resource {
-                StringsFormat::try_from(res)?.write_to(output)
-            } else {
-                Err(Error::InvalidResource(
-                    "No matching resource for output language.".to_string(),
-                ))
-            }
+        FormatType::Strings(_) => {
+            let resource = select_single_language_resource(&resources, &output_format)?;
+            StringsFormat::try_from(resource)?.write_to(output)
         }
         FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(output),
         FormatType::CSV => CSVFormat::try_from(resources)?.write_to(output),
@@ -308,34 +347,14 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
         ensure_xcstrings_metadata(&mut resources);
     }
 
-    // Helper to extract resource by language if present, or first one
-    let pick_resource = |lang: Option<String>| -> Option<Resource> {
-        match lang {
-            Some(l) => resources.iter().find(|r| r.metadata.language == l).cloned(),
-            None => resources.first().cloned(),
+    match &output_format {
+        FormatType::AndroidStrings(_) => {
+            let resource = select_single_language_resource(&resources, &output_format)?;
+            AndroidStringsFormat::from(resource).write_to(output)
         }
-    };
-
-    match output_format {
-        FormatType::AndroidStrings(lang) => {
-            let resource = pick_resource(lang);
-            if let Some(res) = resource {
-                AndroidStringsFormat::from(res).write_to(output)
-            } else {
-                Err(Error::InvalidResource(
-                    "No matching resource for output language.".to_string(),
-                ))
-            }
-        }
-        FormatType::Strings(lang) => {
-            let resource = pick_resource(lang);
-            if let Some(res) = resource {
-                StringsFormat::try_from(res)?.write_to(output)
-            } else {
-                Err(Error::InvalidResource(
-                    "No matching resource for output language.".to_string(),
-                ))
-            }
+        FormatType::Strings(_) => {
+            let resource = select_single_language_resource(&resources, &output_format)?;
+            StringsFormat::try_from(resource)?.write_to(output)
         }
         FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(output),
         FormatType::CSV => CSVFormat::try_from(resources)?.write_to(output),
@@ -802,7 +821,8 @@ pub fn merge_resources(
     }
 
     let mut merged = resources[0].clone();
-    let mut all_entries = std::collections::HashMap::new();
+    let mut all_entries = HashMap::new();
+    let mut skipped_ids = BTreeSet::new();
 
     // Collect all entries from all resources
     for resource in resources {
@@ -819,9 +839,12 @@ pub fn merge_resources(
                     all_entries.insert(&entry.id, entry.clone());
                 }
                 crate::types::ConflictStrategy::Skip => {
+                    if skipped_ids.contains(&entry.id) {
+                        continue;
+                    }
                     if all_entries.contains_key(&entry.id) {
-                        // Remove the existing entry and skip this one too
                         all_entries.remove(&entry.id);
+                        skipped_ids.insert(entry.id.clone());
                         continue;
                     }
                     all_entries.insert(&entry.id, entry.clone());
@@ -944,5 +967,136 @@ mod tests {
         qs.sort_by(|a, b| a.0.cmp(b.0));
         assert!(qs.iter().any(|(q, v)| *q == "one" && v == "One apple"));
         assert!(qs.iter().any(|(q, v)| *q == "other" && v == "%d apples"));
+    }
+
+    #[test]
+    fn test_convert_resources_to_strings_requires_language_selection_for_multilang_input() {
+        let tmp = tempfile::tempdir().unwrap();
+        let output = tmp.path().join("Localizable.strings");
+
+        let err = convert_resources_to_format(
+            vec![
+                build_resource("en", &[("hello", "Hello")]),
+                build_resource("fr", &[("hello", "Bonjour")]),
+            ],
+            output.to_str().unwrap(),
+            FormatType::Strings(None),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("single-language"));
+        assert!(err.to_string().contains("--output-lang"));
+    }
+
+    #[test]
+    fn test_convert_resources_to_android_requires_language_selection_for_multilang_input() {
+        let tmp = tempfile::tempdir().unwrap();
+        let output = tmp.path().join("strings.xml");
+
+        let err = convert_resources_to_format(
+            vec![
+                build_resource("en", &[("hello", "Hello")]),
+                build_resource("fr", &[("hello", "Bonjour")]),
+            ],
+            output.to_str().unwrap(),
+            FormatType::AndroidStrings(None),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("single-language"));
+        assert!(err.to_string().contains("--output-lang"));
+    }
+
+    #[test]
+    fn test_convert_resources_to_strings_selects_requested_language() {
+        let tmp = tempfile::tempdir().unwrap();
+        let output = tmp.path().join("Localizable.strings");
+
+        convert_resources_to_format(
+            vec![
+                build_resource("en", &[("hello", "Hello")]),
+                build_resource("fr", &[("hello", "Bonjour")]),
+            ],
+            output.to_str().unwrap(),
+            FormatType::Strings(Some("fr".into())),
+        )
+        .unwrap();
+
+        let parsed = crate::formats::StringsFormat::read_from(&output).unwrap();
+        assert_eq!(parsed.pairs.len(), 1);
+        assert_eq!(parsed.pairs[0].key, "hello");
+        assert_eq!(parsed.pairs[0].value, "Bonjour");
+    }
+
+    #[test]
+    fn test_convert_resources_to_android_selects_requested_language() {
+        let tmp = tempfile::tempdir().unwrap();
+        let output = tmp.path().join("strings.xml");
+
+        convert_resources_to_format(
+            vec![
+                build_resource("en", &[("hello", "Hello")]),
+                build_resource("fr", &[("hello", "Bonjour")]),
+            ],
+            output.to_str().unwrap(),
+            FormatType::AndroidStrings(Some("fr".into())),
+        )
+        .unwrap();
+
+        let parsed = crate::formats::AndroidStringsFormat::read_from(&output).unwrap();
+        assert_eq!(parsed.strings.len(), 1);
+        assert_eq!(parsed.strings[0].name, "hello");
+        assert_eq!(parsed.strings[0].value, "Bonjour");
+    }
+
+    #[test]
+    fn test_convert_rejects_ambiguous_single_language_output() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input = tmp.path().join("in.csv");
+        let output = tmp.path().join("Localizable.strings");
+
+        std::fs::write(&input, "key,en,fr\nhello,Hello,Bonjour\n").unwrap();
+
+        let err = convert(&input, FormatType::CSV, &output, FormatType::Strings(None)).unwrap_err();
+        assert!(err.to_string().contains("single-language"));
+    }
+
+    #[test]
+    fn test_convert_with_normalization_rejects_ambiguous_single_language_output() {
+        let tmp = tempfile::tempdir().unwrap();
+        let input = tmp.path().join("in.csv");
+        let output = tmp.path().join("strings.xml");
+
+        std::fs::write(&input, "key,en,fr\nhello,%@,Bonjour\n").unwrap();
+
+        let err = convert_with_normalization(
+            &input,
+            FormatType::CSV,
+            &output,
+            FormatType::AndroidStrings(None),
+            true,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("single-language"));
+    }
+
+    fn build_resource(language: &str, pairs: &[(&str, &str)]) -> Resource {
+        Resource {
+            metadata: Metadata {
+                language: language.to_string(),
+                domain: "Localizable".to_string(),
+                custom: HashMap::new(),
+            },
+            entries: pairs
+                .iter()
+                .map(|(key, value)| Entry {
+                    id: (*key).to_string(),
+                    value: Translation::Singular((*value).to_string()),
+                    comment: None,
+                    status: EntryStatus::Translated,
+                    custom: HashMap::new(),
+                })
+                .collect(),
+        }
     }
 }

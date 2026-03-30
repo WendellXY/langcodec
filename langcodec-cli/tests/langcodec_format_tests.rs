@@ -33,6 +33,8 @@ fn test_langcodec_to_strings_conversion() {
             "tests/fixtures/cli_sample.langcodec",
             "-o",
             "tests/fixtures/output_en.strings",
+            "--output-lang",
+            "en",
         ])
         .output()
         .expect("Failed to execute command");
@@ -88,6 +90,8 @@ fn test_langcodec_format_validation() {
             "tests/fixtures/output_test.strings",
             "--input-format",
             "langcodec-resource-array",
+            "--output-lang",
+            "en",
         ])
         .output()
         .expect("Failed to execute command");

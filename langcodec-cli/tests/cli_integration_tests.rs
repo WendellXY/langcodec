@@ -620,8 +620,10 @@ fn test_convert_command_output_to_strings() {
         .output()
         .unwrap();
 
-    assert!(output.status.success());
-    assert!(output_file.exists());
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("single-language"));
+    assert!(stderr.contains("--output-lang"));
 }
 
 #[test]
@@ -651,8 +653,110 @@ fn test_convert_command_output_to_android() {
         .output()
         .unwrap();
 
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("single-language"));
+    assert!(stderr.contains("--output-lang"));
+}
+
+#[test]
+fn test_convert_command_output_to_strings_with_output_lang() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("test.json");
+    let output_file = temp_dir.path().join("output.strings");
+
+    let json_content = r#"{
+        "key": "hello_world",
+        "en": "Hello, World!",
+        "fr": "Bonjour, le monde!"
+    }"#;
+
+    fs::write(&input_file, json_content).unwrap();
+
+    let output = langcodec_cmd()
+        .args([
+            "convert",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--output-lang",
+            "fr",
+        ])
+        .output()
+        .unwrap();
+
     assert!(output.status.success());
-    assert!(output_file.exists());
+    let output_content = fs::read_to_string(&output_file).unwrap();
+    assert!(output_content.contains("Bonjour, le monde!"));
+    assert!(!output_content.contains("Hello, World!"));
+}
+
+#[test]
+fn test_convert_command_output_to_android_with_output_lang() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("test.json");
+    let output_file = temp_dir.path().join("strings.xml");
+
+    let json_content = r#"{
+        "key": "hello_world",
+        "en": "Hello, World!",
+        "fr": "Bonjour, le monde!"
+    }"#;
+
+    fs::write(&input_file, json_content).unwrap();
+
+    let output = langcodec_cmd()
+        .args([
+            "convert",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--output-lang",
+            "fr",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let output_content = fs::read_to_string(&output_file).unwrap();
+    assert!(output_content.contains("Bonjour, le monde!"));
+    assert!(!output_content.contains("Hello, World!"));
+}
+
+#[test]
+fn test_convert_command_output_lang_conflicts_with_output_path_language() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("test.json");
+    let output_dir = temp_dir.path().join("en.lproj");
+    let output_file = output_dir.join("Localizable.strings");
+
+    let json_content = r#"{
+        "key": "hello_world",
+        "en": "Hello, World!",
+        "fr": "Bonjour, le monde!"
+    }"#;
+
+    fs::create_dir_all(&output_dir).unwrap();
+    fs::write(&input_file, json_content).unwrap();
+
+    let output = langcodec_cmd()
+        .args([
+            "convert",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--output-lang",
+            "fr",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("conflicts with language"));
 }
 
 #[test]
@@ -800,6 +904,91 @@ fn test_merge_command_with_language_override() {
     let merged_content = fs::read_to_string(&output_file).unwrap();
     assert!(merged_content.contains("hello"));
     assert!(merged_content.contains("goodbye"));
+}
+
+#[test]
+fn test_merge_command_skip_strategy_removes_triply_conflicted_key() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file1 = temp_dir.path().join("file1.json");
+    let input_file2 = temp_dir.path().join("file2.json");
+    let input_file3 = temp_dir.path().join("file3.json");
+    let output_file = temp_dir.path().join("merged.xcstrings");
+
+    fs::write(&input_file1, r#"{"key":"hello","en":"one"}"#).unwrap();
+    fs::write(&input_file2, r#"{"key":"hello","en":"two"}"#).unwrap();
+    fs::write(&input_file3, r#"{"key":"hello","en":"three"}"#).unwrap();
+
+    let output = langcodec_cmd()
+        .args([
+            "merge",
+            "-i",
+            input_file1.to_str().unwrap(),
+            "-i",
+            input_file2.to_str().unwrap(),
+            "-i",
+            input_file3.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--strategy",
+            "skip",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let merged_content = fs::read_to_string(&output_file).unwrap();
+    assert!(!merged_content.contains("\"hello\""));
+}
+
+#[test]
+fn test_merge_command_single_language_output_requires_selection() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("input.csv");
+    let output_file = temp_dir.path().join("merged.strings");
+
+    fs::write(&input_file, "key,en,fr\nhello,Hello,Bonjour\n").unwrap();
+
+    let output = langcodec_cmd()
+        .args([
+            "merge",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("single-language"));
+}
+
+#[test]
+fn test_merge_command_single_language_output_uses_lang_selector() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("input.csv");
+    let output_file = temp_dir.path().join("merged.strings");
+
+    fs::write(&input_file, "key,en,fr\nhello,Hello,Bonjour\n").unwrap();
+
+    let output = langcodec_cmd()
+        .args([
+            "merge",
+            "-i",
+            input_file.to_str().unwrap(),
+            "-o",
+            output_file.to_str().unwrap(),
+            "--lang",
+            "fr",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    let merged_content = fs::read_to_string(&output_file).unwrap();
+    assert!(merged_content.contains("Bonjour"));
+    assert!(!merged_content.contains("\"hello\" = \"Hello\";"));
 }
 
 #[test]
