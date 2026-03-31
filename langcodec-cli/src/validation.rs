@@ -150,10 +150,11 @@ pub fn validate_standard_format(format: &str) -> Result<(), String> {
         "android" | "androidstrings" | "xml" => Ok(()),
         "strings" => Ok(()),
         "xcstrings" => Ok(()),
+        "xliff" => Ok(()),
         "csv" => Ok(()),
         "tsv" => Ok(()),
         _ => Err(format!(
-            "Unsupported standard format: {}. Supported formats: android, strings, xcstrings, csv, tsv",
+            "Unsupported standard format: {}. Supported formats: android, strings, xcstrings, xliff, csv, tsv",
             format
         )),
     }

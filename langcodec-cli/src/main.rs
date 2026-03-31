@@ -66,19 +66,19 @@ enum Commands {
         /// The output file to write the results to
         #[arg(short, long)]
         output: String,
-        /// Optional input format hint (e.g., "json-language-map", "json-array-language-map", "yaml-language-map", "strings", "android")
+        /// Optional input format hint (e.g., "json-language-map", "json-array-language-map", "yaml-language-map", "strings", "android", "xliff")
         #[arg(long)]
         input_format: Option<String>,
-        /// Optional output format hint (e.g., "xcstrings", "strings", "android")
+        /// Optional output format hint (e.g., "xcstrings", "xliff", "strings", "android")
         #[arg(long)]
         output_format: Option<String>,
-        /// For xcstrings output: override source language (default: en)
+        /// For xcstrings or xliff output: override source language (default: inferred or en for xcstrings)
         #[arg(long)]
         source_language: Option<String>,
         /// For xcstrings output: override version (default: 1.0)
         #[arg(long)]
         version: Option<String>,
-        /// Select the output language for single-language outputs like `.strings` or `strings.xml`
+        /// Select the output language for `.strings`, `strings.xml`, or `.xliff` output
         #[arg(long, value_name = "LANG")]
         output_lang: Option<String>,
         /// Language codes to exclude from output (e.g., "en", "fr"). Can be specified multiple times or as comma-separated values (e.g., "--exclude-lang en,fr,zh-hans"). Only affects .langcodec output format.

@@ -8,6 +8,7 @@ Supported formats:
 
 - Apple `.strings`
 - Apple `.xcstrings`
+- Apple/Xcode `.xliff`
 - Android `strings.xml`
 - CSV
 - TSV
@@ -100,7 +101,11 @@ langcodec tolgee --help
 ```sh
 langcodec convert -i Localizable.xcstrings -o translations.csv
 langcodec convert -i translations.csv -o values/strings.xml
+langcodec convert -i Localizable.xcstrings -o Localizable.xliff --output-lang fr
+langcodec convert -i Localizable.xliff -o Localizable.xcstrings
 ```
+
+For `.xliff` output, pass `--output-lang` to choose the target language. Use `--source-language` when the source language is ambiguous.
 
 ### Find strings that still need work
 
@@ -121,6 +126,8 @@ langcodec edit set -i values/strings.xml -k welcome_title -v "Welcome"
 ```sh
 langcodec normalize -i 'locales/**/*.{strings,xml,csv,tsv,xcstrings}' --check
 ```
+
+`normalize`, `edit`, and `sync` intentionally do not operate on `.xliff` in v1; convert XLIFF into a project format first.
 
 ### Sync or merge existing translation assets
 

@@ -40,6 +40,23 @@ fn infer_output_format_from_path(path: &str) -> Result<FormatType, String> {
         .ok_or_else(|| format!("Cannot infer format from path: {}", path))
 }
 
+fn reject_xliff_sync_paths(
+    source: &str,
+    target: &str,
+    output: Option<&String>,
+) -> Result<(), String> {
+    if source.ends_with(".xliff")
+        || target.ends_with(".xliff")
+        || output.is_some_and(|path| path.ends_with(".xliff"))
+    {
+        return Err(
+            ".xliff is not supported by `sync` in v1. Convert XLIFF into a standard project format first."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 fn pick_single_resource<'a>(
     codec: &'a Codec,
     lang: &Option<String>,
@@ -77,6 +94,10 @@ fn write_back(
             langcodec::converter::convert_resources_to_format(codec.resources.clone(), out, fmt)
                 .map_err(|e| format!("Error writing output: {}", e))
         }
+        FormatType::Xliff(_) => Err(
+            ".xliff is not supported by `sync` in v1. Convert XLIFF into a standard project format first."
+                .to_string(),
+        ),
     }
 }
 
@@ -110,6 +131,8 @@ fn write_report(path: &str, options: &SyncOptions, report: &SyncReport) -> Resul
 }
 
 pub fn run_sync_command(opts: SyncOptions) -> Result<(), String> {
+    reject_xliff_sync_paths(&opts.source, &opts.target, opts.output.as_ref())?;
+
     validate_file_path(&opts.source)?;
     validate_file_path(&opts.target)?;
     if let Some(output) = &opts.output {
