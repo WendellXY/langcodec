@@ -40,9 +40,7 @@ fn wants_named_output(
     format_name: &str,
 ) -> bool {
     output.ends_with(extension)
-        || output_format_hint
-            .as_deref()
-            .is_some_and(|hint| hint.eq_ignore_ascii_case(format_name))
+        || output_format_hint.is_some_and(|hint| hint.eq_ignore_ascii_case(format_name))
 }
 
 fn wants_xcstrings_output(output: &str, output_format_hint: Option<&String>) -> bool {
