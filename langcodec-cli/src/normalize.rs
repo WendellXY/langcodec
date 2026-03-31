@@ -37,6 +37,16 @@ fn infer_output_format_from_path(path: &str) -> Result<FormatType, String> {
         .ok_or_else(|| format!("Cannot infer format from path: {}", path))
 }
 
+fn reject_xliff_normalize_paths(input: &str, output: Option<&String>) -> Result<(), String> {
+    if input.ends_with(".xliff") || output.is_some_and(|path| path.ends_with(".xliff")) {
+        return Err(
+            ".xliff is not supported by `normalize` in v1. Use `convert`, `view`, or `debug` instead."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 fn pick_single_resource(codec: &Codec) -> Result<&langcodec::Resource, String> {
     if codec.resources.len() == 1 {
         Ok(&codec.resources[0])
@@ -63,6 +73,10 @@ fn write_back(codec: &Codec, input_path: &str, output_path: &Option<String>) -> 
             langcodec::converter::convert_resources_to_format(codec.resources.clone(), out, fmt)
                 .map_err(|e| format!("Error writing output: {}", e))
         }
+        FormatType::Xliff(_) => Err(
+            ".xliff is not supported by `normalize` in v1. Use `convert`, `view`, or `debug` instead."
+                .to_string(),
+        ),
     }
 }
 
@@ -87,6 +101,8 @@ fn run_normalize_for_file(
     key_style: &KeyStyle,
     strict: bool,
 ) -> Result<bool, String> {
+    reject_xliff_normalize_paths(input, output.as_ref())?;
+
     validate_file_path(input)?;
 
     let mut codec = Codec::new();

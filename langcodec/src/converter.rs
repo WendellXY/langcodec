@@ -8,6 +8,7 @@ use crate::{
     error::Error,
     formats::{
         AndroidStringsFormat, CSVFormat, FormatType, StringsFormat, TSVFormat, XcstringsFormat,
+        XliffFormat,
     },
     placeholder::normalize_placeholders,
     traits::Parser,
@@ -41,8 +42,20 @@ fn single_language_output_label(output_format: &FormatType) -> &'static str {
     match output_format {
         FormatType::AndroidStrings(_) => "Android strings.xml",
         FormatType::Strings(_) => "Apple .strings",
-        FormatType::Xcstrings | FormatType::CSV | FormatType::TSV => "single-language",
+        FormatType::Xcstrings | FormatType::Xliff(_) | FormatType::CSV | FormatType::TSV => {
+            "single-language"
+        }
     }
+}
+
+fn should_propagate_input_language(input_format: &FormatType, output_format: &FormatType) -> bool {
+    matches!(
+        (input_format, output_format),
+        (FormatType::AndroidStrings(_), FormatType::AndroidStrings(_))
+            | (FormatType::AndroidStrings(_), FormatType::Strings(_))
+            | (FormatType::Strings(_), FormatType::AndroidStrings(_))
+            | (FormatType::Strings(_), FormatType::Strings(_))
+    )
 }
 
 fn describe_resource_languages(resources: &[Resource]) -> String {
@@ -70,7 +83,9 @@ fn select_single_language_resource(
     output_format: &FormatType,
 ) -> Result<Resource, Error> {
     if resources.is_empty() {
-        return Err(Error::InvalidResource("No resources to convert".to_string()));
+        return Err(Error::InvalidResource(
+            "No resources to convert".to_string(),
+        ));
     }
 
     let output_label = single_language_output_label(output_format);
@@ -101,10 +116,12 @@ fn select_single_language_resource(
                 describe_resource_languages(resources)
             ))),
         },
-        FormatType::Xcstrings | FormatType::CSV | FormatType::TSV => Err(Error::InvalidResource(
-            "single-language resource selection requires a single-language output format"
-                .to_string(),
-        )),
+        FormatType::Xcstrings | FormatType::Xliff(_) | FormatType::CSV | FormatType::TSV => {
+            Err(Error::InvalidResource(
+                "single-language resource selection requires a single-language output format"
+                    .to_string(),
+            ))
+        }
     }
 }
 
@@ -173,6 +190,13 @@ pub fn convert_resources_to_format(
                     Error::conversion_error(format!("Error writing Xcstrings output: {}", e), None)
                 })
         }
+        FormatType::Xliff(target_language) => {
+            XliffFormat::from_resources(resources, None, target_language.as_deref())
+                .and_then(|f| f.write_to(Path::new(output_path)))
+                .map_err(|e| {
+                    Error::conversion_error(format!("Error writing XLIFF output: {}", e), None)
+                })
+        }
         FormatType::CSV => CSVFormat::try_from(resources)
             .and_then(|f| f.write_to(Path::new(output_path)))
             .map_err(|e| Error::conversion_error(format!("Error writing CSV output: {}", e), None)),
@@ -214,8 +238,12 @@ pub fn convert<P: AsRef<Path>>(
     output_format: FormatType,
 ) -> Result<(), Error> {
     // Propagate language code from input to output format if not specified
-    let output_format = if let Some(lang) = input_format.language() {
-        output_format.with_language(Some(lang.clone()))
+    let output_format = if should_propagate_input_language(&input_format, &output_format) {
+        input_format
+            .language()
+            .cloned()
+            .map(|lang| output_format.with_language(Some(lang)))
+            .unwrap_or(output_format)
     } else {
         output_format
     };
@@ -231,6 +259,7 @@ pub fn convert<P: AsRef<Path>>(
         FormatType::AndroidStrings(_) => vec![AndroidStringsFormat::read_from(input)?.into()],
         FormatType::Strings(_) => vec![StringsFormat::read_from(input)?.into()],
         FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(input)?)?,
+        FormatType::Xliff(_) => Vec::<Resource>::try_from(XliffFormat::read_from(input)?)?,
         FormatType::CSV => Vec::<Resource>::try_from(CSVFormat::read_from(input)?)?,
         FormatType::TSV => Vec::<Resource>::try_from(TSVFormat::read_from(input)?)?,
     };
@@ -258,6 +287,10 @@ pub fn convert<P: AsRef<Path>>(
             StringsFormat::try_from(resource)?.write_to(output)
         }
         FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(output),
+        FormatType::Xliff(target_language) => {
+            XliffFormat::from_resources(resources, None, target_language.as_deref())?
+                .write_to(output)
+        }
         FormatType::CSV => CSVFormat::try_from(resources)?.write_to(output),
         FormatType::TSV => TSVFormat::try_from(resources)?.write_to(output),
     }
@@ -293,8 +326,12 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
     let output = output.as_ref();
 
     // Carry language between single-language formats
-    let output_format = if let Some(lang) = input_format.language() {
-        output_format.with_language(Some(lang.clone()))
+    let output_format = if should_propagate_input_language(&input_format, &output_format) {
+        input_format
+            .language()
+            .cloned()
+            .map(|lang| output_format.with_language(Some(lang)))
+            .unwrap_or(output_format)
     } else {
         output_format
     };
@@ -310,6 +347,7 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
         FormatType::AndroidStrings(_) => vec![AndroidStringsFormat::read_from(input)?.into()],
         FormatType::Strings(_) => vec![StringsFormat::read_from(input)?.into()],
         FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(input)?)?,
+        FormatType::Xliff(_) => Vec::<Resource>::try_from(XliffFormat::read_from(input)?)?,
         FormatType::CSV => Vec::<Resource>::try_from(CSVFormat::read_from(input)?)?,
         FormatType::TSV => Vec::<Resource>::try_from(TSVFormat::read_from(input)?)?,
     };
@@ -357,6 +395,10 @@ pub fn convert_with_normalization<P: AsRef<Path>>(
             StringsFormat::try_from(resource)?.write_to(output)
         }
         FormatType::Xcstrings => XcstringsFormat::try_from(resources)?.write_to(output),
+        FormatType::Xliff(target_language) => {
+            XliffFormat::from_resources(resources, None, target_language.as_deref())?
+                .write_to(output)
+        }
         FormatType::CSV => CSVFormat::try_from(resources)?.write_to(output),
         FormatType::TSV => TSVFormat::try_from(resources)?.write_to(output),
     }
@@ -514,6 +556,7 @@ pub fn infer_format_from_extension<P: AsRef<Path>>(path: P) -> Option<FormatType
         "strings" => Some(FormatType::Strings(None)),
         "xml" => Some(FormatType::AndroidStrings(None)),
         "xcstrings" => Some(FormatType::Xcstrings),
+        "xliff" => Some(FormatType::Xliff(None)),
         "csv" => Some(FormatType::CSV),
         "tsv" => Some(FormatType::TSV),
         _ => None,
@@ -555,7 +598,9 @@ pub fn infer_format_from_path<P: AsRef<Path>>(path: P) -> Option<FormatType> {
     match infer_format_from_extension(&path) {
         Some(format) => match format {
             // Multi-language formats, no language inference needed
-            FormatType::Xcstrings | FormatType::CSV | FormatType::TSV => Some(format),
+            FormatType::Xcstrings | FormatType::Xliff(_) | FormatType::CSV | FormatType::TSV => {
+                Some(format)
+            }
             FormatType::AndroidStrings(_) | FormatType::Strings(_) => {
                 let lang = infer_language_from_path(&path, &format).ok().flatten();
                 Some(format.with_language(lang))
@@ -738,6 +783,9 @@ pub fn write_resources_to_file(resources: &[Resource], file_path: &String) -> Re
             Some("AndroidStrings") => AndroidStringsFormat::from(first.clone()).write_to(path)?,
             Some("Strings") => StringsFormat::try_from(first.clone())?.write_to(path)?,
             Some("Xcstrings") => XcstringsFormat::try_from(resources.to_vec())?.write_to(path)?,
+            Some("xliff") | Some("Xliff") => {
+                XliffFormat::try_from(resources.to_vec())?.write_to(path)?
+            }
             Some("CSV") => CSVFormat::try_from(resources.to_vec())?.write_to(path)?,
             Some("TSV") => TSVFormat::try_from(resources.to_vec())?.write_to(path)?,
             _ => Err(Error::UnsupportedFormat(format!(

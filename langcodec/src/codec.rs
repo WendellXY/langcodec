@@ -987,6 +987,9 @@ impl Codec {
                         )
                     })
             }
+            crate::formats::FormatType::Xliff(_) => Err(Error::InvalidResource(
+                "XLIFF output requires both source and target resources; use convert_resources_to_format instead of write_resource_to_file".to_string(),
+            )),
             crate::formats::FormatType::CSV => CSVFormat::try_from(vec![resource.clone()])
                 .and_then(|f| f.write_to(Path::new(output_path)))
                 .map_err(|e| {
@@ -1030,6 +1033,7 @@ impl Codec {
             FormatType::Strings(lang_opt) | FormatType::AndroidStrings(lang_opt) => {
                 lang_opt.clone()
             }
+            FormatType::Xliff(lang_opt) => lang_opt.clone(),
             _ => None,
         };
 
@@ -1068,6 +1072,7 @@ impl Codec {
                 vec![Resource::from(AndroidStringsFormat::read_from(path)?)]
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
+            FormatType::Xliff(_) => Vec::<Resource>::try_from(XliffFormat::read_from(path)?)?,
             FormatType::CSV => {
                 // Parse CSV format and convert to resources
                 let csv_format = CSVFormat::read_from(path)?;
@@ -1136,6 +1141,7 @@ impl Codec {
             Some("xml") => FormatType::AndroidStrings(options.language_hint.clone()),
             Some("strings") => FormatType::Strings(options.language_hint.clone()),
             Some("xcstrings") => FormatType::Xcstrings,
+            Some("xliff") => FormatType::Xliff(None),
             Some("csv") => FormatType::CSV,
             Some("tsv") => FormatType::TSV,
             extension => {

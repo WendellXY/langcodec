@@ -23,11 +23,113 @@ fn parse_standard_output_format(format: &str) -> Result<FormatType, String> {
         "strings" => Ok(FormatType::Strings(None)),
         "android" | "androidstrings" => Ok(FormatType::AndroidStrings(None)),
         "xcstrings" => Ok(FormatType::Xcstrings),
+        "xliff" => Ok(FormatType::Xliff(None)),
         "csv" => Ok(FormatType::CSV),
         "tsv" => Ok(FormatType::TSV),
         _ => Err(format!(
-            "Unsupported output format: '{}'. Supported formats: strings, android, xcstrings, csv, tsv",
+            "Unsupported output format: '{}'. Supported formats: strings, android, xcstrings, xliff, csv, tsv",
             format
+        )),
+    }
+}
+
+fn wants_named_output(
+    output: &str,
+    output_format_hint: Option<&String>,
+    extension: &str,
+    format_name: &str,
+) -> bool {
+    output.ends_with(extension)
+        || output_format_hint.is_some_and(|hint| hint.eq_ignore_ascii_case(format_name))
+}
+
+fn wants_xcstrings_output(output: &str, output_format_hint: Option<&String>) -> bool {
+    wants_named_output(output, output_format_hint, ".xcstrings", "xcstrings")
+}
+
+fn wants_xliff_output(output: &str, output_format_hint: Option<&String>) -> bool {
+    wants_named_output(output, output_format_hint, ".xliff", "xliff")
+}
+
+fn resolve_xliff_source_language(
+    resources: &[langcodec::Resource],
+    explicit_source_language: Option<&String>,
+    target_language: &str,
+) -> Result<String, String> {
+    if let Some(explicit_source_language) = explicit_source_language {
+        let trimmed = explicit_source_language.trim();
+        if trimmed.is_empty() {
+            return Err("--source-language cannot be empty for .xliff output".to_string());
+        }
+        return Ok(trimmed.to_string());
+    }
+
+    let metadata_source_languages = resources
+        .iter()
+        .filter_map(|resource| resource.metadata.custom.get("source_language"))
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    let available_languages = resources
+        .iter()
+        .map(|resource| resource.metadata.language.trim())
+        .filter(|language| !language.is_empty())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    if metadata_source_languages.len() > 1 {
+        return Err(format!(
+            "Conflicting source_language metadata found for .xliff output: {}. Pass --source-language.",
+            metadata_source_languages
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if let Some(source_language) = metadata_source_languages.iter().next() {
+        let extras = available_languages
+            .iter()
+            .filter(|language| **language != *source_language && **language != target_language)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if *source_language != target_language && extras.is_empty() {
+            return Ok((*source_language).to_string());
+        }
+
+        return Err(format!(
+            "source_language metadata '{}' is ambiguous for .xliff output with available languages ({}). Pass --source-language.",
+            source_language,
+            available_languages
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+
+    if available_languages.is_empty() {
+        return Err("XLIFF output requires language metadata on the input resources".to_string());
+    }
+
+    if available_languages.len() == 1 {
+        return Ok(available_languages.iter().next().unwrap().to_string());
+    }
+
+    let non_target_languages = available_languages
+        .iter()
+        .filter(|language| **language != target_language)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    match non_target_languages.as_slice() {
+        [source_language] => Ok((*source_language).to_string()),
+        _ => Err(format!(
+            "Could not infer the XLIFF source language from available languages ({}). Pass --source-language.",
+            available_languages
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(", ")
         )),
     }
 }
@@ -73,10 +175,21 @@ fn resolve_convert_output_format(
             }
             Ok(output_format)
         }
+        FormatType::Xliff(_) => {
+            if let Some(language) = output_lang {
+                output_format = output_format.with_language(Some(language.clone()));
+                Ok(output_format)
+            } else {
+                Err(
+                    ".xliff output requires --output-lang to select the target language"
+                        .to_string(),
+                )
+            }
+        }
         FormatType::Xcstrings | FormatType::CSV | FormatType::TSV => {
             if let Some(language) = output_lang {
                 Err(format!(
-                    "--output-lang '{}' is only supported for single-language outputs (.strings, strings.xml)",
+                    "--output-lang '{}' is only supported for .strings, strings.xml, or .xliff output",
                     language
                 ))
             } else {
@@ -92,6 +205,65 @@ pub fn run_unified_convert_command(
     options: ConvertOptions,
     strict: bool,
 ) {
+    let wants_xliff = wants_xliff_output(&output, options.output_format.as_ref());
+    if wants_xliff {
+        println!(
+            "{}",
+            ui::status_line_stdout(
+                ui::Tone::Info,
+                "Converting to XLIFF 1.2 with explicit source/target language selection...",
+            )
+        );
+        match read_resources_from_any_input(&input, options.input_format.as_ref(), strict).and_then(
+            |mut resources| {
+                let output_format = resolve_convert_output_format(
+                    &output,
+                    options.output_format.as_ref(),
+                    options.output_lang.as_ref(),
+                )?;
+                let target_language =
+                    match &output_format {
+                        FormatType::Xliff(Some(target_language)) => target_language.clone(),
+                        _ => return Err(
+                            ".xliff output requires --output-lang to select the target language"
+                                .to_string(),
+                        ),
+                    };
+                let source_language = resolve_xliff_source_language(
+                    &resources,
+                    options.source_language.as_ref(),
+                    &target_language,
+                )?;
+
+                for resource in &mut resources {
+                    resource
+                        .metadata
+                        .custom
+                        .insert("source_language".to_string(), source_language.clone());
+                }
+
+                convert_resources_to_format(resources, &output, output_format)
+                    .map_err(|e| format!("Error converting to xliff: {}", e))
+            },
+        ) {
+            Ok(()) => {
+                println!(
+                    "{}",
+                    ui::status_line_stdout(ui::Tone::Success, "Successfully converted to xliff",)
+                );
+                return;
+            }
+            Err(e) => {
+                println!(
+                    "{}",
+                    ui::status_line_stdout(ui::Tone::Error, "Conversion to xliff failed")
+                );
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+
     if let Some(output_lang) = options.output_lang.as_ref() {
         if output.ends_with(".langcodec") {
             eprintln!(
@@ -142,11 +314,7 @@ pub fn run_unified_convert_command(
 
     // Special handling: when targeting xcstrings, ensure required metadata exists.
     // If source_language/version are missing, default to en/1.0 respectively.
-    let wants_xcstrings = output.ends_with(".xcstrings")
-        || options
-            .output_format
-            .as_deref()
-            .is_some_and(|s| s.eq_ignore_ascii_case("xcstrings"));
+    let wants_xcstrings = wants_xcstrings_output(&output, options.output_format.as_ref());
     if wants_xcstrings {
         println!(
             "{}",
@@ -624,6 +792,7 @@ fn print_conversion_error(input: &str, output: &str) {
     eprintln!("- .strings (Apple strings files)");
     eprintln!("- .xml (Android strings files)");
     eprintln!("- .xcstrings (Apple xcstrings files)");
+    eprintln!("- .xliff (Apple/Xcode XLIFF 1.2 files)");
     eprintln!("- .csv (CSV files)");
     eprintln!("- .tsv (TSV files)");
     eprintln!("- .langcodec (Resource JSON array)");
@@ -634,6 +803,7 @@ fn print_conversion_error(input: &str, output: &str) {
     eprintln!("- .strings (Apple strings files)");
     eprintln!("- .xml (Android strings files)");
     eprintln!("- .xcstrings (Apple xcstrings files)");
+    eprintln!("- .xliff (Apple/Xcode XLIFF 1.2 files)");
     eprintln!("- .csv (CSV files)");
     eprintln!("- .tsv (TSV files)");
     eprintln!("- .langcodec (Resource JSON array)");
@@ -676,11 +846,12 @@ fn try_explicit_format_conversion(
         "strings" => langcodec::formats::FormatType::Strings(None),
         "android" | "androidstrings" => langcodec::formats::FormatType::AndroidStrings(None),
         "xcstrings" => langcodec::formats::FormatType::Xcstrings,
+        "xliff" => langcodec::formats::FormatType::Xliff(None),
         "csv" => langcodec::formats::FormatType::CSV,
         "tsv" => langcodec::formats::FormatType::TSV,
         _ => {
             return Err(format!(
-                "Unsupported input format: '{}'. Supported formats: strings, android, xcstrings, csv, tsv",
+                "Unsupported input format: '{}'. Supported formats: strings, android, xcstrings, xliff, csv, tsv",
                 input_format
             ));
         }
@@ -758,6 +929,7 @@ pub fn read_resources_from_any_input(
                     Some(langcodec::formats::FormatType::AndroidStrings(None))
                 }
                 "xcstrings" => Some(langcodec::formats::FormatType::Xcstrings),
+                "xliff" => Some(langcodec::formats::FormatType::Xliff(None)),
                 "csv" => Some(langcodec::formats::FormatType::CSV),
                 "tsv" => Some(langcodec::formats::FormatType::TSV),
                 _ => None,
@@ -783,6 +955,7 @@ pub fn read_resources_from_any_input(
         if input.ends_with(".strings")
             || input.ends_with(".xml")
             || input.ends_with(".xcstrings")
+            || input.ends_with(".xliff")
             || input.ends_with(".csv")
             || input.ends_with(".tsv")
         {
@@ -807,7 +980,7 @@ pub fn read_resources_from_any_input(
         }
 
         return Err(format!(
-            "Unsupported input format or file extension: '{}'. Supported formats: .strings, .xml, .xcstrings, .csv, .tsv, .json, .yaml, .yml, .langcodec",
+            "Unsupported input format or file extension: '{}'. Supported formats: .strings, .xml, .xcstrings, .xliff, .csv, .tsv, .json, .yaml, .yml, .langcodec",
             input
         ));
     }
@@ -821,6 +994,7 @@ pub fn read_resources_from_any_input(
                 Some(langcodec::formats::FormatType::AndroidStrings(None))
             }
             "xcstrings" => Some(langcodec::formats::FormatType::Xcstrings),
+            "xliff" => Some(langcodec::formats::FormatType::Xliff(None)),
             "csv" => Some(langcodec::formats::FormatType::CSV),
             "tsv" => Some(langcodec::formats::FormatType::TSV),
             _ => None,
@@ -895,6 +1069,8 @@ pub fn read_resources_from_any_input(
                     Some(langcodec::formats::FormatType::AndroidStrings(Some(lang)))
                 } else if input.ends_with(".xcstrings") {
                     Some(langcodec::formats::FormatType::Xcstrings)
+                } else if input.ends_with(".xliff") {
+                    Some(langcodec::formats::FormatType::Xliff(None))
                 } else if input.ends_with(".csv") {
                     Some(langcodec::formats::FormatType::CSV)
                 } else if input.ends_with(".tsv") {
@@ -908,6 +1084,7 @@ pub fn read_resources_from_any_input(
                     codec
                         .read_file_by_type(input, format_type)
                         .map_err(|e2| format!("{err_prefix}{e2}"))?;
+                    return Ok(codec.resources);
                 }
             } else {
                 eprintln!("Standard format detection failed: {}", e);
@@ -937,7 +1114,7 @@ pub fn read_resources_from_any_input(
     }
 
     Err(format!(
-        "Unsupported input format or file extension: '{}'. Supported formats: .strings, .xml, .xcstrings, .csv, .tsv, .json, .yaml, .yml, .langcodec",
+        "Unsupported input format or file extension: '{}'. Supported formats: .strings, .xml, .xcstrings, .xliff, .csv, .tsv, .json, .yaml, .yml, .langcodec",
         input
     ))
 }

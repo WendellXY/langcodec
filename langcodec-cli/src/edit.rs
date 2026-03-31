@@ -23,6 +23,21 @@ fn infer_output_format_from_path(path: &str) -> Result<FormatType, String> {
         .ok_or_else(|| format!("Cannot infer format from path: {}", path))
 }
 
+fn reject_xliff_paths(input_path: &str, output_path: Option<&String>) -> Result<(), String> {
+    if input_path.ends_with(".xliff") {
+        return Err(
+            ".xliff is not supported by `edit` in v1. Use `convert`, `view`, or `debug` instead."
+                .to_string(),
+        );
+    }
+    if output_path.is_some_and(|path| path.ends_with(".xliff")) {
+        return Err(
+            ".xliff is not supported as an `edit` output in v1. Use `convert` instead.".to_string(),
+        );
+    }
+    Ok(())
+}
+
 fn pick_single_resource<'a>(
     codec: &'a Codec,
     lang: &Option<String>,
@@ -76,6 +91,9 @@ fn write_back(
             langcodec::converter::convert_resources_to_format(resources, out, fmt)
                 .map_err(|e| format!("Error writing output: {}", e))
         }
+        FormatType::Xliff(_) => Err(
+            ".xliff is not supported as an `edit` output in v1. Use `convert` instead.".to_string(),
+        ),
     }
 }
 
@@ -224,6 +242,8 @@ fn apply_set_to_file(
     output: Option<&String>,
     dry_run: bool,
 ) -> Result<(), String> {
+    reject_xliff_paths(input, output)?;
+
     let mut codec = Codec::new();
     if let Err(e) = codec.read_file_by_extension(input, lang.clone()) {
         let ext = Path::new(input)

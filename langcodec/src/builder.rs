@@ -16,7 +16,7 @@
 ///     .build();
 /// # Ok::<(), langcodec::Error>(())
 /// ```
-use crate::formats::{CSVFormat, TSVFormat};
+use crate::formats::{CSVFormat, TSVFormat, XliffFormat};
 use crate::{error::Error, formats::*, traits::Parser, types::Resource};
 use std::path::Path;
 
@@ -68,6 +68,7 @@ impl CodecBuilder {
                 vec![Resource::from(AndroidStringsFormat::read_from(path)?)]
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
+            FormatType::Xliff(_) => Vec::<Resource>::try_from(XliffFormat::read_from(path)?)?,
             FormatType::CSV => {
                 // Parse CSV format and convert to resources
                 let csv_format = CSVFormat::read_from(path)?;
@@ -80,8 +81,13 @@ impl CodecBuilder {
             }
         };
 
+        let should_override_language = matches!(
+            format_type,
+            FormatType::Strings(_) | FormatType::AndroidStrings(_)
+        );
+
         for new_resource in &mut new_resources {
-            if let Some(ref lang) = language {
+            if should_override_language && let Some(ref lang) = language {
                 new_resource.metadata.language = lang.clone();
             }
             new_resource.metadata.domain = domain.clone();
@@ -134,6 +140,7 @@ impl CodecBuilder {
                 vec![Resource::from(AndroidStringsFormat::read_from(path)?)]
             }
             FormatType::Xcstrings => Vec::<Resource>::try_from(XcstringsFormat::read_from(path)?)?,
+            FormatType::Xliff(_) => Vec::<Resource>::try_from(XliffFormat::read_from(path)?)?,
             FormatType::CSV => {
                 // Parse CSV format and convert to resources
                 let csv_format = CSVFormat::read_from(path)?;
@@ -146,8 +153,13 @@ impl CodecBuilder {
             }
         };
 
+        let should_override_language = matches!(
+            format_type,
+            FormatType::Strings(_) | FormatType::AndroidStrings(_)
+        );
+
         for new_resource in &mut new_resources {
-            if let Some(ref lang) = language {
+            if should_override_language && let Some(ref lang) = language {
                 new_resource.metadata.language = lang.clone();
             }
             new_resource.metadata.domain = domain.clone();
@@ -183,6 +195,7 @@ impl CodecBuilder {
             Some("xml") => FormatType::AndroidStrings(lang),
             Some("strings") => FormatType::Strings(lang),
             Some("xcstrings") => FormatType::Xcstrings,
+            Some("xliff") => FormatType::Xliff(lang),
             Some("csv") => FormatType::CSV,
             Some("tsv") => FormatType::TSV,
             extension => {

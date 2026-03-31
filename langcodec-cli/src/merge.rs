@@ -16,7 +16,10 @@ pub enum ConflictStrategy {
     Skip,
 }
 
-fn resolve_merge_output_format(output: &str, lang: Option<&String>) -> Result<langcodec::FormatType, String> {
+fn resolve_merge_output_format(
+    output: &str,
+    lang: Option<&String>,
+) -> Result<langcodec::FormatType, String> {
     let mut output_format = converter::infer_format_from_path(output)
         .ok_or_else(|| format!("Cannot infer format from output path: {}", output))?;
 
@@ -41,6 +44,10 @@ fn resolve_merge_output_format(output: &str, lang: Option<&String>) -> Result<la
             }
             Ok(output_format)
         }
+        langcodec::FormatType::Xliff(_) => Err(
+            ".xliff is not supported by `merge` in v1. Use `convert` for XLIFF generation."
+                .to_string(),
+        ),
         langcodec::FormatType::Xcstrings
         | langcodec::FormatType::CSV
         | langcodec::FormatType::TSV => Ok(output_format),

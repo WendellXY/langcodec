@@ -8,6 +8,7 @@ pub mod csv;
 pub mod strings;
 pub mod tsv;
 pub mod xcstrings;
+pub mod xliff;
 
 use std::{
     fmt::{Display, Formatter},
@@ -20,6 +21,7 @@ pub use csv::{Format as CSVFormat, MultiLanguageCSVRecord};
 pub use strings::Format as StringsFormat;
 pub use tsv::{Format as TSVFormat, MultiLanguageTSVRecord};
 pub use xcstrings::Format as XcstringsFormat;
+pub use xliff::Format as XliffFormat;
 
 use crate::Error;
 
@@ -34,6 +36,8 @@ pub enum FormatType {
     Strings(Option<String>),
     /// Apple `.xcstrings` format (no language code).
     Xcstrings,
+    /// Apple/Xcode `.xliff` format, with optional target language hint.
+    Xliff(Option<String>),
     /// CSV format (multi-language support built-in).
     CSV,
     /// TSV format (multi-language support built-in).
@@ -61,6 +65,7 @@ impl Display for FormatType {
             FormatType::AndroidStrings(_) => write!(f, "android"),
             FormatType::Strings(_) => write!(f, "strings"),
             FormatType::Xcstrings => write!(f, "xcstrings"),
+            FormatType::Xliff(_) => write!(f, "xliff"),
             FormatType::CSV => write!(f, "csv"),
             FormatType::TSV => write!(f, "tsv"),
         }
@@ -93,6 +98,7 @@ impl FromStr for FormatType {
             "android" | "androidstrings" | "xml" => Ok(FormatType::AndroidStrings(None)),
             "strings" => Ok(FormatType::Strings(None)),
             "xcstrings" => Ok(FormatType::Xcstrings),
+            "xliff" => Ok(FormatType::Xliff(None)),
             "csv" => Ok(FormatType::CSV),
             "tsv" => Ok(FormatType::TSV),
             other => Err(Error::UnknownFormat(other.to_string())),
@@ -107,6 +113,7 @@ impl FormatType {
             FormatType::AndroidStrings(_) => "xml",
             FormatType::Strings(_) => "strings",
             FormatType::Xcstrings => "xcstrings",
+            FormatType::Xliff(_) => "xliff",
             FormatType::CSV => "csv",
             FormatType::TSV => "tsv",
         }
@@ -118,6 +125,7 @@ impl FormatType {
             FormatType::AndroidStrings(lang) => lang.as_ref(),
             FormatType::Strings(lang) => lang.as_ref(),
             FormatType::Xcstrings => None,
+            FormatType::Xliff(lang) => lang.as_ref(),
             FormatType::CSV => None,
             FormatType::TSV => None,
         }
@@ -129,6 +137,7 @@ impl FormatType {
             FormatType::AndroidStrings(_) => FormatType::AndroidStrings(lang),
             FormatType::Strings(_) => FormatType::Strings(lang),
             FormatType::Xcstrings => FormatType::Xcstrings,
+            FormatType::Xliff(_) => FormatType::Xliff(lang),
             FormatType::CSV => FormatType::CSV,
             FormatType::TSV => FormatType::TSV,
         }
@@ -162,6 +171,7 @@ impl FormatType {
         match (self, other) {
             // Multi-language containers match anything (both directions)
             (FormatType::Xcstrings, _) | (_, FormatType::Xcstrings) => true,
+            (FormatType::Xliff(_), _) | (_, FormatType::Xliff(_)) => true,
             (FormatType::CSV, _) | (_, FormatType::CSV) => true,
             (FormatType::TSV, _) | (_, FormatType::TSV) => true,
             _ => self.language() == other.language(),
@@ -178,6 +188,7 @@ mod tests {
         assert_eq!(FormatType::AndroidStrings(None).to_string(), "android");
         assert_eq!(FormatType::Strings(None).to_string(), "strings");
         assert_eq!(FormatType::Xcstrings.to_string(), "xcstrings");
+        assert_eq!(FormatType::Xliff(None).to_string(), "xliff");
         assert_eq!(FormatType::CSV.to_string(), "csv");
         assert_eq!(FormatType::TSV.to_string(), "tsv");
     }
@@ -220,6 +231,15 @@ mod tests {
         assert_eq!(
             FormatType::from_str("XCSTRINGS").unwrap(),
             FormatType::Xcstrings
+        );
+
+        assert_eq!(
+            FormatType::from_str("xliff").unwrap(),
+            FormatType::Xliff(None)
+        );
+        assert_eq!(
+            FormatType::from_str("XLIFF").unwrap(),
+            FormatType::Xliff(None)
         );
 
         // CSV format

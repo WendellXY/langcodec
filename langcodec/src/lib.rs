@@ -1,7 +1,8 @@
 #![forbid(unsafe_code)]
 //! Universal localization file toolkit for Rust.
 //!
-//! Supports parsing, writing, and converting between Apple `.strings`, `.xcstrings`, Android `strings.xml`, and CSV files.  
+//! Supports parsing, writing, and converting between Apple `.strings`, `.xcstrings`, `.xliff`,
+//! Android `strings.xml`, CSV, and TSV files.
 //! All conversion happens through the unified `Resource` model.
 //!
 //! # Quick Start
@@ -31,8 +32,10 @@
 //!
 //! - **Apple `.strings`**: Traditional iOS/macOS localization files
 //! - **Apple `.xcstrings`**: Modern Xcode localization format with plural support
+//! - **Apple `.xliff`**: Xcode localization exchange files (XLIFF 1.2)
 //! - **Android `strings.xml`**: Android resource files
 //! - **CSV**: Comma-separated values for simple key-value pairs
+//! - **TSV**: Tab-separated values for simple key-value pairs
 //!
 //! # Features
 //!

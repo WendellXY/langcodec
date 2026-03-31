@@ -1025,6 +1025,10 @@ fn validate_output_serialization(
                 .to_writer(&mut out)
                 .map_err(|e| format!("Error serializing Xcstrings output: {}", e))
         }
+        FormatType::Xliff(_) => Err(
+            "XLIFF output is not supported by `translate` in v1. Translate into .xcstrings, .strings, or strings.xml first."
+                .to_string(),
+        ),
         FormatType::CSV => {
             let format = CSVFormat::try_from(codec.resources.clone())
                 .map_err(|e| format!("Error building CSV output: {}", e))?;
@@ -1529,6 +1533,10 @@ fn write_back(
             convert_resources_to_format(codec.resources.clone(), output_path, output_format.clone())
                 .map_err(|e| format!("Error writing output: {}", e))
         }
+        FormatType::Xliff(_) => Err(
+            "XLIFF output is not supported by `translate` in v1. Translate into .xcstrings, .strings, or strings.xml first."
+                .to_string(),
+        ),
     }
 }
 

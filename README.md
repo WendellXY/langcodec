@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  Convert, inspect, normalize, translate, annotate, and sync localization assets across Apple, Android, CSV, TSV, and Tolgee-backed pipelines.
+  Convert, inspect, normalize, translate, annotate, and sync localization assets across Apple, XLIFF, Android, CSV, TSV, and Tolgee-backed pipelines.
 </p>
 
 <p align="center">
@@ -47,7 +47,7 @@ Most localization workflows are a pile of one-off scripts, format-specific tools
 ## Highlights
 
 - Unified data model for singular and plural translations
-- Read and write support for Apple `.strings`, Apple `.xcstrings`, Android `strings.xml`, CSV, and TSV
+- Read and write support for Apple `.strings`, Apple `.xcstrings`, Apple/Xcode `.xliff`, Android `strings.xml`, CSV, and TSV
 - CLI commands for convert, diff, merge, sync, edit, normalize, view, stats, debug, translate, annotate, and Tolgee sync
 - Config-driven AI workflows with `langcodec.toml`
 - Rust library API for teams building custom localization pipelines
@@ -72,6 +72,12 @@ Try the workflow:
 ```sh
 # Convert Apple strings to Android XML
 langcodec convert -i Localizable.strings -o values/strings.xml
+
+# Export an Apple/Xcode translation exchange file
+langcodec convert -i Localizable.xcstrings -o Localizable.xliff --output-lang fr
+
+# Import XLIFF back into an Xcode string catalog
+langcodec convert -i Localizable.xliff -o Localizable.xcstrings
 
 # Inspect work that still needs attention
 langcodec view -i Localizable.xcstrings --status new,needs_review --keys-only
@@ -125,6 +131,7 @@ langcodec annotate \
 | --------------------- | :---: | :---: | :-----: | :---: | :-----: | :------: |
 | Apple `.strings`      |  yes  |  yes  |   yes   |  yes  |   no    |   yes    |
 | Apple `.xcstrings`    |  yes  |  yes  |   yes   |  yes  |   yes   |   yes    |
+| Apple `.xliff`        |  yes  |  yes  |   yes   |   no  |   no    |   yes    |
 | Android `strings.xml` |  yes  |  yes  |   yes   |  yes  |   yes   |   yes    |
 | CSV                   |  yes  |  yes  |   yes   |  yes  |   no    |    no    |
 | TSV                   |  yes  |  yes  |   yes   |  yes  |   no    |    no    |

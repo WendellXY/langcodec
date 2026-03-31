@@ -207,11 +207,9 @@ fn test_merge_with_conflicts_skip_strategy_removes_triply_duplicated_key() {
         }],
     };
 
-    let merged = converter::merge_resources(
-        &[resource1, resource2, resource3],
-        &ConflictStrategy::Skip,
-    )
-    .unwrap();
+    let merged =
+        converter::merge_resources(&[resource1, resource2, resource3], &ConflictStrategy::Skip)
+            .unwrap();
     assert!(merged.entries.is_empty());
 }
 
