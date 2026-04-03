@@ -123,3 +123,34 @@ jobs:
           generate_release_notes: true
           tag_name: ${{ env.RELEASE_TAG }}
           files: dist/*
+
+  update-homebrew-tap:
+    name: Update Homebrew tap
+    runs-on: ubuntu-24.04
+    needs: release
+    if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+
+    steps:
+      - name: Check out tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: oops-rs/homebrew-tap
+          ref: main
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Update langcodec-cli formula
+        run: bash tap/scripts/update-formula.sh langcodec-cli "${RELEASE_TAG}"
+
+      - name: Commit updated formula
+        run: |
+          if git -C tap diff --quiet -- Formula; then
+            echo "langcodec-cli formula already up to date"
+            exit 0
+          fi
+
+          git -C tap config user.name "github-actions[bot]"
+          git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C tap add Formula
+          git -C tap commit -m "langcodec-cli ${RELEASE_TAG}"
+          git -C tap push origin HEAD:main
