@@ -80,6 +80,11 @@ Tolgee support in v1 is intentionally focused on Apple `.xcstrings`. `langcodec.
 ## Install
 
 ```sh
+brew tap oops-rs/tap
+brew install langcodec-cli
+```
+
+```sh
 cargo install langcodec-cli
 ```
 

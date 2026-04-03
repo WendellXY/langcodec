@@ -22,8 +22,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/WendellXY/langcodec/actions/workflows/rust.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/WendellXY/langcodec/rust.yml?branch=main&label=ci&logo=github" alt="CI status" />
+  <a href="https://github.com/oops-rs/langcodec/actions/workflows/rust.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/oops-rs/langcodec/rust.yml?branch=main&label=ci&logo=github" alt="CI status" />
   </a>
   <a href="https://crates.io/crates/langcodec-cli">
     <img src="https://img.shields.io/crates/v/langcodec-cli?logo=rust" alt="langcodec-cli on crates.io" />
@@ -55,6 +55,11 @@ Most localization workflows are a pile of one-off scripts, format-specific tools
 ## Quick Start
 
 Install the CLI:
+
+```sh
+brew tap oops-rs/tap
+brew install langcodec-cli
+```
 
 ```sh
 cargo install langcodec-cli

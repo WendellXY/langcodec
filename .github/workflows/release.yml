@@ -16,6 +16,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
 
 jobs:
   build:
@@ -29,21 +30,27 @@ jobs:
             target: x86_64-unknown-linux-gnu
             archive_ext: tar.gz
             binary_name: langcodec
+            binary_asset_ext: ""
           - os: macos-15
             target: x86_64-apple-darwin
             archive_ext: tar.gz
             binary_name: langcodec
+            binary_asset_ext: ""
           - os: macos-15
             target: aarch64-apple-darwin
             archive_ext: tar.gz
             binary_name: langcodec
+            binary_asset_ext: ""
           - os: windows-2022
             target: x86_64-pc-windows-msvc
             archive_ext: zip
             binary_name: langcodec.exe
+            binary_asset_ext: ".exe"
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -59,34 +66,44 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME}"
+          version="${RELEASE_TAG}"
           archive="langcodec-${version}-${{ matrix.target }}.${{ matrix.archive_ext }}"
           binary_dir="dist/langcodec-${version}-${{ matrix.target }}"
+          binary_asset="langcodec-${version}-${{ matrix.target }}"
           mkdir -p "${binary_dir}"
           cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "${binary_dir}/langcodec"
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "${binary_asset}"
+          chmod 755 "${binary_asset}"
           tar -C dist -czf "${archive}" "langcodec-${version}-${{ matrix.target }}"
           shasum -a 256 "${archive}" > "${archive}.sha256"
+          shasum -a 256 "${binary_asset}" > "${binary_asset}.sha256"
 
       - name: Package artifact (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $version = $env:GITHUB_REF_NAME
+          $version = $env:RELEASE_TAG
           $folder = "langcodec-$version-${{ matrix.target }}"
           $archive = "$folder.${{ matrix.archive_ext }}"
+          $binaryAsset = "$folder.exe"
           New-Item -ItemType Directory -Force -Path "dist/$folder" | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "dist/$folder/langcodec.exe"
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" $binaryAsset
           Compress-Archive -Path "dist/$folder" -DestinationPath $archive
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
           "$hash  $archive" | Out-File -Encoding ascii "$archive.sha256"
+          $binaryHash = (Get-FileHash -Algorithm SHA256 $binaryAsset).Hash.ToLower()
+          "$binaryHash  $binaryAsset" | Out-File -Encoding ascii "$binaryAsset.sha256"
 
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.target }}
           path: |
-            langcodec-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
-            langcodec-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
+            langcodec-${{ env.RELEASE_TAG }}-${{ matrix.target }}.${{ matrix.archive_ext }}
+            langcodec-${{ env.RELEASE_TAG }}-${{ matrix.target }}.${{ matrix.archive_ext }}.sha256
+            langcodec-${{ env.RELEASE_TAG }}-${{ matrix.target }}${{ matrix.binary_asset_ext }}
+            langcodec-${{ env.RELEASE_TAG }}-${{ matrix.target }}${{ matrix.binary_asset_ext }}.sha256
 
   release:
     name: Publish GitHub Release
@@ -104,4 +121,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          tag_name: ${{ env.RELEASE_TAG }}
           files: dist/*

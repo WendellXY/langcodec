@@ -14,7 +14,7 @@ Thank you for your interest in contributing to langcodec! This document provides
 **1. Fork and clone the repository:**
 
 ```bash
-git clone https://github.com/WendellXY/langcodec.git
+git clone https://github.com/oops-rs/langcodec.git
 cd langcodec
 ```
 
