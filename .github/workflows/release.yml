@@ -128,21 +128,29 @@ jobs:
     name: Update Homebrew tap
     runs-on: ubuntu-24.04
     needs: release
-    if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+    env:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
     steps:
+      - name: Skip when tap token is unavailable
+        if: ${{ env.HOMEBREW_TAP_TOKEN == '' }}
+        run: echo "HOMEBREW_TAP_TOKEN is not configured; skipping tap update."
+
       - name: Check out tap repository
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         uses: actions/checkout@v4
         with:
           repository: oops-rs/homebrew-tap
           ref: main
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          token: ${{ env.HOMEBREW_TAP_TOKEN }}
           path: tap
 
       - name: Update langcodec-cli formula
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         run: bash tap/scripts/update-formula.sh langcodec-cli "${RELEASE_TAG}"
 
       - name: Commit updated formula
+        if: ${{ env.HOMEBREW_TAP_TOKEN != '' }}
         run: |
           if git -C tap diff --quiet -- Formula; then
             echo "langcodec-cli formula already up to date"
